@@ -10,6 +10,23 @@ DANGEROUS_FUNCTIONS = {
 }
 
 
+def remove_comments_and_strings(line: str) -> str:
+    """
+    Remove comments and string literals from one line of C code.
+
+    This prevents the analyzer from detecting dangerous functions
+    inside comments or printed text.
+    """
+
+    # Remove single-line comments.
+    line = line.split("//", 1)[0]
+
+    # Remove C string literals.
+    line = re.sub(r'"(?:\\.|[^"\\])*"', "", line)
+
+    return line
+
+
 def analyze_firmware(source_file: str) -> dict:
     """
     Perform a basic static analysis of a C source file.
@@ -50,8 +67,7 @@ def analyze_firmware(source_file: str) -> dict:
         if stripped_line.startswith("//"):
             continue
 
-        # Remove inline comments before checking the code.
-        code_line = line.split("//", 1)[0]
+        code_line = remove_comments_and_strings(line)
 
         for function_name, description in DANGEROUS_FUNCTIONS.items():
             pattern = rf"\b{re.escape(function_name)}\s*\("
