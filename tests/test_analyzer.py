@@ -67,3 +67,28 @@ def test_string_literal_does_not_create_finding(tmp_path):
 
     assert result["success"] is True
     assert result["findings"] == []
+
+
+def test_multiline_comment_does_not_create_finding(tmp_path):
+    source_file = tmp_path / "multiline_comment_test.c"
+
+    source_file.write_text(
+        """
+        #include <stdio.h>
+
+        int main(void)
+        {
+            /*
+                strcpy(buffer, input);
+            */
+            printf("CodePulse\\n");
+            return 0;
+        }
+        """,
+        encoding="utf-8",
+    )
+
+    result = analyze_firmware(str(source_file))
+
+    assert result["success"] is True
+    assert result["findings"] == []

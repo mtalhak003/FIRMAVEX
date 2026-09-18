@@ -10,21 +10,37 @@ DANGEROUS_FUNCTIONS = {
 }
 
 
-def remove_comments_and_strings(line: str) -> str:
+def remove_comments_and_strings(source_code: str) -> str:
     """
-    Remove comments and string literals from one line of C code.
+    Remove C comments and string literals while preserving line structure.
 
-    This prevents the analyzer from detecting dangerous functions
-    inside comments or printed text.
+    Newlines are preserved so that analyzer findings keep their
+    original source-code line numbers.
     """
+
+    # Remove multiline comments while preserving newlines.
+    source_code = re.sub(
+        r"/\*.*?\*/",
+        lambda match: "\n" * match.group(0).count("\n"),
+        source_code,
+        flags=re.DOTALL,
+    )
 
     # Remove single-line comments.
-    line = line.split("//", 1)[0]
+    source_code = re.sub(
+        r"//.*",
+        "",
+        source_code,
+    )
 
-    # Remove C string literals.
-    line = re.sub(r'"(?:\\.|[^"\\])*"', "", line)
+    # Remove C string literals while preserving their line count.
+    source_code = re.sub(
+        r'"(?:\\.|[^"\\])*"',
+        lambda match: "",
+        source_code,
+    )
 
-    return line
+    return source_code
 
 
 def analyze_firmware(source_file: str) -> dict:
@@ -58,27 +74,24 @@ def analyze_firmware(source_file: str) -> dict:
             "error": str(error),
         }
 
+    cleaned_code = remove_comments_and_strings(source_code)
+
     findings = []
 
-    for line_number, line in enumerate(source_code.splitlines(), start=1):
-        stripped_line = line.strip()
-
-        # Ignore single-line comments.
-        if stripped_line.startswith("//"):
-            continue
-
-        code_line = remove_comments_and_strings(line)
-
+    for line_number, line in enumerate(
+        cleaned_code.splitlines(),
+        start=1,
+    ):
         for function_name, description in DANGEROUS_FUNCTIONS.items():
             pattern = rf"\b{re.escape(function_name)}\s*\("
 
-            if re.search(pattern, code_line):
+            if re.search(pattern, line):
                 findings.append(
                     {
                         "type": description,
                         "function": function_name,
                         "line": line_number,
-                        "code": code_line.strip(),
+                        "code": line.strip(),
                         "severity": "High",
                     }
                 )
