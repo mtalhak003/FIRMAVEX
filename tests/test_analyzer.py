@@ -22,3 +22,26 @@ def test_vulnerable_firmware_detects_strcpy():
     assert finding["type"] == "Potential buffer overflow"
     assert finding["severity"] == "High"
     assert finding["line"] == 9
+
+
+def test_comment_does_not_create_finding(tmp_path):
+    source_file = tmp_path / "comment_test.c"
+
+    source_file.write_text(
+        """
+        #include <stdio.h>
+
+        int main(void)
+        {
+            // strcpy(buffer, input);
+            printf("CodePulse\\n");
+            return 0;
+        }
+        """,
+        encoding="utf-8",
+    )
+
+    result = analyze_firmware(str(source_file))
+
+    assert result["success"] is True
+    assert result["findings"] == []

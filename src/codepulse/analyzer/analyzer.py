@@ -44,16 +44,25 @@ def analyze_firmware(source_file: str) -> dict:
     findings = []
 
     for line_number, line in enumerate(source_code.splitlines(), start=1):
+        stripped_line = line.strip()
+
+        # Ignore single-line comments.
+        if stripped_line.startswith("//"):
+            continue
+
+        # Remove inline comments before checking the code.
+        code_line = line.split("//", 1)[0]
+
         for function_name, description in DANGEROUS_FUNCTIONS.items():
             pattern = rf"\b{re.escape(function_name)}\s*\("
 
-            if re.search(pattern, line):
+            if re.search(pattern, code_line):
                 findings.append(
                     {
                         "type": description,
                         "function": function_name,
                         "line": line_number,
-                        "code": line.strip(),
+                        "code": code_line.strip(),
                         "severity": "High",
                     }
                 )
