@@ -92,3 +92,18 @@ def test_multiline_comment_does_not_create_finding(tmp_path):
 
     assert result["success"] is True
     assert result["findings"] == []
+
+
+def test_format_string_vulnerability_is_detected():
+    result = analyze_firmware(
+        "firmware/vulnerable/format_string.c"
+    )
+
+    assert result["success"] is True
+    assert len(result["findings"]) == 1
+
+    finding = result["findings"][0]
+
+    assert finding["function"] == "printf"
+    assert finding["type"] == "Potential format string vulnerability"
+    assert finding["severity"] == "High"

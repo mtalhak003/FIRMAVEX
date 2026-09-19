@@ -16,7 +16,7 @@ Purpose:
 
 ### Vulnerable
 
-vulnerable/buffer_overflow.c
+#### buffer_overflow.c
 
 Purpose:
 - Represents an intentionally unsafe firmware program.
@@ -24,11 +24,16 @@ Purpose:
 - Copies a longer string using strcpy().
 - Expected result: buffer-overflow risk should be detected.
 
+#### format_string.c
+
+Purpose:
+- Represents an intentionally unsafe firmware program.
+- Passes user-controlled or variable data directly to printf().
+- Expected result: format-string risk should be detected.
 ## Ground Truth
 
 | Benchmark | Expected Finding | Severity |
 |---|---|---|
 | safe.c | No buffer overflow | None |
 | buffer_overflow.c | Buffer overflow risk | High |
-
-These benchmarks are intentionally small so that the behavior of each CodePulse component can be tested independently.
+| format_string.c | Format-string risk | High |

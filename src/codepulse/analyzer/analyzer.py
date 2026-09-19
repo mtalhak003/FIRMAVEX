@@ -10,6 +10,13 @@ DANGEROUS_FUNCTIONS = {
 }
 
 
+FORMAT_FUNCTIONS = {
+    "printf",
+    "fprintf",
+    "sprintf",
+}
+
+
 def remove_comments_and_strings(source_code: str) -> str:
     """
     Remove C comments and string literals while preserving line structure.
@@ -82,6 +89,7 @@ def analyze_firmware(source_file: str) -> dict:
         cleaned_code.splitlines(),
         start=1,
     ):
+        # Check dangerous functions such as strcpy().
         for function_name, description in DANGEROUS_FUNCTIONS.items():
             pattern = rf"\b{re.escape(function_name)}\s*\("
 
@@ -89,6 +97,26 @@ def analyze_firmware(source_file: str) -> dict:
                 findings.append(
                     {
                         "type": description,
+                        "function": function_name,
+                        "line": line_number,
+                        "code": line.strip(),
+                        "severity": "High",
+                    }
+                )
+
+        # Check for direct variable use as a format string.
+        for function_name in FORMAT_FUNCTIONS:
+            pattern = (
+                rf"\b{re.escape(function_name)}"
+                rf"\s*\(\s*"
+                rf"([A-Za-z_][A-Za-z0-9_]*)"
+                rf"\s*\)"
+            )
+
+            if re.search(pattern, line):
+                findings.append(
+                    {
+                        "type": "Potential format string vulnerability",
                         "function": function_name,
                         "line": line_number,
                         "code": line.strip(),
