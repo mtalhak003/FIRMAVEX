@@ -107,3 +107,51 @@ def test_format_string_vulnerability_is_detected():
     assert finding["function"] == "printf"
     assert finding["type"] == "Potential format string vulnerability"
     assert finding["severity"] == "High"
+
+
+def test_memcpy_overflow_is_detected():
+    result = analyze_firmware(
+        "firmware/vulnerable/memcpy_overflow.c"
+    )
+
+    assert result["success"] is True
+    assert len(result["findings"]) == 1
+
+    finding = result["findings"][0]
+
+    assert finding["function"] == "memcpy"
+    assert finding["type"] == "Potential buffer overflow"
+    assert finding["severity"] == "High"
+
+
+def test_safe_memcpy_has_no_findings():
+    result = analyze_firmware(
+        "firmware/safe/memcpy_safe.c"
+    )
+
+    assert result["success"] is True
+    assert result["findings"] == []
+
+
+def test_fixed_size_memcpy_has_no_findings():
+    result = analyze_firmware(
+        "firmware/safe/memcpy_fixed_size_safe.c"
+    )
+
+    assert result["success"] is True
+    assert result["findings"] == []
+
+
+def test_numeric_memcpy_overflow_is_detected():
+    result = analyze_firmware(
+        "firmware/vulnerable/memcpy_numeric_overflow.c"
+    )
+
+    assert result["success"] is True
+    assert len(result["findings"]) == 1
+
+    finding = result["findings"][0]
+
+    assert finding["function"] == "memcpy"
+    assert finding["type"] == "Potential buffer overflow"
+    assert finding["severity"] == "High"
