@@ -4,7 +4,7 @@
 int main(void)
 {
     char buffer[16];
-    const char *message = "CodePulse";
+    const char *message = "FIRMAVEX";
 
     strncpy(buffer, message, sizeof(buffer) - 1);
     buffer[sizeof(buffer) - 1] = '\0';

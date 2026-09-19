@@ -4,7 +4,7 @@
 int main(void)
 {
     char buffer[8];
-    const char *input = "CodePulse-Overflow";
+    const char *input = "FIRMAVEX-Overflow";
 
     strcpy(buffer, input);
 

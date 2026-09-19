@@ -1,6 +1,6 @@
-# CodePulse Firmware Benchmarks
+# FIRMAVEX Firmware Benchmarks
 
-This directory contains small embedded-style C programs used to evaluate CodePulse.
+This directory contains small embedded-style C programs used to evaluate FIRMAVEX.
 
 ## Benchmark Categories
 

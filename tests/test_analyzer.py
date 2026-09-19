@@ -1,4 +1,4 @@
-from src.codepulse.analyzer.analyzer import analyze_firmware
+from src.firmavex.analyzer.analyzer import analyze_firmware
 
 
 def test_safe_firmware_has_no_findings():
@@ -34,7 +34,7 @@ def test_comment_does_not_create_finding(tmp_path):
         int main(void)
         {
             // strcpy(buffer, input);
-            printf("CodePulse\\n");
+            printf("FIRMAVEX\\n");
             return 0;
         }
         """,
@@ -81,7 +81,7 @@ def test_multiline_comment_does_not_create_finding(tmp_path):
             /*
                 strcpy(buffer, input);
             */
-            printf("CodePulse\\n");
+            printf("FIRMAVEX\\n");
             return 0;
         }
         """,

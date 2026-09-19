@@ -2,7 +2,7 @@
 
 int main(void)
 {
-    char *input = "CodePulse";
+    char *input = "FIRMAVEX";
 
     printf(input);
 

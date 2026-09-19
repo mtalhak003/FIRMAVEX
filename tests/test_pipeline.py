@@ -1,4 +1,4 @@
-from src.codepulse.pipeline.pipeline import analyze_and_compile
+from src.firmavex.pipeline.pipeline import analyze_and_compile
 
 
 def test_pipeline_with_vulnerable_firmware(tmp_path):

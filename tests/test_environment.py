@@ -1,2 +1,2 @@
-def test_codepulse_environment():
+def test_firmavex_environment():
     assert True

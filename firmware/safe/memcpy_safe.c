@@ -4,7 +4,7 @@
 int main(void)
 {
     char buffer[32];
-    char input[8] = "CodePulse";
+    char input[8] = "FIRMAVEX";
 
     memcpy(buffer, input, sizeof(input));
 

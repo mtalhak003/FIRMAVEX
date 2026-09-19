@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from src.codepulse.analyzer.analyzer import analyze_firmware
-from src.codepulse.compiler.compiler import compile_firmware
+from src.firmavex.analyzer.analyzer import analyze_firmware
+from src.firmavex.compiler.compiler import compile_firmware
 
 
 def analyze_and_compile(source_file: str, output_file: str) -> dict:

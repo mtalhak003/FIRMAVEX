@@ -1,2 +1,3 @@
-# CodePulse
-AI-guided autonomous failure discovery and reproduction for embedded firmware.
+# FIRMAVEX
+
+Autonomous AI-Guided Verification and Failure Discovery for Embedded Firmware.

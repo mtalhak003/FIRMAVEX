@@ -1,4 +1,4 @@
-from src.codepulse.compiler.compiler import compile_firmware
+from src.firmavex.compiler.compiler import compile_firmware
 
 
 def test_compile_safe_firmware():
