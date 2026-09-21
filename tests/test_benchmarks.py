@@ -21,6 +21,7 @@ def test_safe_benchmarks_have_no_findings():
         "safe.c",
         "memcpy_safe.c",
         "memcpy_fixed_size_safe.c",
+        "strcpy_safe.c",
     ]
 
     for filename in benchmarks:

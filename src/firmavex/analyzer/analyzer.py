@@ -82,6 +82,38 @@ def find_buffer_sizes(source_code: str) -> dict:
     return buffer_sizes
 
 
+def find_string_sizes(source_code: str) -> dict:
+    """
+    Find simple constant string declarations and their lengths.
+
+    Example:
+        const char *input = "FIRMAVEX";
+
+    Returns:
+        {
+            "input": 9
+        }
+
+    The length includes the null terminator.
+    """
+
+    string_sizes = {}
+
+    pattern = (
+        r"\b(?:const\s+)?char\s*\*\s*"
+        r"([A-Za-z_][A-Za-z0-9_]*)\s*=\s*"
+        r'"((?:\\.|[^"\\])*)"'
+    )
+
+    for match in re.finditer(pattern, source_code):
+        variable_name = match.group(1)
+        string_value = match.group(2)
+
+        string_sizes[variable_name] = len(string_value) + 1
+
+    return string_sizes
+
+
 def analyze_firmware(source_file: str) -> dict:
     """
     Perform a basic static analysis of a C source file.
@@ -116,6 +148,7 @@ def analyze_firmware(source_file: str) -> dict:
     cleaned_code = remove_comments_and_strings(source_code)
 
     buffer_sizes = find_buffer_sizes(cleaned_code)
+    string_sizes = find_string_sizes(source_code)
 
     findings = []
 
@@ -127,16 +160,53 @@ def analyze_firmware(source_file: str) -> dict:
         for function_name, description in DANGEROUS_FUNCTIONS.items():
             pattern = rf"\b{re.escape(function_name)}\s*\("
 
-            if re.search(pattern, line):
-                findings.append(
-                    {
-                        "type": description,
-                        "function": function_name,
-                        "line": line_number,
-                        "code": line.strip(),
-                        "severity": "High",
-                    }
+            if not re.search(pattern, line):
+                continue
+
+            # strcpy() receives special handling when the source is a
+            # known constant string and the destination is a known buffer.
+            if function_name == "strcpy":
+                strcpy_match = re.search(
+                    r"\bstrcpy\s*\(\s*"
+                    r"([A-Za-z_][A-Za-z0-9_]*)"
+                    r"\s*,\s*"
+                    r"([A-Za-z_][A-Za-z0-9_]*)"
+                    r"\s*\)",
+                    line,
                 )
+
+                if strcpy_match:
+                    destination = strcpy_match.group(1)
+                    source_variable = strcpy_match.group(2)
+
+                    destination_size = buffer_sizes.get(destination)
+                    source_size = string_sizes.get(source_variable)
+
+                    # If both sizes are known, report only when the
+                    # complete string including '\0' exceeds the buffer.
+                    if (
+                        destination_size is not None
+                        and source_size is not None
+                    ):
+                        if source_size <= destination_size:
+                            continue
+
+                    # If the source/destination cannot be proven safe,
+                    # continue to report the potential vulnerability.
+                else:
+                    # Keep the existing conservative behavior for
+                    # unrecognized strcpy() patterns.
+                    pass
+
+            findings.append(
+                {
+                    "type": description,
+                    "function": function_name,
+                    "line": line_number,
+                    "code": line.strip(),
+                    "severity": "High",
+                }
+            )
 
         # Check for direct variable use as a format string.
         for function_name in FORMAT_FUNCTIONS:
