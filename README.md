@@ -1,8 +1,3 @@
 # FIRMAVEX
 
 Autonomous AI-Guided Verification and Failure Discovery for Embedded Firmware.
-y
-d
-ja
-wu
-li
