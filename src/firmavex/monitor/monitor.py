@@ -9,6 +9,8 @@ def observe_symbol(
     symbol: str,
     breakpoint: str,
     timeout: float = 5.0,
+    set_symbol: str | None = None,
+    set_value: int | None = None,
 ) -> dict:
     """Run Cortex-M3 firmware and observe a symbol at a GDB breakpoint."""
 
@@ -56,13 +58,22 @@ def observe_symbol(
             "--batch",
             "-ex",
             "target remote localhost:1234",
+        ]
+
+        if set_symbol is not None and set_value is not None:
+            gdb_command.extend([
+                "-ex",
+                f"set variable {set_symbol} = {set_value}",
+            ])
+
+        gdb_command.extend([
             "-ex",
             f"break {breakpoint}",
             "-ex",
             "continue",
             "-ex",
-            f"printf \"FIRMAVEX_VALUE=0x%x\\n\", {symbol}",
-        ]
+            f'printf "FIRMAVEX_VALUE=0x%x\\n", {symbol}',
+        ])
 
         result = subprocess.run(
             gdb_command,
