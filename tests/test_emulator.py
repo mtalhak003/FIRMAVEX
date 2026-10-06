@@ -9,9 +9,9 @@ def test_missing_firmware_returns_failure():
     assert "Firmware file not found" in result["stderr"]
 
 
-def test_cortex_m_firmware_times_out_after_successful_start():
+def test_cortex_m_firmware_times_out_after_successful_start(cortex_m_firmware):
     result = run_firmware(
-        "firmware/benchmarks/cortex_m/minimal.elf",
+        cortex_m_firmware["minimal"],
         timeout=1,
     )
 

@@ -34,6 +34,21 @@ def search_failure(
 
         executions.append(execution)
 
+        if not result["success"]:
+            return {
+                "success": False,
+                "failure_found": False,
+                "triggering_input": None,
+                "execution_count": len(executions),
+                "executions": executions,
+                "error": {
+                    "message": "Firmware observation failed; search aborted.",
+                    "input": candidate,
+                    "stdout": result.get("stdout", ""),
+                    "stderr": result.get("stderr", ""),
+                },
+            }
+
         if execution["failure_detected"]:
             return {
                 "success": True,

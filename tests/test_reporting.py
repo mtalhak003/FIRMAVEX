@@ -1,12 +1,9 @@
 from src.firmavex.reporting.report import generate_failure_report
 
 
-FIRMWARE = "firmware/benchmarks/cortex_m/failure_condition.elf"
-
-
-def test_generate_failure_report():
+def test_generate_failure_report(cortex_m_firmware):
     report = generate_failure_report(
-        firmware_file=FIRMWARE,
+        firmware_file=cortex_m_firmware["failure_condition"],
         input_symbol="firmavex_input",
         failure_symbol="firmavex_failure",
         breakpoint="failure_condition.c:11",
@@ -26,9 +23,9 @@ def test_generate_failure_report():
     assert report["minimization_execution_count"] == 7
 
 
-def test_generate_report_when_no_failure_exists():
+def test_generate_report_when_no_failure_exists(cortex_m_firmware):
     report = generate_failure_report(
-        firmware_file=FIRMWARE,
+        firmware_file=cortex_m_firmware["failure_condition"],
         input_symbol="firmavex_input",
         failure_symbol="firmavex_failure",
         breakpoint="failure_condition.c:11",

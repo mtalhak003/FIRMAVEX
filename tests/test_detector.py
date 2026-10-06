@@ -1,9 +1,9 @@
 from src.firmavex.monitor.detector import detect_failure
 
 
-def test_detects_failure_condition():
+def test_detects_failure_condition(cortex_m_firmware):
     result = detect_failure(
-        "firmware/benchmarks/cortex_m/failure_condition.elf",
+        cortex_m_firmware["failure_condition"],
         failure_symbol="firmavex_failure",
         breakpoint="failure_condition.c:11",
     )

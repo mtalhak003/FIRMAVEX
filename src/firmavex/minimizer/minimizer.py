@@ -35,6 +35,20 @@ def minimize_integer_failure(
             "failure_detected": failure_detected,
         })
 
+        if not result["success"]:
+            return {
+                "success": False,
+                "minimal_input": None,
+                "execution_count": len(executions),
+                "executions": executions,
+                "error": {
+                    "message": "Firmware observation failed; minimization aborted.",
+                    "input": candidate,
+                    "stdout": result.get("stdout", ""),
+                    "stderr": result.get("stderr", ""),
+                },
+            }
+
         if failure_detected:
             return {
                 "success": True,

@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "target": "mps2-an385",
+  "interface": {
+    "input_symbol": "firmavex_input",
+    "failure_symbol": "firmavex_failure",
+    "breakpoint": "benchmark_complete",
+    "input_domain": [0, 255]
+  },
+  "benchmarks": [
+    {"name": "threshold", "source": "threshold.c"},
+    {"name": "exact_value", "source": "exact_value.c"},
+    {"name": "bounded_range", "source": "bounded_range.c"},
+    {"name": "bit_mask", "source": "bit_mask.c"},
+    {"name": "arithmetic", "source": "arithmetic.c"}
+  ]
+}

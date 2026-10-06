@@ -1,9 +1,9 @@
 from src.firmavex.monitor.monitor import observe_symbol
 
 
-def test_observe_firmavex_marker():
+def test_observe_firmavex_marker(cortex_m_firmware):
     result = observe_symbol(
-        "firmware/benchmarks/cortex_m/minimal.elf",
+        cortex_m_firmware["minimal"],
         symbol="firmavex_marker",
         breakpoint="minimal.c:7",
     )

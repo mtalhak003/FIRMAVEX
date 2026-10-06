@@ -1,9 +1,9 @@
 from src.firmavex.generator.search import search_failure
 
 
-def test_search_discovers_first_failure_trigger():
+def test_search_discovers_first_failure_trigger(cortex_m_firmware):
     result = search_failure(
-        "firmware/benchmarks/cortex_m/failure_condition.elf",
+        cortex_m_firmware["failure_condition"],
         input_symbol="firmavex_input",
         failure_symbol="firmavex_failure",
         breakpoint="failure_condition.c:11",
@@ -16,9 +16,9 @@ def test_search_discovers_first_failure_trigger():
     assert result["execution_count"] == 7
 
 
-def test_search_reports_no_failure():
+def test_search_reports_no_failure(cortex_m_firmware):
     result = search_failure(
-        "firmware/benchmarks/cortex_m/failure_condition.elf",
+        cortex_m_firmware["failure_condition"],
         input_symbol="firmavex_input",
         failure_symbol="firmavex_failure",
         breakpoint="failure_condition.c:11",
