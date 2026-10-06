@@ -2,9 +2,9 @@
 
 Implemented in Step 16A: a common strategy protocol, serial runner, candidate
 validation, immutable run records, and unit/integration tests. Step 16B adds the
-deterministic enumerative baseline described below. No seeded random baseline,
-guided search, AI search, aggregate experiments, statistical comparison,
-persistent results, or performance claims are implemented.
+deterministic enumerative baseline; Step 16C adds seeded uniform-random search
+without replacement. No guided search, AI search, aggregate experiments,
+statistical comparison, persistent results, or performance claims are implemented.
 
 ## Contract and lifecycle
 
@@ -153,7 +153,86 @@ is introduced.
 
 Lexicographic enumeration is ordering-sensitive: a trigger near the beginning
 appears easier than one near the end. This single baseline does not represent
-all conventional search and will later be complemented by seeded random search.
+all conventional search and is complemented by Step 16C's seeded random baseline.
 Do not tune dimension order or starting values to known corpus triggers, or use
 held-out knowledge. No random/guided/AI implementation, aggregate experiments,
 statistical comparisons, or performance claims are added in Step 16B.
+
+## Step 16C: seeded uniform-random baseline
+
+`strategies/random.py` implements `RandomStrategy(seed)` through the unchanged
+Step 16A contract. Construction requires an explicit integer seed: missing seeds
+raise `TypeError`; `None`, booleans, strings, floats, and other noninteger values
+raise `ValueError` before creating an RNG or dispatching firmware. Zero, negative,
+and arbitrarily large integer seeds are supported. Metadata is
+`StrategyMetadata("random", seed=seed)`, with empty configuration. The identity
+fixes without-replacement semantics. RNG state, map, and cursor are not metadata.
+
+Each instance owns a private standard-library `random.Random`, using Python's
+Mersenne Twister implementation. There is no implicit seed, global random-state
+use, time dependence, hash-order dependence, or OS-random default. `start` resets
+the RNG to the declared seed and clears all sampling state, even after exhaustion
+or a prior run using a different public input shape. `propose` before `start`
+raises `RuntimeError`; `observe` is a no-op. Benchmark IDs, budgets, outcomes,
+and feedback never change the candidate ordering.
+
+The strategy derives `base = U-L+1` and exact integer cardinality `N = base**W`
+from the evaluator-validated public `InputSpace`. Indices in `0..N-1` map
+bijectively to tuples by base-digit decoding and adding `L` to each digit. The
+last position changes fastest, matching `EnumerativeStrategy`. Domain arithmetic
+and `randrange` support integers beyond machine-size range lengths.
+
+Sampling is a lazy Fisher-Yates shuffle of an implicit identity array. For `r`
+remaining slots, draw `j = rng.randrange(r)`, emit the index mapped at slot `j`,
+move the last live slot into slot `j`, and shrink the live interval. Only changed
+slot mappings are stored; the discarded tail mapping is removed. Every remaining
+candidate occupies exactly one live slot, so each has selection probability
+`1/r` under uniform integer draws. Induction gives a uniform permutation under
+that RNG model, and removed candidates cannot be selected again. `randrange`
+uses unbiased bounded integer selection, not modulo reduction or retrying
+duplicate candidates. No hash sorting, weighting, mutation, or guidance is used.
+The structural test covers all `4!` legal draw paths for a tiny domain and finds
+each permutation once; it is not an empirical statistical proof.
+
+Initialization does not materialize candidates or an index pool. After `k`
+proposals, sampling storage is O(k) integer map entries, plus private RNG state
+and O(width) decoding/output memory. Entries are removed as the live domain
+shrinks, but hash-table capacity can retain earlier allocations. Worst-case
+storage can be O(N) after many proposals; this is a sparse proposal-dependent
+structure, not a constant-memory permutation. Arbitrary-size index integers
+also require space proportional to their bit lengths. No `TrialInput` objects
+are cached by the strategy, and no visited set or duplicate-retry loop exists.
+
+After complete exhaustion, `propose` consistently returns `None`. The unchanged
+runner uses `strategy_stopped` when the domain ends before the execution budget.
+Discovery, budget exhaustion, and infrastructure abort use existing termination
+semantics. All execution charging, first-trigger index/time, counters, and abort
+state remain evaluator-owned; the number of remaining sampling slots is not an
+execution budget. Both baselines share the contract, candidate representation,
+public domain, runner, and accounting. Their search-order difference is fixed
+lexicographic order versus a seeded uniform ordering without replacement.
+
+Exact replay requires the same implementation, seed, and input space within the
+supported environment. The project does not freeze its own PRNG or bounded-draw
+algorithm; Python/runtime changes can change exact sequences. Record strategy
+and Python versions as well as public metadata in future experiments. Replaying
+a seed is an engineering reproducibility property, not evidence that random
+search is better or worse. No permanent or cross-language sequence guarantee is
+claimed.
+
+The real integration test uses predeclared seed 42, independently of firmware
+outcomes, with the existing v1 threshold ELF and a test-only scalar domain 0..2.
+Three fresh QEMU/GDB trials are non-triggering and exhaust that tiny domain,
+leaving two of five execution slots unused. This proves the real dispatch path
+through the opaque adapter and evaluator without claiming discovery. The test
+restriction does not alter any manifest, corpus predicate, production domain,
+split, or ground truth. No seeds were searched or selected for early triggers.
+
+Individual runs are seed-dependent. Future comparisons must use multiple
+predeclared seeds, chosen without benchmark-outcome or held-out knowledge. Use
+the same declared seed set across comparable benchmark runs where appropriate,
+and report aggregate outcomes rather than favorable individual seeds. Step 16C
+does not select the final experiment seed set, run seed sweeps/optimization, or
+implement aggregation, statistical comparisons, guided/AI search, persistent
+storage, or performance claims. Those comparison policies belong to a later
+experiment-runner milestone.
