@@ -1,9 +1,10 @@
 # Step 16A: common strategy execution contract
 
-Implemented: a common strategy protocol, serial runner, candidate validation,
-immutable run records, and unit/integration tests. No sequential/enumerative or
-random baseline, guided search, AI search, aggregate experiments, persistent
-results, or performance claims are implemented.
+Implemented in Step 16A: a common strategy protocol, serial runner, candidate
+validation, immutable run records, and unit/integration tests. Step 16B adds the
+deterministic enumerative baseline described below. No seeded random baseline,
+guided search, AI search, aggregate experiments, statistical comparison,
+persistent results, or performance claims are implemented.
 
 ## Contract and lifecycle
 
@@ -96,7 +97,7 @@ manifest, development/held-out label, oracle, expected trigger, raw monitor
 result, GDB/QEMU diagnostic, or private evaluator callback is supplied to the
 strategy. Production strategy modules import only the public evaluation API.
 Test doubles and administrator-side integration fixtures live in tests; their
-input sequences are not production baselines.
+fixed input sequences are not production baselines.
 
 This is a controlled experimental API boundary, not adversarial sandboxing.
 Malicious in-process Python can inspect frames, private state, files, or process
@@ -104,3 +105,55 @@ memory and can violate frozen-object conventions. Strategies must cooperate
 with the contract. Process/container isolation and a transport boundary remain
 future work; Step 15B's public held-out fixtures remain inspectable. Existing
 QEMU/toolchain and image/port handoff limitations still apply.
+
+## Step 16B: deterministic enumerative baseline
+
+`strategies/enumerative.py` implements `EnumerativeStrategy` through the unchanged
+Step 16A contract. Its metadata is `StrategyMetadata("enumerative")`: empty
+configuration and no seed. Use it with the existing runner and a dedicated
+opaque adapter; the strategy never calls `execute` itself.
+
+For public width `W` and inclusive bounds `L..U`, it enumerates `[L,U]^W` in
+lexicographic order, with the last position changing fastest. For width two and
+bounds 0..2, the sequence is `(0,0), (0,1), (0,2), (1,0), (1,1), (1,2), (2,0),
+(2,1), (2,2)`. No width, bounds, cardinality, dimension permutation, predicate,
+or triggering value is hard-coded into the strategy.
+
+`start(description)` always resets enumeration to the minimum tuple, including
+after prior exhaustion or when receiving a different public shape. Fresh
+instances yield the same sequence. `propose()` before `start()` raises a clear
+`RuntimeError`. Descriptions must contain the valid input space already enforced
+by `EvaluationSession`; this strategy adds no parallel domain-validation policy.
+
+A cursor increments with carry and creates immutable `TrialInput` snapshots.
+It guarantees uniqueness without a visited set, caches no range/product pool,
+and never calculates cardinality. Retained memory is O(width), with O(width)
+worst-case work per proposal, including constructing the output tuple. For v2,
+the public domain happens to contain `16^4 = 65,536` tuples, but iteration does
+not depend on that count. `observe` is deliberately a no-op: feedback does not
+guide ordering, and the strategy maintains no execution counter or budget.
+
+After the last tuple, every subsequent `propose()` returns `None`. If the domain
+is smaller than the evaluator's budget and no failure was observed, the runner
+uses existing `strategy_stopped` semantics without another dispatch or charge.
+Discovery, budget exhaustion, and infrastructure abort still stop the runner
+immediately; their indices, counters, timing, and final result remain entirely
+evaluator-owned. Enumerating the domain without a trigger never fabricates a
+discovery or an evaluator status.
+
+Tests cover finite domains, ordering, uniqueness, reset, memory, metadata,
+feedback independence, and runner/evaluator termination. A small real integration
+uses the existing v1 scalar threshold corpus fixture over its original 0..255
+domain through `EvaluationSession.strategy_api()`. Administrator test code owns
+build/instrumentation details; the strategy sees only an opaque ID and public
+shape/budget. Seven QEMU/GDB trials reach discovery. Oracle data is read only
+after that test run to validate the result. No v2 predicates, domains, splits,
+ground truth, monitor, or evaluator are changed, and no QEMU comparison matrix
+is introduced.
+
+Lexicographic enumeration is ordering-sensitive: a trigger near the beginning
+appears easier than one near the end. This single baseline does not represent
+all conventional search and will later be complemented by seeded random search.
+Do not tune dimension order or starting values to known corpus triggers, or use
+held-out knowledge. No random/guided/AI implementation, aggregate experiments,
+statistical comparisons, or performance claims are added in Step 16B.
