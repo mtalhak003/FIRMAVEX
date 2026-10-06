@@ -3,6 +3,9 @@
 For automated QEMU Cortex-M3 builds and the versioned runtime corpus, see
 [the Cortex-M3 build framework](cortex_m/README.md).
 
+Corpus v2 and the opaque evaluator/budget foundation are documented in
+[the evaluation guide](../../docs/development/evaluation.md). Corpus v1 remains unchanged.
+
 This directory contains small embedded-style C programs used to evaluate FIRMAVEX static analysis.
 
 The benchmarks are intentionally small and controlled so that each expected result is known in advance.

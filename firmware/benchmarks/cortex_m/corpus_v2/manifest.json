@@ -1,0 +1,64 @@
+{
+  "version": 2,
+  "target": "mps2-an385",
+  "interface": {
+    "width": 4,
+    "input_domain": [
+      0,
+      15
+    ],
+    "input_symbol": "firmavex_actions",
+    "failure_symbol": "firmavex_failure",
+    "breakpoint": "benchmark_complete"
+  },
+  "benchmarks": [
+    {
+      "id": "b-3874d6a4a92f46758d73854abf0a08df",
+      "name": "multi_variable",
+      "source": "multi_variable.c",
+      "split": "development"
+    },
+    {
+      "id": "b-08e9f32ef15d4ef0b17b65a4c211f8e2",
+      "name": "nested_branches",
+      "source": "nested_branches.c",
+      "split": "development"
+    },
+    {
+      "id": "b-64a1899b33444f9fb3a82bdfe238d812",
+      "name": "bitwise_arithmetic",
+      "source": "bitwise_arithmetic.c",
+      "split": "development"
+    },
+    {
+      "id": "b-c7a338d3ea684d149e5a45e49d235dc7",
+      "name": "magic_check",
+      "source": "magic_check.c",
+      "split": "development"
+    },
+    {
+      "id": "b-965d82f3548943c5bfb218d7e0c5351c",
+      "name": "ordered_accumulator",
+      "source": "ordered_accumulator.c",
+      "split": "development"
+    },
+    {
+      "id": "b-b5ba43a1f81041a28dcb6e10f0754d91",
+      "name": "finite_state_machine",
+      "source": "finite_state_machine.c",
+      "split": "held_out"
+    },
+    {
+      "id": "b-762a8f0d6fbf4b6eb34a821e9fc35c24",
+      "name": "compound_constraints",
+      "source": "compound_constraints.c",
+      "split": "development"
+    },
+    {
+      "id": "b-04a234ad83964671a791285172e0bcee",
+      "name": "sparse_relation",
+      "source": "sparse_relation.c",
+      "split": "held_out"
+    }
+  ]
+}

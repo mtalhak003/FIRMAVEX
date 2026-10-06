@@ -203,3 +203,29 @@ def test_cleanup_kills_qemu_if_termination_times_out(fake_monitor):
     qemu.kill.assert_called_once()
     assert qemu.wait.call_count == 2
     assert qemu.stderr.closed
+
+
+def test_monitor_injects_multiple_symbols_and_actions_before_continuing(fake_monitor):
+    image, _, _, gdb = fake_monitor
+    inputs = {"first": 9, "second": 12, "actions[0]": 3, "actions[1]": 11}
+    result = monitor.observe_symbol(str(image), "failure", "complete", input_values=inputs)
+    assert result["success"] is True
+    command = gdb.call_args.args[0]
+    for name, value in inputs.items():
+        assignment = f"set variable {name} = {value}"
+        assert command.index(assignment) < command.index("continue")
+
+
+@pytest.mark.parametrize("inputs", [{"x;quit": 1}, {"x": -1}, {"x": True}, {"x": 0x100000000}, {1: 2}, [1, 2]])
+def test_invalid_multi_inputs_never_launch_firmware(fake_monitor, inputs):
+    image, _, launch, _ = fake_monitor
+    result = monitor.observe_symbol(str(image), "failure", "complete", input_values=inputs)
+    assert result["success"] is False
+    launch.assert_not_called()
+
+
+def test_monitor_rejects_ambiguous_old_and_new_injection(fake_monitor):
+    image, _, launch, _ = fake_monitor
+    result = monitor.observe_symbol(str(image), "failure", "complete", set_symbol="old", set_value=1, input_values={"new": 2})
+    assert result["success"] is False
+    launch.assert_not_called()

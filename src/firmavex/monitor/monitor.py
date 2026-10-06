@@ -19,6 +19,8 @@ def observe_symbol(
     timeout: float = 5.0,
     set_symbol: str | None = None,
     set_value: int | None = None,
+    *,
+    input_values: dict[str, int] | None = None,
 ) -> dict:
     """Run Cortex-M3 firmware and observe a symbol at a GDB breakpoint."""
 
@@ -29,6 +31,16 @@ def observe_symbol(
             "success": False, "symbol": symbol, "value": None,
             "stdout": stdout, "stderr": message,
         }
+
+    if input_values is not None and set_symbol is not None:
+        return failure("Use either input_values or set_symbol, not both.")
+    if input_values is not None and (type(input_values) is not dict or any(
+        type(name) is not str
+        or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*(?:\[[0-9]+\])?", name) is None
+        or type(value) is not int or not 0 <= value <= 0xFFFFFFFF
+        for name, value in input_values.items()
+    )):
+        return failure("Inputs must name scalar symbols/array elements with uint32 values.")
 
     if not firmware.exists():
         return {
@@ -89,6 +101,10 @@ def observe_symbol(
                 "-ex",
                 f"set variable {set_symbol} = {set_value}",
             ])
+
+        if input_values is not None:
+            for name, value in input_values.items():
+                gdb_command.extend(["-ex", f"set variable {name} = {value}"])
 
         gdb_command.extend([
             "-ex",
