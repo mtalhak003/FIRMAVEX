@@ -184,7 +184,8 @@ def test_public_records_are_opaque_and_immutable():
     with pytest.raises(FrozenInstanceError):
         run.describe().execution_budget = 1000
     feedback = asdict(run.execute(TRIAL))
-    assert set(feedback) == {"status", "execution_index", "budget_remaining"}
+    assert set(feedback) == {"status", "execution_index", "budget_remaining", "execution_signature"}
+    assert feedback["execution_signature"] is None
     allowed_result = {
         "benchmark_id", "strategy_id", "execution_budget", "attempted_executions",
         "successful_executions", "infrastructure_failures", "failure_triggering_executions",

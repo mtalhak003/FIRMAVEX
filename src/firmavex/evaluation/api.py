@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from collections.abc import Callable
+import re
 from typing import Literal, Protocol
 
 
@@ -39,10 +40,42 @@ TrialStatus = Literal[
 
 
 @dataclass(frozen=True)
+class ExecutionSignature:
+    """Opaque SHA-256 of an ordered, bounded guest-PC sequence (version 1).
+
+    Equality is meaningful within an equivalent image/runtime environment,
+    not a claim of coverage or complete path identity.
+    """
+
+    digest: str
+    truncated: bool = False
+
+    def __post_init__(self) -> None:
+        if type(self.digest) is not str or re.fullmatch(r"[0-9a-f]{64}", self.digest) is None:
+            raise ValueError("Execution signature must be a lowercase 64-character SHA-256 digest.")
+        if type(self.truncated) is not bool:
+            raise ValueError("Execution-signature truncation must be a boolean.")
+
+
+def _validate_execution_signature(signature: ExecutionSignature) -> None:
+    if type(signature) is not ExecutionSignature:
+        raise ValueError("Execution signature must be a canonical immutable ExecutionSignature.")
+    # Recheck at the observation boundary, including deliberately forged records.
+    ExecutionSignature.__post_init__(signature)
+
+
+@dataclass(frozen=True)
 class TrialFeedback:
     status: TrialStatus
     execution_index: int | None
     budget_remaining: int
+    execution_signature: ExecutionSignature | None = None
+
+    def __post_init__(self) -> None:
+        if self.execution_signature is not None:
+            _validate_execution_signature(self.execution_signature)
+            if self.status not in {"safe", "triggered"}:
+                raise ValueError("Only successful execution feedback may contain a signature.")
 
 
 @dataclass(frozen=True)

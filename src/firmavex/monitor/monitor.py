@@ -4,6 +4,8 @@ import subprocess
 import time
 from pathlib import Path
 
+from src.firmavex.monitor.signature import _collector_command, _parse_signature
+
 
 def _allocate_gdb_port() -> int:
     """Ask the OS for a free IPv4 loopback port, then release it for QEMU."""
@@ -21,6 +23,7 @@ def observe_symbol(
     set_value: int | None = None,
     *,
     input_values: dict[str, int] | None = None,
+    collect_signature: bool = False,
 ) -> dict:
     """Run Cortex-M3 firmware and observe a symbol at a GDB breakpoint."""
 
@@ -32,6 +35,8 @@ def observe_symbol(
             "stdout": stdout, "stderr": message,
         }
 
+    if type(collect_signature) is not bool:
+        return failure("collect_signature must be a boolean.")
     if input_values is not None and set_symbol is not None:
         return failure("Use either input_values or set_symbol, not both.")
     if input_values is not None and (type(input_values) is not dict or any(
@@ -110,7 +115,7 @@ def observe_symbol(
             "-ex",
             f"break {breakpoint}",
             "-ex",
-            "continue",
+            _collector_command() if collect_signature else "continue",
             "-ex",
             f'printf "FIRMAVEX_VALUE=0x%x\\n", {symbol}',
         ])
@@ -139,16 +144,26 @@ def observe_symbol(
                 "stderr": result.stderr,
             }
 
-        return {
+        observation = {
             "success": True,
             "symbol": symbol,
             "value": int(match.group(1), 16),
             "stdout": result.stdout,
             "stderr": result.stderr,
         }
+        if collect_signature:
+            try:
+                observation["execution_signature"] = _parse_signature(result.stdout)
+            except ValueError as exc:
+                return failure(f"{result.stderr}\nRuntime signature collection failed: {exc}".strip(), result.stdout)
+        return observation
 
-    except subprocess.TimeoutExpired:
-        return failure(f"GDB observation timed out after {timeout} seconds.")
+    except subprocess.TimeoutExpired as exc:
+        # subprocess may provide bytes even when text=True. Keep partial
+        # collection diagnostics administrator-owned, never as a signature.
+        stdout = exc.stdout.decode(errors="replace") if isinstance(exc.stdout, bytes) else exc.stdout or ""
+        stderr = exc.stderr.decode(errors="replace") if isinstance(exc.stderr, bytes) else exc.stderr or ""
+        return failure(f"{stderr}\nGDB observation timed out after {timeout} seconds.".strip(), stdout)
     except OSError as exc:
         return failure(f"Unable to run GDB observation: {exc}")
     finally:

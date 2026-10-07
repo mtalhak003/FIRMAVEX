@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from src.firmavex.compiler.cortex_m import SUPPORT_DIR, build_cortex_m_firmware
-from src.firmavex.evaluation.api import InputSpace
+from src.firmavex.evaluation.api import InputSpace, _validate_execution_signature
 from src.firmavex.evaluation.evaluator import EvaluationSession, Observation
 from src.firmavex.monitor.monitor import observe_symbol
 
@@ -87,11 +87,22 @@ class BenchmarkRegistry:
             observed = observe_symbol(
                 str(image), self._failure_symbol, self._breakpoint,
                 input_values={f"{self._input_symbol}[{index}]": value for index, value in enumerate(values)},
+                collect_signature=True,
             )
             success = observed["success"] and observed["value"] in (0, 1)
+            signature = observed.get("execution_signature")
+            if success:
+                try:
+                    _validate_execution_signature(signature)
+                except ValueError as exc:
+                    return Observation(
+                        False, stdout=observed.get("stdout", ""),
+                        stderr=f"{observed.get('stderr', '')}\nRuntime signature collection failed: {exc}".strip(),
+                    )
             return Observation(
                 success, success and observed["value"] == 1,
                 observed.get("stdout", ""), observed.get("stderr", ""),
+                signature if success else None,
             )
 
         return EvaluationSession(

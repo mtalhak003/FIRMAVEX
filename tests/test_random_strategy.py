@@ -333,7 +333,9 @@ def test_production_strategy_receives_only_public_records():
     candidate, feedback = strategy.observe.call_args.args
     assert type(candidate) is TrialInput
     assert type(feedback) is TrialFeedback
-    assert asdict(feedback) == {"status": "safe", "execution_index": 1, "budget_remaining": 0}
+    assert asdict(feedback) == {
+        "status": "safe", "execution_index": 1, "budget_remaining": 0, "execution_signature": None,
+    }
     for item in (spec, candidate, feedback, strategy.metadata):
         for hidden in ("source", "image", "registry", "evaluator", "diagnostics", "execute", "_executor"):
             assert not hasattr(item, hidden)

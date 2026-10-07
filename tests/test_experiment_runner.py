@@ -4,7 +4,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from src.firmavex.evaluation.api import ExperimentSpec as BenchmarkDescription, InputSpace, StrategyHandle, TrialInput
+from src.firmavex.evaluation.api import ExecutionSignature, ExperimentSpec as BenchmarkDescription, InputSpace, StrategyHandle, TrialInput
 from src.firmavex.evaluation.evaluator import EvaluationSession, Observation
 from src.firmavex.evaluation.registry import BenchmarkRegistry
 from src.firmavex.evaluation import registry as registry_module
@@ -323,7 +323,8 @@ def test_administrative_paths_and_partition_never_enter_strategy_records(monkeyp
     assert set(asdict(description)) == {"benchmark_id", "input_space", "execution_budget"}
     candidate, feedback = strategy.observe.call_args.args
     assert type(candidate) is TrialInput
-    assert set(asdict(feedback)) == {"status", "execution_index", "budget_remaining"}
+    assert set(asdict(feedback)) == {"status", "execution_index", "budget_remaining", "execution_signature"}
+    assert feedback.execution_signature is None
     for forbidden in ("source.c", "image.elf", "held_out", "private", "GDB", "stderr", "oracle", "manifest"):
         assert forbidden not in record.to_json()
 
@@ -339,7 +340,10 @@ def test_existing_benchmark_registry_satisfies_production_session_provider(tmp_p
 
     monkeypatch.setattr(registry_module, "build_cortex_m_firmware", build)
     assert registry.build(benchmark.benchmark_id, image)["success"]
-    observe = Mock(return_value={"success": True, "value": 0, "stdout": "", "stderr": ""})
+    observe = Mock(return_value={
+        "success": True, "value": 0, "stdout": "", "stderr": "",
+        "execution_signature": ExecutionSignature("a" * 64),
+    })
     monkeypatch.setattr(registry_module, "observe_symbol", observe)
     spec = ExperimentSpec(benchmark.benchmark_id, StrategyMetadata("enumerative"), 1)
     record = ExperimentRunner(registry).run(spec)

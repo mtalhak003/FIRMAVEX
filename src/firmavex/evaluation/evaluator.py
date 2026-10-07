@@ -6,7 +6,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from src.firmavex.evaluation.api import (
-    ExperimentResult, ExperimentSpec, InputSpace, StrategyHandle, TrialFeedback, TrialInput,
+    ExecutionSignature, ExperimentResult, ExperimentSpec, InputSpace, StrategyHandle,
+    TrialFeedback, TrialInput, _validate_execution_signature,
 )
 
 
@@ -18,6 +19,7 @@ class Observation:
     triggered: bool = False
     stdout: str = ""
     stderr: str = ""
+    execution_signature: ExecutionSignature | None = None
 
 
 class EvaluationSession:
@@ -75,12 +77,18 @@ class EvaluationSession:
             self._started = time.monotonic()
         # Charge before dispatch, including executors that raise or time out.
         self._attempted += 1
+        observed = None
         try:
             observed = self._executor(trial.values)
             if not isinstance(observed, Observation) or type(observed.success) is not bool or type(observed.triggered) is not bool:
                 raise ValueError("Executor returned a malformed observation.")
+            if observed.execution_signature is not None:
+                _validate_execution_signature(observed.execution_signature)
         except Exception as exc:
-            observed = Observation(False, stderr=f"{type(exc).__name__}: {exc}")
+            # Preserve executor diagnostics when boundary validation fails.
+            stdout = observed.stdout if isinstance(observed, Observation) else ""
+            stderr = observed.stderr if isinstance(observed, Observation) else ""
+            observed = Observation(False, stdout=stdout, stderr=f"{stderr}\n{type(exc).__name__}: {exc}".strip())
         except BaseException as exc:
             # Cancellation still consumes the admitted execution. Record it
             # before propagating the original control-flow exception.
@@ -97,7 +105,10 @@ class EvaluationSession:
                 if self._first_failure is None:
                     self._first_failure = self._attempted
                     self._first_failure_time = time.monotonic() - self._started
-        return TrialFeedback(status, self._attempted, self._spec.execution_budget - self._attempted)
+        return TrialFeedback(
+            status, self._attempted, self._spec.execution_budget - self._attempted,
+            observed.execution_signature if observed.success else None,
+        )
 
     def _record_failure(self, trial: TrialInput, observed: Observation) -> None:
         self._errors += 1

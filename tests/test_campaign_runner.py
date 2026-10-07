@@ -325,7 +325,8 @@ def test_partition_metadata_never_changes_strategy_inputs_feedback_or_metadata(m
         for call in first.observe.call_args_list:
             candidate, feedback = call.args
             assert type(candidate) is TrialInput
-            assert set(asdict(feedback)) == {"status", "execution_index", "budget_remaining"}
+            assert set(asdict(feedback)) == {"status", "execution_index", "budget_remaining", "execution_signature"}
+            assert feedback.execution_signature is None
         for value in (description, first.metadata, candidate, feedback):
             assert not hasattr(value, "partition")
             assert not hasattr(value, "source")

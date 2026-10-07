@@ -47,7 +47,9 @@ def test_lifecycle_exposes_only_public_records_and_no_adapter():
     candidate, feedback = strategy.observe.call_args.args
     assert candidate is TRIAL
     assert type(feedback) is TrialFeedback
-    assert asdict(feedback) == {"status": "safe", "execution_index": 1, "budget_remaining": 2}
+    assert asdict(feedback) == {
+        "status": "safe", "execution_index": 1, "budget_remaining": 2, "execution_signature": None,
+    }
     for public in (description, description.input_space, candidate, feedback):
         assert not any(callable(getattr(public, field.name)) for field in fields(public))
         for hidden in ("source", "image", "registry", "evaluator", "diagnostics", "execute", "_execute", "_executor"):
