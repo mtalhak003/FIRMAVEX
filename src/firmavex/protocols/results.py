@@ -6,7 +6,7 @@ from statistics import median
 
 from src.firmavex.evaluation.api import ExperimentResult, ExperimentSpec as BenchmarkDescription, InputSpace
 from src.firmavex.experiments.api import ExperimentRecord, ExperimentSpec
-from src.firmavex.protocols.protocol import EvaluationProtocol
+from src.firmavex.protocols.protocol import BASELINE_STRATEGIES, EvaluationProtocol
 from src.firmavex.strategies.api import InvalidOutputReason, StrategyMetadata, StrategyRun, TerminationReason
 
 
@@ -79,7 +79,14 @@ def validate_record(
 
 @dataclass(frozen=True)
 class StrategySummary:
-    """One benchmark and strategy; discovery cost is conditional on discovery."""
+    """One benchmark and strategy; discovery cost is conditional on discovery.
+
+    ``seeds`` records any seeded strategy's complete declared schedule.
+    ``random_seeds`` retains its original random-baseline meaning. An empty
+    generic schedule on a random summary means legacy omission and is filled
+    from ``random_seeds``; any nonempty schedule must match it exactly. Baseline
+    serialization omits the additive generic field to preserve its schema.
+    """
 
     benchmark_id: str
     strategy_name: str
@@ -98,6 +105,7 @@ class StrategySummary:
     median_first_failure_execution: int | float | None
     maximum_first_failure_execution: int | None
     random_seeds: tuple[int, ...]
+    seeds: tuple[int, ...] = ()
 
     def __post_init__(self) -> None:
         for name in ("benchmark_id", "strategy_name"):
@@ -115,7 +123,7 @@ class StrategySummary:
         for name in ("median_first_failure_execution", "discovery_rate"):
             if getattr(self, name) is not None and type(getattr(self, name)) not in (int, float):
                 raise ValueError(f"Summary field {name} must be a numeric scalar or None.")
-        for name in ("discovery_executions", "first_failure_executions", "random_seeds"):
+        for name in ("discovery_executions", "first_failure_executions", "random_seeds", "seeds"):
             values = getattr(self, name)
             if type(values) is not tuple:
                 raise ValueError("Summary samples and seed schedules must be immutable tuples.")
@@ -124,14 +132,26 @@ class StrategySummary:
                     continue
                 if type(value) is not int:
                     raise ValueError("Summary sample and seed elements must be exact integers.")
-                if name != "random_seeds" and value <= 0:
+                if name not in ("random_seeds", "seeds") and value <= 0:
                     raise ValueError("Summary discovery indices must be positive integers.")
+        if self.strategy_name == "random":
+            if not self.seeds:
+                # Preserve legacy construction that supplied only random_seeds.
+                object.__setattr__(self, "seeds", self.random_seeds)
+            elif self.seeds != self.random_seeds:
+                raise ValueError("Random summary seeds must match random_seeds in value and order.")
+        elif self.random_seeds:
+            raise ValueError("Only random summaries may declare random_seeds.")
+        if self.strategy_name == "enumerative" and self.seeds:
+            raise ValueError("Enumerative summaries must not declare seeds.")
 
     def to_dict(self) -> dict:
         """Fresh versioned data for this benchmark/strategy summary alone."""
         data = asdict(self)
-        for name in ("discovery_executions", "first_failure_executions", "random_seeds"):
+        for name in ("discovery_executions", "first_failure_executions", "random_seeds", "seeds"):
             data[name] = list(getattr(self, name))
+        if self.strategy_name in BASELINE_STRATEGIES:
+            del data["seeds"]
         return {"schema_version": 1, **data}
 
     def to_json(self) -> str:
@@ -179,6 +199,7 @@ def _summarize(records: tuple[ExperimentRecord, ...]) -> StrategySummary:
         median_first_failure_execution=median(samples) if samples else None,
         maximum_first_failure_execution=max(samples) if samples else None,
         random_seeds=tuple(record.declaration.strategy.seed for record in records) if declaration.strategy.name == "random" else (),
+        seeds=tuple(record.declaration.strategy.seed for record in records if record.declaration.strategy.seed is not None),
     )
 
 

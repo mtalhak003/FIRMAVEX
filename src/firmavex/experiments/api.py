@@ -6,11 +6,22 @@ from dataclasses import asdict, dataclass
 
 from src.firmavex.evaluation.api import ExperimentResult, ExperimentSpec as BenchmarkDescription, InputSpace
 from src.firmavex.strategies.api import StrategyMetadata, StrategyRun
+from src.firmavex.strategies.guided import guided_metadata
 
 
 def _validate_strategy(metadata: StrategyMetadata) -> None:
     if type(metadata) is not StrategyMetadata:
         raise ValueError("Strategy selection must be a StrategyMetadata record.")
+    if metadata.name == "guided":
+        if type(metadata.seed) is not int:
+            raise ValueError("Choose the enumerative or random baseline, or declare guided with an explicit integer seed and complete configuration.")
+        try:
+            canonical = guided_metadata(metadata.seed, **dict(metadata.configuration))
+        except TypeError as exc:
+            raise ValueError("Guided configuration requires exactly archive_size and mutation_attempts.") from exc
+        if metadata != canonical:
+            raise ValueError("Guided configuration must declare archive_size and mutation_attempts completely.")
+        return
     if metadata.configuration:
         raise ValueError("Frozen baselines accept only empty configuration.")
     if metadata.name == "enumerative":
@@ -20,7 +31,7 @@ def _validate_strategy(metadata: StrategyMetadata) -> None:
         if type(metadata.seed) is not int:
             raise ValueError("Random experiments require an explicit integer seed.")
     else:
-        raise ValueError("Choose the enumerative or random baseline.")
+        raise ValueError("Choose the enumerative or random baseline, or the guided strategy.")
 
 
 @dataclass(frozen=True)

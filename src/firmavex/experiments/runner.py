@@ -6,6 +6,7 @@ from src.firmavex.evaluation.evaluator import EvaluationSession
 from src.firmavex.experiments.api import ExperimentRecord, ExperimentSpec, _check_description, _check_identity, _validate_strategy
 from src.firmavex.strategies.api import SearchStrategy, StrategyMetadata
 from src.firmavex.strategies.enumerative import EnumerativeStrategy
+from src.firmavex.strategies.guided import GuidedStrategy
 from src.firmavex.strategies.random import RandomStrategy
 from src.firmavex.strategies.runner import run_strategy
 
@@ -20,13 +21,15 @@ class SessionProvider(Protocol):
 
 
 def create_strategy(metadata: StrategyMetadata) -> SearchStrategy:
-    """Explicit frozen-baseline selection, taking public metadata only."""
+    """Explicit strategy selection, taking public metadata only."""
     _validate_strategy(metadata)
     if metadata.name == "enumerative":
         return EnumerativeStrategy()
-    if metadata.seed is not None:
+    if metadata.name == "random" and metadata.seed is not None:
         return RandomStrategy(metadata.seed)
-    raise ValueError("Random experiments require an explicit integer seed.")
+    if metadata.name == "guided" and metadata.seed is not None:
+        return GuidedStrategy(metadata.seed, **dict(metadata.configuration))
+    raise ValueError("Seeded experiments require an explicit integer seed.")
 
 
 class ExperimentRunner:

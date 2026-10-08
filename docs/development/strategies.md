@@ -3,8 +3,12 @@
 Implemented in Step 16A: a common strategy protocol, serial runner, candidate
 validation, immutable run records, and unit/integration tests. Step 16B adds the
 deterministic enumerative baseline; Step 16C adds seeded uniform-random search
-without replacement. No guided search, AI search, aggregate experiments,
-statistical comparison, persistent results, or performance claims are implemented.
+without replacement. These baseline milestones add no guided search, AI search,
+aggregate experiments, statistical comparison, persistent results, or performance
+claims.
+Step 17B's additive feedback-guided participant is documented separately in
+[guided-search.md](guided-search.md); the earlier baseline algorithms and common
+execution contract are preserved.
 
 ## Contract and lifecycle
 
@@ -87,7 +91,10 @@ No experiment aggregation or seed scheduling is added in this milestone.
 
 The strategy receives only the opaque benchmark ID, input width/bounds, assigned
 budget, its own proposals/configuration, and coarse public feedback containing
-status, execution index, and remaining budget. The returned run record adds only
+status, execution index, and remaining budget. Step 17A additionally supplies an
+optional immutable runtime execution signature; see
+[runtime-signature.md](runtime-signature.md) for its exact semantics. The returned
+run record adds only
 public strategy metadata, termination/validation enums, and the existing public
 evaluation result. Fields are immutable records/scalars, not callbacks or
 administrator object references.
