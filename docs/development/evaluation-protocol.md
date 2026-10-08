@@ -1,5 +1,9 @@
 # Step 16E: frozen baseline evaluation protocol
 
+The separate Step 18A three-strategy preset is documented in
+[controlled Cortex-M evaluation protocol v1](../experiments/controlled-evaluation-v1.md).
+The historical standard baseline described below remains unchanged.
+
 The protocol layer declares and executes a reproducible campaign above the
 unchanged Step 16D single-experiment framework. It freezes comparison rules
 before guided search is implemented. It defines methodology and produces data;
