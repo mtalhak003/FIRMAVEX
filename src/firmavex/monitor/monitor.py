@@ -14,6 +14,70 @@ def _allocate_gdb_port() -> int:
         return listener.getsockname()[1]
 
 
+def _cleanup_qemu(qemu: subprocess.Popen, primary: BaseException | None) -> None:
+    """Attempt every cleanup stage without replacing an active exception."""
+    errors: list[tuple[str, BaseException]] = []
+
+    def attempt(operation, action):
+        try:
+            action()
+        except BaseException as exc:
+            errors.append((operation, exc))
+
+    try:
+        running = qemu.poll() is None
+    except BaseException as exc:
+        errors.append(("poll", exc))
+        running = True
+    if running:
+        attempt("terminate", qemu.terminate)
+    try:
+        qemu.wait(timeout=2)
+        reaped = True
+    except subprocess.TimeoutExpired:
+        # A process that ignores termination still gets the normal kill path.
+        reaped = False
+    except BaseException as exc:
+        errors.append(("wait", exc))
+        reaped = False
+    if not reaped:
+        attempt("kill", qemu.kill)
+        # A failed kill must not turn cancellation into an unbounded wait.
+        attempt("reap", lambda: qemu.wait(timeout=2))
+    attempt("stderr close", lambda: qemu.stderr.close())
+
+    if errors:
+        # Preserve an original cancellation. A new cleanup cancellation must
+        # outrank ordinary errors, including an ordinary observation error.
+        cancellation = next(
+            (exc for _, exc in errors if not isinstance(exc, Exception)), None,
+        )
+        error = (
+            primary if primary is not None and not isinstance(primary, Exception)
+            else cancellation if cancellation is not None
+            else primary if primary is not None else errors[0][1]
+        )
+        for operation, secondary in errors:
+            try:
+                detail = str(secondary)
+            except BaseException:
+                detail = "<diagnostic unavailable>"
+            try:
+                error.add_note(
+                    f"QEMU cleanup {operation} failed: "
+                    f"{type(secondary).__name__}: {detail}"
+                )
+            except BaseException:
+                # Diagnostic formatting must not replace cancellation either.
+                pass
+        if error is not primary:
+            if primary is not None:
+                # Keep the preceding observation error administrator-visible
+                # while allowing the newly requested cancellation to propagate.
+                raise error from primary
+            raise error
+
+
 def observe_symbol(
     firmware_file: str,
     symbol: str,
@@ -88,6 +152,7 @@ def observe_symbol(
     except OSError as exc:
         return failure(f"Unable to start QEMU: {exc}")
 
+    primary = None
     try:
         time.sleep(0.5)
         if qemu.poll() is not None:
@@ -166,14 +231,10 @@ def observe_symbol(
         return failure(f"{stderr}\nGDB observation timed out after {timeout} seconds.".strip(), stdout)
     except OSError as exc:
         return failure(f"Unable to run GDB observation: {exc}")
+    except BaseException as exc:
+        # sys.exc_info() can inherit an unrelated caller's active handler.
+        # Only this observation's propagating exception owns its cleanup.
+        primary = exc
+        raise
     finally:
-        try:
-            if qemu.poll() is None:
-                qemu.terminate()
-            try:
-                qemu.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                qemu.kill()
-                qemu.wait()
-        finally:
-            qemu.stderr.close()
+        _cleanup_qemu(qemu, primary)
