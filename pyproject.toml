@@ -1,0 +1,52 @@
+[build-system]
+requires = ["setuptools>=77,<85", "wheel>=0.45,<1"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "firmavex-desktop"
+version = "0.1.0.dev1"
+description = "Firmware testing product foundation using QEMU and an ARM-capable GDB"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{name = "Muhammad Talha Khan"}]
+dependencies = ["pyelftools>=0.32,<1"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<10", "build>=1.2,<2"]
+desktop = ["PySide6>=6.8,<7"]
+
+[project.scripts]
+firmavex = "firmavex.product.cli:main"
+
+[project.urls]
+Repository = "https://github.com/mtalhak003/FIRMAVEX"
+
+[tool.setuptools]
+include-package-data = false
+
+[tool.setuptools.packages.find]
+where = ["."]
+namespaces = true
+include = [
+    "firmavex", "firmavex.*",
+    "src", "src.firmavex", "src.firmavex.*",
+    "firmware", "firmware.benchmarks", "firmware.benchmarks.cortex_m",
+]
+exclude = ["tests", "tests.*"]
+
+[tool.setuptools.package-data]
+"firmavex.product" = ["resources/example/*.c", "resources/example/*.ld", "resources/example/*.md"]
+"firmware.benchmarks.cortex_m" = [
+    "*.c", "*.ld", "README.md",
+    "corpus/*.c", "corpus/manifest.json",
+    "corpus_v2/*.c", "corpus_v2/manifest.json",
+]
