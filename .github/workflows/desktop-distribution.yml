@@ -94,7 +94,7 @@ jobs:
           python-version: "3.12"
       - name: Install native runtime candidates
         run: brew install qemu gdb arm-none-eabi-gcc
-      - run: python -m pip install ".[dev]"
+      - run: python -m pip install ".[dev,desktop]" "pyinstaller==6.16.0"
       - name: Probe native capabilities and execute actual firmware
         run: |
           mkdir -p "$RUNNER_TEMP/arm-gdb"
@@ -104,6 +104,19 @@ jobs:
           firmavex demo --output-dir "$RUNNER_TEMP/native-arm-demo"
           firmavex inspect "$RUNNER_TEMP/native-arm-demo/search"
           python -m tools.desktop_native_evidence "$RUNNER_TEMP/native-arm-demo"
+      - name: Frozen Apple Silicon application firmware workflow
+        run: |
+          export PATH="$RUNNER_TEMP/arm-gdb:$PATH"
+          python -m PyInstaller --clean --noconfirm packaging/desktop.spec
+          dist/FIRMAVEX.app/Contents/MacOS/FIRMAVEX --firmavex-cli demo --output-dir "$RUNNER_TEMP/mac-frozen-demo"
+          python -m tools.desktop_native_evidence "$RUNNER_TEMP/mac-frozen-demo"
+      - name: Preserve frozen macOS execution records
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macOS-frozen-firmware-evidence
+          path: ${{ runner.temp }}/mac-frozen-demo
+          if-no-files-found: warn
       - name: Preserve real execution records even on failure
         if: always()
         uses: actions/upload-artifact@v4
