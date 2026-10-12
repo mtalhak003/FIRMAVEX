@@ -15,7 +15,7 @@ Qt checks use offscreen rendering, not a human desktop/usability evaluation.
 * Baseline: `1911 passed, 4 skipped` in 194.27 seconds.
 * Targeted runtime-pack/tool/example/supervisor tests: `76 passed, 1 skipped`.
 * Runtime-pack-only regressions: `38 passed`.
-* Final complete suite after qualified-profile hardening: `1962 passed, 4 skipped` in 194.25 seconds.
+* Final complete suite after worker-input isolation: `1967 passed, 4 skipped` in 194.42 seconds.
 * Real GUI/profile focused verification: `10 passed`; profile/service/tool subset: `76 passed`.
 * PyInstaller native Linux build succeeded; frozen GUI smoke succeeded.
 * Frozen executable's real ARM example search observed `[2, 1]` at attempt 10.
@@ -76,3 +76,12 @@ then tests supervised CLI, real Qt workflow and frozen executable firmware paths
 Apple Silicon: QEMU 11.1.1, GDB 17.2, ARM GCC 16.2.0; 13 actual receipts, search
 trigger [2,1] at attempt 10, reproduction 3/3. These are example qualifications,
 not arbitrary firmware, Intel macOS, hardware or signed-installation validation.
+
+
+The integrated Windows probe exposed a GDB `--version` timeout inside the
+supervised worker. Capability probes and uncancelled compilation inherited the
+worker's command stdin; they now explicitly receive DEVNULL, matching the existing
+firmware subprocess policy. Timeouts were not relaxed. Dedicated tests check
+that probes/compiler cannot consume the worker command stream, including a real
+host EOF probe. Focused verification: `52 passed, 1 skipped`. Native CI must verify
+the complete supervised/GUI/frozen workflows before a full-path readiness claim.

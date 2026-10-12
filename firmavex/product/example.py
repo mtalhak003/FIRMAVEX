@@ -12,7 +12,7 @@ from firmavex.product.tools import _resolve, file_identity, _probe
 
 def _compile(command, cancel_event):
     if cancel_event is None:
-        return subprocess.run(command, capture_output=True, text=True, timeout=60)
+        return subprocess.run(command, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60)
     from .runtime import _spawn, _cleanup
     if cancel_event.is_set():
         raise KeyboardInterrupt("Example build cancelled.")

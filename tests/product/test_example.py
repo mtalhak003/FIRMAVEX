@@ -65,3 +65,10 @@ def test_example_resolves_managed_compiler_without_path_configuration(tmp_path, 
     monkeypatch.setattr(example.subprocess, 'run', build)
     result = example.build_example(tmp_path / 'fresh')
     assert result['build']['compiler']['path'] == str(compiler)
+
+
+def test_compiler_cannot_read_worker_command_stream(monkeypatch):
+    calls = []
+    monkeypatch.setattr(example.subprocess, 'run', lambda command, **kwargs: calls.append(kwargs) or subprocess.CompletedProcess(command, 0, '', ''))
+    example._compile(['compiler', 'main.c'], None)
+    assert calls[0]['stdin'] == subprocess.DEVNULL

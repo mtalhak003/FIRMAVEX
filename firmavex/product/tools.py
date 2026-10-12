@@ -40,7 +40,7 @@ def _resolve(name: str, supplied: str | None) -> str:
 
 def _probe(command: list[str], *, timeout: float = 10.0) -> subprocess.CompletedProcess:
     try:
-        result = subprocess.run(command, capture_output=True, text=True,
+        result = subprocess.run(command, stdin=subprocess.DEVNULL, capture_output=True, text=True,
                                 timeout=timeout, errors="replace")
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise ProductError("dependency_probe_failed", f"Unable to probe {command[0]}: {exc}") from exc

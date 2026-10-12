@@ -130,3 +130,19 @@ def test_discovery_uses_managed_tools_and_explicit_override(fake_tool_probes, mo
     monkeypatch.setattr(pack, 'active_tools', lambda: {'qemu': paths['qemu-system-arm'], 'gdb': paths['gdb-multiarch']})
     result = tools.discover()
     assert result.qemu == paths['qemu-system-arm']
+
+
+def test_capability_probe_cannot_read_worker_command_stream(monkeypatch):
+    calls = []
+    def run(command, **kwargs):
+        calls.append(kwargs)
+        return subprocess.CompletedProcess(command, 0, 'version\n', '')
+    monkeypatch.setattr(tools.subprocess, 'run', run)
+    tools._probe(['trusted-tool', '--version'])
+    assert calls[0]['stdin'] == subprocess.DEVNULL
+
+
+def test_real_host_probe_receives_eof_not_parent_stdin():
+    import sys
+    result = tools._probe([sys.executable, '-c', 'import sys; print(repr(sys.stdin.read()))'], timeout=2)
+    assert result.stdout.strip() == "''"
