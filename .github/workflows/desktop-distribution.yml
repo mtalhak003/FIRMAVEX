@@ -121,11 +121,18 @@ jobs:
         id: msys2
         with:
           msystem: UCRT64
-          update: false
-          install: >-
-            mingw-w64-ucrt-x86_64-qemu
-            mingw-w64-ucrt-x86_64-gdb-multiarch
-            mingw-w64-ucrt-x86_64-arm-none-eabi-gcc
+          update: true
+      - name: Install signed native runtime packages
+        shell: msys2 {0}
+        run: |
+          log=/tmp/firmavex-runtime-install.log
+          if ! pacman -S --needed --noconfirm mingw-w64-ucrt-x86_64-qemu mingw-w64-ucrt-x86_64-gdb-multiarch mingw-w64-ucrt-x86_64-arm-none-eabi-gcc >"$log" 2>&1; then
+            tail -n 30 "$log" | while IFS= read -r line; do
+              line=${line//'%'/'%25'}
+              printf '::error title=Signed runtime package installation::%s\n' "$line"
+            done
+            exit 1
+          fi
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
@@ -136,7 +143,7 @@ jobs:
         shell: pwsh
         run: |
           $env:PATH = (Join-Path $env:MSYS2_LOCATION "ucrt64\bin") + ";" + $env:PATH
-          & "$env:pythonLocation\python.exe" -m firmavex.product.cli doctor
+          & "$env:pythonLocation\python.exe" -m tools.desktop_runtime_probe
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Real ARM adapter and cancellation tests (production gate unchanged)
         env:
