@@ -42,6 +42,7 @@ jobs:
           sudo apt-get install --no-install-recommends -y gcc-arm-none-eabi qemu-system-arm gdb-multiarch
           dist/FIRMAVEX/FIRMAVEX --firmavex-cli demo --output-dir "$RUNNER_TEMP/frozen-firmware-demo"
           dist/FIRMAVEX/FIRMAVEX --firmavex-cli inspect "$RUNNER_TEMP/frozen-firmware-demo/search"
+          python -m tools.desktop_native_evidence "$RUNNER_TEMP/frozen-firmware-demo"
       - name: Windows installed application smoke
         if: runner.os == 'Windows'
         run: dist/FIRMAVEX/FIRMAVEX.exe --smoke-test
@@ -102,6 +103,7 @@ jobs:
           firmavex doctor
           firmavex demo --output-dir "$RUNNER_TEMP/native-arm-demo"
           firmavex inspect "$RUNNER_TEMP/native-arm-demo/search"
+          python -m tools.desktop_native_evidence "$RUNNER_TEMP/native-arm-demo"
       - name: Preserve real execution records even on failure
         if: always()
         uses: actions/upload-artifact@v4
@@ -109,3 +111,33 @@ jobs:
           name: macOS-native-ARM-qualification-evidence
           path: ${{ runner.temp }}/native-arm-demo
           if-no-files-found: warn
+  windows-firmware-candidate:
+    name: Windows native ARM adapter qualification candidate
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: false
+          install: >-
+            mingw-w64-ucrt-x86_64-qemu
+            mingw-w64-ucrt-x86_64-gdb-multiarch
+            mingw-w64-ucrt-x86_64-arm-none-eabi-gcc
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: python -m pip install ".[dev]"
+      - name: Probe signed-feed native runtime candidates
+        shell: pwsh
+        run: |
+          $env:PATH = "C:\msys64\ucrt64\bin;" + $env:PATH
+          & "$env:pythonLocation\python.exe" -m firmavex.product.cli doctor
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Real ARM adapter and cancellation tests (production gate unchanged)
+        shell: pwsh
+        run: |
+          $env:PATH = "C:\msys64\ucrt64\bin;" + $env:PATH
+          & "$env:pythonLocation\python.exe" tools/product_ci_tests.py -q tests/product/test_runtime.py -k actual_
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

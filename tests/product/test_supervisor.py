@@ -127,7 +127,9 @@ def test_owned_descendant_terminated_after_worker_dies(tmp_path):
     for _ in range(30):
         try:
             state = open(f"/proc/{pid}/stat").read().split()[2]
-        except FileNotFoundError:
+        except (FileNotFoundError, ProcessLookupError):
+            # procfs may return ENOENT or ESRCH when the reaped process
+            # disappears between opening and reading its stat file.
             return
         if state == "Z":
             return

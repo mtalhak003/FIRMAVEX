@@ -10,7 +10,7 @@ from firmware qualification. The existing native Windows execution gate remains.
 | --- | --- | --- |
 | Linux x86-64 | Portable PyInstaller directory/tar, built on Linux | Tested on this Linux cloud host; see validation report |
 | Windows x86-64 | Per-user Inno Setup candidate, unsigned | Blocked pending native ARM/GDB qualification |
-| macOS | Native `.app` and unnotarized DMG candidates | Dedicated actual-firmware CI probe; support depends on observed results |
+| macOS | Native `.app` and unnotarized DMG candidates | Independent example passed native macOS CI; broader/bundled firmware qualification pending |
 | WSL2/WSLg | Linux package needs WSLg display and compatible Linux libraries | Not tested on an actual WSL host in this batch |
 
 Only symbolized ELF32 little-endian Cortex-M3 images with supported DWARF uint32
@@ -30,7 +30,7 @@ Official QEMU and Arm download sites could not be retrieved in this cloud
 (network proxy returned 403). No vendor ZIP, checksum, Windows ARM-capable GDB
 build, or portable macOS dependency closure has therefore been qualified here.
 Do not distribute guessed binaries or imply an official runtime pack exists.
-The macOS qualification workflow uses Homebrew-installed candidates; this is
+The macOS qualification workflow passed using Homebrew-installed candidates; this is
 not a redistribution solution for ordinary users.
 
 QEMU/GDB/GCC have GPL obligations; Qt/PySide6 has separate LGPL/GPL/commercial
@@ -133,3 +133,15 @@ actual WSLg tests; runtime binary/source supply chain; signed Windows installer;
 Developer-ID signing/notarization; clean-VM install/upgrade/uninstall tests;
 compiler-free example import; GUI-only launcher; offline setup/repair usability
 and accessibility checks. CI artifacts remain unsigned development candidates.
+
+### Additional Windows candidate investigation
+
+The official MSYS2 MINGW-packages recipes are accessible through GitHub even
+though this host cannot retrieve the package catalog. They define UCRT64 QEMU,
+ARM GCC, and `gdb-multiarch` built with embedded Python and all targets. The
+Windows candidate job installs these through MSYS2's normal signed-package feed,
+then runs real adapter/input/timeout/cancellation tests. This is an investigation,
+not a frozen or redistributed runtime pack. No signature checks are disabled.
+The production Windows gate remains unchanged pending observed qualification
+and integrated supervised desktop execution. Package recipes are not proof that
+those binaries work or that their dependency closure is portable.

@@ -47,3 +47,16 @@ license notices. They do not bundle a qualified portable ARM runtime. Windows
 installers are unsigned; macOS bundles are not Developer-ID signed/notarized.
 No actual Windows ARM firmware, WSL2/WSLg or Intel macOS qualification was performed
 on this Linux host. Public beta requires the additional gates in batch3.md.
+
+## First native CI observation
+
+Distribution run `38277517235` at commit `1bc188e` succeeded: three native
+application packages, Windows installer checks and macOS actual example execution.
+The six-platform regression matrix/Ubuntu suite run `38277517111` failed in the
+pre-existing Linux descendant cleanup test: procfs returned ESRCH
+(`ProcessLookupError`) while reading a vanished process. The correction accepts
+only ENOENT/ESRCH as process disappearance; permission errors and live processes
+still fail. No test was disabled. Subsequent verification is reported separately.
+The macOS qualification summary is now emitted as a public notice to expose actual
+host architecture, tool identities, image identity and receipt counts without raw
+debugger diagnostics. Saved actual receipts remain in an Actions artifact.
