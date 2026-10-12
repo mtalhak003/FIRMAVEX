@@ -20,6 +20,17 @@ def main(arguments=None):
         process = subprocess.run([sys.executable, '-m', 'pytest', *args, '--junitxml='+str(report)],
                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors='replace')
         print(process.stdout, end='', flush=True)
+        if report.exists():
+            tree = ET.parse(report)
+            for case in tree.findall('.//testcase'):
+                problem = case.find('failure')
+                if problem is None: problem = case.find('error')
+                if problem is not None:
+                    diagnostic = case.get('classname','') + '.' + case.get('name','') + ': ' + (problem.text or problem.get('message',''))[-3000:]
+                    # Public Actions annotations remain visible when access to
+                    # raw logs/job summaries requires authentication.
+                    escaped = diagnostic.replace('%','%25').replace('\r','%0D').replace('\n','%0A')
+                    print('::error title=FIRMAVEX regression failure::'+escaped, flush=True)
         destination = os.environ.get('GITHUB_STEP_SUMMARY')
         if destination:
             lines=['## FIRMAVEX regression selection', '',
