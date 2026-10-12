@@ -64,3 +64,5 @@ not product defaults and remain unchanged.
 Research-paper work is paused. Step 19 findings remain preliminary and
 journal-derived: execution verification failed, with supplementary evidence
 missing at zero-based position 7. They are not desktop-validation evidence.
+
+Cross-platform distribution candidates and runtime-pack setup: [Batch 3](docs/product/batch3.md). Native Windows firmware execution remains gated.

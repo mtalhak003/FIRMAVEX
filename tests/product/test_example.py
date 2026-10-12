@@ -49,3 +49,19 @@ def test_example_compilation_failure_is_structured(tmp_path, monkeypatch):
         example.build_example(tmp_path / "fresh", str(compiler))
     assert caught.value.category == "build_failed"
     assert caught.value.details["stderr"] == "failed build"
+
+
+def test_example_resolves_managed_compiler_without_path_configuration(tmp_path, monkeypatch):
+    from firmavex.product import runtime_pack
+    compiler = tmp_path / 'managed-compiler'
+    compiler.write_text('synthetic compiler')
+    compiler.chmod(0o755)
+    monkeypatch.setattr(runtime_pack, 'active_tools', lambda: {'compiler': str(compiler)})
+    monkeypatch.setattr(example, '_probe', lambda command: subprocess.CompletedProcess(command, 0, 'synthetic 1\n', ''))
+    def build(command, **kwargs):
+        from pathlib import Path
+        Path(command[-1]).write_bytes(b'synthetic-test-only')
+        return subprocess.CompletedProcess(command, 0, '', '')
+    monkeypatch.setattr(example.subprocess, 'run', build)
+    result = example.build_example(tmp_path / 'fresh')
+    assert result['build']['compiler']['path'] == str(compiler)

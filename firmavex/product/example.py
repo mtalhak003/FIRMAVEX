@@ -47,7 +47,8 @@ def build_example(output_dir: Path, compiler: str | None = None, *, cancel_event
         raise ProductError("output_exists", "Example output must be a fresh directory.") from exc
     except OSError as exc:
         raise ProductError("output_unavailable", f"Unable to create example output: {exc}") from exc
-    executable = _resolve("arm-none-eabi-gcc", compiler)
+    from .runtime_pack import active_tools
+    executable = _resolve("arm-none-eabi-gcc", compiler or active_tools().get("compiler"))
     identity = file_identity(executable)
     identity["version"] = _probe([executable, "--version"]).stdout.splitlines()[0]
     resources = files("firmavex.product").joinpath("resources/example")

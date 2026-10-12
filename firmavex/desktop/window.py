@@ -167,6 +167,10 @@ class MainWindow(QMainWindow):
         layout.addLayout(row)
         self.doctor_button = self._button("Check runtime tools", self.check_tools)
         layout.addWidget(self.doctor_button)
+        self.runtime_install_button = self._button("Install / repair trusted runtime pack…", self.install_runtime_pack)
+        self.runtime_verify_button = self._button("Verify installed runtime pack", self.verify_runtime_pack)
+        layout.addWidget(self.runtime_install_button)
+        layout.addWidget(self.runtime_verify_button)
         self.tool_status = QLabel("Check QEMU and ARM-capable GDB before testing. ARM GCC is required to build the example.")
         self.tool_status.setWordWrap(True)
         layout.addWidget(self.tool_status)
@@ -381,6 +385,7 @@ class MainWindow(QMainWindow):
         idle = not self.busy and not self._closing
         project = self.project is not None
         for button in (self.new_button, self.open_button, self.example_button,
+                       self.runtime_install_button, self.runtime_verify_button,
                        self.doctor_button, self.create_button, self.firmware_button,
                        self.project_dir_button, self.open_run_button):
             button.setEnabled(idle)
@@ -567,6 +572,24 @@ class MainWindow(QMainWindow):
         self.status_label.setText(f"{command.replace('_', ' ').capitalize()} in progress…")
         self._refresh_enabled()
         return True
+
+    def _runtime_report(self, result):
+        self.tool_details.setPlainText(json.dumps(result, indent=2, sort_keys=True))
+        self.tool_status.setText("Runtime integrity checked. Capability probes do not establish native firmware qualification. Check runtime tools next.")
+
+    def verify_runtime_pack(self):
+        from firmavex.product.runtime_pack import active_tools
+        self._local_operation(lambda: {"verified_tools": active_tools()}, self._runtime_report)
+
+    def install_runtime_pack(self):
+        from PySide6.QtWidgets import QInputDialog
+        from firmavex.product.runtime_pack import install
+        path, _ = QFileDialog.getOpenFileName(self, "Select trusted runtime pack", "", "Runtime ZIP (*.zip)")
+        if not path:
+            return
+        digest, accepted = QInputDialog.getText(self, "Verify publisher checksum", "Paste the SHA-256 obtained separately from the trusted publisher. Installation executes tool capability probes. No official runtime pack is distributed yet.")
+        if accepted:
+            self._local_operation(lambda: install(Path(path), digest.strip()), self._runtime_report)
 
     def check_tools(self):
         self._start("doctor", {})

@@ -123,3 +123,10 @@ def test_toolchain_serialization_detached():
     serialized = result.to_dict()
     serialized["identities"]["qemu"]["version"] = "modified"
     assert result.identities["qemu"]["version"] == "1"
+
+def test_discovery_uses_managed_tools_and_explicit_override(fake_tool_probes, monkeypatch):
+    from firmavex.product import runtime_pack as pack
+    paths, calls = fake_tool_probes
+    monkeypatch.setattr(pack, 'active_tools', lambda: {'qemu': paths['qemu-system-arm'], 'gdb': paths['gdb-multiarch']})
+    result = tools.discover()
+    assert result.qemu == paths['qemu-system-arm']

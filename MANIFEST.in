@@ -13,3 +13,6 @@ prune dist
 prune .git
 prune .venv
 include tools/product_ci_tests.py
+
+recursive-include packaging *.py *.spec *.iss *.ps1 *.md *.txt
+include tools/desktop_distribution_manifest.py

@@ -45,6 +45,7 @@ jobs:
           tests/product/test_store.py
           tests/product/test_example.py
           tests/product/test_tools.py
+          tests/product/test_runtime_pack.py
           tests/product/test_file_state.py
           tests/product/test_services.py
           tests/product/test_windows_job.py

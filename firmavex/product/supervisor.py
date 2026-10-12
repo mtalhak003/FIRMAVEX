@@ -24,7 +24,7 @@ class Supervisor:
     def __init__(self, worker_argv: Sequence[str] | None = None, *, cancellation_grace: float = 15.0):
         if cancellation_grace <= 0:
             raise ValueError("Cancellation grace must be positive.")
-        self.worker_argv = list(worker_argv or [sys.executable, "-m", "firmavex.product.worker"])
+        self.worker_argv = list(worker_argv or ([sys.executable, "--firmavex-worker"] if getattr(sys, "frozen", False) else [sys.executable, "-m", "firmavex.product.worker"]))
         self.cancellation_grace = cancellation_grace
 
     def execute(self, command: str, payload: dict[str, Any], *,

@@ -47,7 +47,7 @@ def doctor() -> dict:
         "host": {"system": platform.system(), "machine": platform.machine()},
         "native_execution": "unsupported" if os.name == "nt" else "experimental",
         "limitations": [
-            "Native Windows process-tree supervision is not implemented in Batch 1.",
+            "Native Windows execution remains gated pending actual ARM runtime qualification.",
             "macOS native execution and installers have not been verified.",
             "Only symbolized Cortex-M3 ELF compatible with mps2-an385 is supported.",
         ],
@@ -160,7 +160,7 @@ def _execute_project(config, output_dir, *, cancel_event=None, event_callback=No
                      _executor_factory=None):
     if os.name == "nt" and _executor_factory is None:
         raise ProductError("unsupported_platform",
-                           "Native Windows execution needs tested process-tree supervision; Batch 1 does not claim it.")
+                           "Native Windows ARM execution is not qualified; the execution gate remains enabled.")
     validated = validate_project(config)
     config = _config(config)
     tools = discover(config)

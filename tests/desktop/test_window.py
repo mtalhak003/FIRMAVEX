@@ -209,3 +209,22 @@ def test_export_refuses_application_source_directory(view,monkeypatch):
     monkeypatch.setattr(ui.QFileDialog,'getExistingDirectory',lambda *a:str(Path(ui.__file__).resolve().parents[2]))
     w.export_result()
     assert c.calls==[] and 'desktop_project_error' in w.status_label.text()
+
+
+def test_runtime_verification_is_background_and_does_not_dispatch(view, monkeypatch, qtbot):
+    w, ctrl = view
+    from firmavex.product import runtime_pack
+    monkeypatch.setattr(runtime_pack, 'active_tools', lambda: {'qemu': '/verified/tool'})
+    w.verify_runtime_pack()
+    qtbot.waitUntil(lambda: w._local_task is None)
+    assert '/verified/tool' in w.tool_details.toPlainText()
+    assert ctrl.calls == []
+    assert 'do not establish native' in w.tool_status.text()
+
+
+def test_runtime_setup_controls_disabled_while_execution_active(view):
+    w, ctrl = view
+    ctrl.busy = True
+    w._refresh_enabled()
+    assert not w.runtime_install_button.isEnabled()
+    assert not w.runtime_verify_button.isEnabled()

@@ -64,12 +64,14 @@ class Toolchain:
                 "identities": copy.deepcopy(self.identities)}
 
 
-def discover(config=None, *, require_compiler: bool = False) -> Toolchain:
-    qemu = _resolve("qemu-system-arm", getattr(config, "qemu", None))
-    supplied_gdb = getattr(config, "gdb", None)
+def discover(config=None, *, require_compiler: bool = False, _managed: bool = True) -> Toolchain:
+    from .runtime_pack import active_tools
+    managed = active_tools() if _managed else {}
+    qemu = _resolve("qemu-system-arm", getattr(config, "qemu", None) or managed.get("qemu"))
+    supplied_gdb = getattr(config, "gdb", None) or managed.get("gdb")
     gdb = _resolve("arm-none-eabi-gdb", supplied_gdb or shutil.which("arm-none-eabi-gdb")
                    or shutil.which("gdb-multiarch"))
-    supplied_compiler = getattr(config, "compiler", None)
+    supplied_compiler = getattr(config, "compiler", None) or (managed.get("compiler") if require_compiler else None)
     compiler = (_resolve("arm-none-eabi-gcc", supplied_compiler)
                 if require_compiler or supplied_compiler is not None else None)
     identities = {}

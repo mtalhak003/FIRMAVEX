@@ -1,0 +1,111 @@
+name: Desktop distribution candidates
+on:
+  push:
+    branches: ["product/desktop-batch3"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest, macos-14]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install Qt host libraries
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libopengl0 libxkbcommon-x11-0 libxcb-cursor0
+      - run: python -m pip install ".[desktop,dev]" "pyinstaller==6.16.0"
+      - run: python -m PyInstaller --clean --noconfirm packaging/desktop.spec
+      - name: Record actual application identities
+        shell: bash
+        run: |
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            python tools/desktop_distribution_manifest.py dist/FIRMAVEX.app
+          else
+            python tools/desktop_distribution_manifest.py dist/FIRMAVEX
+          fi
+      - name: Linux installed application smoke
+        if: runner.os == 'Linux'
+        run: dist/FIRMAVEX/FIRMAVEX --smoke-test
+      - name: Linux frozen actual ARM execution
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get install --no-install-recommends -y gcc-arm-none-eabi qemu-system-arm gdb-multiarch
+          dist/FIRMAVEX/FIRMAVEX --firmavex-cli demo --output-dir "$RUNNER_TEMP/frozen-firmware-demo"
+          dist/FIRMAVEX/FIRMAVEX --firmavex-cli inspect "$RUNNER_TEMP/frozen-firmware-demo/search"
+      - name: Windows installed application smoke
+        if: runner.os == 'Windows'
+        run: dist/FIRMAVEX/FIRMAVEX.exe --smoke-test
+      - name: macOS installed application smoke
+        if: runner.os == 'macOS'
+        run: dist/FIRMAVEX.app/Contents/MacOS/FIRMAVEX --smoke-test
+      - name: Windows unsigned installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" packaging/windows.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Windows install upgrade uninstall (host GUI only)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./packaging/test_windows_install.ps1
+      - name: macOS unnotarized DMG
+        if: runner.os == 'macOS'
+        run: hdiutil create -volname FIRMAVEX -srcfolder dist/FIRMAVEX.app -ov -format UDZO dist/FIRMAVEX-macOS-unnotarized.dmg
+      - name: Linux portable application
+        if: runner.os == 'Linux'
+        run: tar -C dist -czf dist/FIRMAVEX-Linux-portable.tar.gz FIRMAVEX
+      - name: Checksums
+        shell: bash
+        run: |
+          python - <<'PY'
+          import hashlib, pathlib
+          root = pathlib.Path('dist')
+          files = sorted(p for p in root.iterdir() if p.is_file() and p.suffix in {'.exe', '.dmg', '.gz'})
+          (root/'SHA256SUMS').write_text(''.join(hashlib.sha256(p.read_bytes()).hexdigest()+'  '+p.name+'\n' for p in files))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FIRMAVEX-${{ matrix.os }}-unsigned-candidate
+          path: |
+            dist/*.exe
+            dist/*.dmg
+            dist/*.tar.gz
+            dist/SHA256SUMS
+          if-no-files-found: error
+  macos-firmware-qualification:
+    name: macOS ARM firmware qualification candidate
+    runs-on: macos-14
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install native runtime candidates
+        run: brew install qemu gdb arm-none-eabi-gcc
+      - run: python -m pip install ".[dev]"
+      - name: Probe native capabilities and execute actual firmware
+        run: |
+          mkdir -p "$RUNNER_TEMP/arm-gdb"
+          ln -s "$(command -v gdb)" "$RUNNER_TEMP/arm-gdb/arm-none-eabi-gdb"
+          export PATH="$RUNNER_TEMP/arm-gdb:$PATH"
+          firmavex doctor
+          firmavex demo --output-dir "$RUNNER_TEMP/native-arm-demo"
+          firmavex inspect "$RUNNER_TEMP/native-arm-demo/search"
+      - name: Preserve real execution records even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macOS-native-ARM-qualification-evidence
+          path: ${{ runner.temp }}/native-arm-demo
+          if-no-files-found: warn
