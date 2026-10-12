@@ -23,6 +23,7 @@ import uuid
 
 from firmavex.product.config import ProductConfig
 from firmavex.product.errors import ProductError
+from firmavex.product.file_state import path_state, handle_state
 from firmavex.product.firmware import MAX_IMAGE_BYTES, inspect_elf
 
 
@@ -46,10 +47,6 @@ def application_data_directory() -> Path:
 
 def _fail(message: str, category: str = "desktop_project_error") -> None:
     raise ProductError(category, message)
-
-
-def _fingerprint(value: os.stat_result) -> tuple:
-    return value.st_dev, value.st_ino, value.st_size, value.st_mtime_ns, value.st_ctime_ns
 
 
 def _safe_root(value: str | Path) -> Path:
@@ -78,18 +75,18 @@ def _regular(path: Path) -> os.stat_result:
 
 def _read(path: Path, *, maximum: int = 1024 * 1024) -> bytes:
     before = _regular(path)
+    initial = path_state(path, before)
     if not 0 < before.st_size <= maximum:
         _fail(f"Project file {path.name} has an invalid size.")
     try:
         with path.open("rb") as stream:
-            opened = os.fstat(stream.fileno())
+            opened = handle_state(stream.fileno())
             data = stream.read(maximum + 1)
-            finished = os.fstat(stream.fileno())
+            finished = handle_state(stream.fileno())
         after = _regular(path)
     except OSError as exc:
         _fail(f"Cannot read project file {path.name}: {exc}")
-    if len(data) > maximum or not (_fingerprint(before) == _fingerprint(opened)
-                                  == _fingerprint(finished) == _fingerprint(after)):
+    if len(data) > maximum or not (initial == opened == finished == path_state(path, after)):
         _fail(f"Project file {path.name} changed while being read.", "artifact_changed")
     return data
 
@@ -197,22 +194,22 @@ class DesktopProject:
         # Only this newly created directory is cleaned if import fails.
         try:
             before = _regular(source)
+            initial = path_state(source, before)
             digest = hashlib.sha256()
             total = 0
             with source.open("rb") as incoming, project.firmware_path.open("xb") as outgoing:
-                opened = os.fstat(incoming.fileno())
+                opened = handle_state(incoming.fileno())
                 while chunk := incoming.read(1024 * 1024):
                     total += len(chunk)
                     if total > MAX_IMAGE_BYTES:
                         _fail("Firmware grew beyond the import limit.", "artifact_changed")
                     outgoing.write(chunk)
                     digest.update(chunk)
-                finished = os.fstat(incoming.fileno())
+                finished = handle_state(incoming.fileno())
                 outgoing.flush()
                 os.fsync(outgoing.fileno())
             after = _regular(source)
-            if (not (_fingerprint(before) == _fingerprint(opened) == _fingerprint(finished)
-                     == _fingerprint(after)) or digest.hexdigest() != validated["firmware_sha256"]):
+            if (not (initial == opened == finished == path_state(source, after)) or digest.hexdigest() != validated["firmware_sha256"]):
                 _fail("Firmware changed during import.", "artifact_changed")
             imported = replace(config, firmware=project.firmware_path)
             imported_identity = inspect_elf(imported)

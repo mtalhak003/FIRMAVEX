@@ -18,6 +18,7 @@ import stat
 from typing import Any
 
 from .errors import ProductError
+from .file_state import path_state, handle_state
 
 
 _TERMINAL_STATES = frozenset({"completed", "failed", "cancelled", "interrupted"})
@@ -117,19 +118,17 @@ def _validate_result(result: dict) -> str:
 
 
 def _read_consistent(source: Path) -> bytes:
-    def identity(info: os.stat_result) -> tuple:
-        return (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
-
     before = source.stat()
+    initial = path_state(source, before)
     if not stat.S_ISREG(before.st_mode):
         raise _error("Artifact source must be a regular file")
     with source.open("rb") as handle:
-        opened = os.fstat(handle.fileno())
+        opened = handle_state(handle.fileno())
         content = handle.read()
-        after_read = os.fstat(handle.fileno())
+        after_read = handle_state(handle.fileno())
     after = source.stat()
     if len(content) != before.st_size or any(
-        identity(info) != identity(before) for info in (opened, after_read, after)
+        info != initial for info in (opened, after_read, path_state(source, after))
     ):
         raise _error("Artifact source changed during capture")
     return content

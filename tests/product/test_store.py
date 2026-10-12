@@ -84,14 +84,16 @@ def test_create_rejects_dangling_symlink(tmp_path):
 
 def test_inspection_is_readonly_and_preserves_running_state(archive):
     root = archive.root
-    before = {p.name: (p.read_bytes(), p.stat().st_mtime_ns) for p in root.iterdir() if p.is_file()}
+    # The OS lock byte is administrative state; Windows denies concurrent
+    # reads of that byte. Compare every data file, not the writer-control file.
+    before = {p.name: (p.read_bytes(), p.stat().st_mtime_ns) for p in root.iterdir() if p.is_file() and p.name != ".writer.lock"}
     with RunStore(root) as reader:
         assert reader.snapshot()["state"] == "running"
         with pytest.raises(ProductError, match="read-only"):
             reader.append_event("bad", {})
         with pytest.raises(ProductError, match="read-only"):
             reader.write_json("new.json", {})
-    after = {p.name: (p.read_bytes(), p.stat().st_mtime_ns) for p in root.iterdir() if p.is_file()}
+    after = {p.name: (p.read_bytes(), p.stat().st_mtime_ns) for p in root.iterdir() if p.is_file() and p.name != ".writer.lock"}
     assert after == before
 
 
@@ -333,7 +335,7 @@ def test_terminal_archive_cannot_add_artifacts(archive):
 def test_text_artifact_is_utf8_and_exclusive(archive):
     text = "# Evidence\ntrigger input: [3, 5] — preliminary\n"
     identity = archive.write_text("report.md", text)
-    assert (archive.root / "report.md").read_text() == text
+    assert (archive.root / "report.md").read_text(encoding="utf-8") == text
     assert archive.verify_artifacts()["report.md"] == identity
     with pytest.raises(ProductError):
         archive.write_text("report.md", "overwrite")

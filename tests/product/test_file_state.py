@@ -1,0 +1,32 @@
+"""Native path/handle consistency without firmware measurements."""
+import os
+import sys
+import time
+import pytest
+from firmavex.product.file_state import path_state,handle_state
+
+
+def test_open_file_identity_agrees_with_path_and_survives_read(tmp_path):
+    source=tmp_path/'file with spaces';source.write_bytes(b'unchanged bytes')
+    before=path_state(source)
+    with source.open('rb') as handle:
+        assert handle_state(handle.fileno())==before
+        assert handle.read()==b'unchanged bytes'
+        assert handle_state(handle.fileno())==before
+    assert path_state(source)==before
+
+
+def test_missing_path_fails_instead_of_returning_identity(tmp_path):
+    with pytest.raises(OSError): path_state(tmp_path/'missing')
+
+
+@pytest.mark.skipif(sys.platform!='win32',reason='Actual NTFS change-time semantics require native Windows')
+def test_native_windows_change_time_detects_same_size_write_with_restored_mtime(tmp_path):
+    source=tmp_path/'native-state';source.write_bytes(b'old')
+    initial=path_state(source);stat=source.stat()
+    time.sleep(.03)
+    source.write_bytes(b'new')
+    os.utime(source,ns=(stat.st_atime_ns,stat.st_mtime_ns))
+    assert path_state(source)!=initial
+    with source.open('rb') as handle:
+        assert handle_state(handle.fileno())==path_state(source)

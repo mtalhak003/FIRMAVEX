@@ -8,23 +8,22 @@ import shutil
 import subprocess
 
 from firmavex.product.errors import ProductError
+from .file_state import path_state, handle_state
 
 
 def file_identity(path: str | Path) -> dict:
     """Reject observable replacement/modification while reading an artifact."""
     path = Path(path).resolve(strict=True)
     before = path.stat()
+    initial = path_state(path, before)
     digest = hashlib.sha256()
     with path.open("rb") as stream:
-        opened = os.fstat(stream.fileno())
+        opened = handle_state(stream.fileno())
         while chunk := stream.read(1024 * 1024):
             digest.update(chunk)
-        finished = os.fstat(stream.fileno())
+        finished = handle_state(stream.fileno())
     after = path.stat()
-    fingerprint = lambda value: (value.st_dev, value.st_ino, value.st_size,
-                                 value.st_mtime_ns, value.st_ctime_ns)
-    if not (fingerprint(before) == fingerprint(opened) == fingerprint(finished)
-            == fingerprint(after)):
+    if not (initial == opened == finished == path_state(path, after)):
         raise ProductError("artifact_changed", f"Artifact changed while hashing: {path}")
     return {"path": str(path), "sha256": digest.hexdigest(), "size_bytes": after.st_size}
 

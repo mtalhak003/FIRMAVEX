@@ -15,6 +15,7 @@ from elftools.elf.sections import ARMAttributesSection, SymbolTableSection
 
 from firmavex.product.config import BINDING, ProductConfig
 from firmavex.product.errors import ProductError
+from .file_state import path_state, handle_state
 
 
 FLASH = (0, 4 * 1024 * 1024)
@@ -26,33 +27,30 @@ def _reject(message: str) -> None:
     raise ProductError("unsupported_firmware", message)
 
 
-def _fingerprint(stat) -> tuple:
-    return (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
-
-
 def _read_image(path: Path) -> tuple[bytes, dict, tuple]:
     try:
         before = path.stat()
+        initial = path_state(path, before)
         if not path.is_file() or not 0 < before.st_size <= MAX_IMAGE_BYTES:
             _reject("Firmware must be a regular, nonempty ELF no larger than 64 MiB.")
         digest = hashlib.sha256()
         pieces = []
         with path.open("rb") as stream:
-            opened = os.fstat(stream.fileno())
+            opened = handle_state(stream.fileno())
             while chunk := stream.read(1024 * 1024):
                 pieces.append(chunk)
                 digest.update(chunk)
                 if sum(map(len, pieces)) > MAX_IMAGE_BYTES:
                     _reject("Firmware grew beyond the 64 MiB validation limit.")
-            finished = os.fstat(stream.fileno())
+            finished = handle_state(stream.fileno())
         after = path.stat()
     except OSError as exc:
         raise ProductError("invalid_firmware", f"Cannot read firmware: {exc}") from exc
-    if not (_fingerprint(before) == _fingerprint(opened) == _fingerprint(finished) == _fingerprint(after)):
+    if not (initial == opened == finished == path_state(path, after)):
         raise ProductError("artifact_changed", "Firmware changed during validation.")
     data = b"".join(pieces)
     return data, {"path": str(path), "firmware_sha256": digest.hexdigest(),
-                  "size_bytes": len(data)}, _fingerprint(after)
+                  "size_bytes": len(data)}, path_state(path, after)
 
 
 def _contains(region: tuple[int, int], address: int, size: int) -> bool:
@@ -273,7 +271,7 @@ def inspect_elf(config: ProductConfig) -> dict:
         # Control-flow exceptions still propagate rather than becoming data.
         raise ProductError("unsupported_firmware", f"Malformed or unsupported ELF metadata: {exc}") from exc
     try:
-        if _fingerprint(config.firmware.stat()) != fingerprint:
+        if path_state(config.firmware) != fingerprint:
             raise ProductError("artifact_changed", "Firmware changed while validating captured metadata.")
     except OSError as exc:
         raise ProductError("artifact_changed", "Firmware disappeared during validation.") from exc
