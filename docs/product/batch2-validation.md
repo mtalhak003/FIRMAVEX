@@ -9,8 +9,8 @@ The distribution version is `0.2.0.dev1` (alpha).
 | Check | Observed result |
 | --- | --- |
 | Starting Batch 1 complete suite | 1,762 passed |
-| Final desktop/product selection | 544 passed, 3 native-Windows checks skipped |
-| Final complete suite | 1,909 passed, 3 native-Windows checks skipped; 182.47 seconds |
+| Final desktop/product selection | 546 passed, 4 native-Windows checks skipped |
+| Final complete suite | 1,911 passed, 4 native-Windows checks skipped; 194.82 seconds |
 | Fresh Python 3.11 selected product/GUI checks | 440 passed, 3 native-Windows checks skipped |
 | Fresh Python 3.11 packaging/startup/window checks | 31 passed |
 | Original Batch 1 Ubuntu 3.11 CI selection reproduced from its Git archive | 251 passed |
@@ -21,7 +21,7 @@ The distribution version is `0.2.0.dev1` (alpha).
 | CI summary helper | Preserves passing and intentionally failing exit statuses |
 
 The final three added configuration-snapshot regressions are included in the
-544/1,909 results. Python 3.11 selections precede those three regressions and are
+546/1,911 results. Python 3.11 selections precede those three regressions and are
 reported separately rather than added together as one suite count.
 
 Local tools: Python 3.12.14, PySide6 6.12.0, ARM GCC 14.2.1, QEMU 10.0.13,
@@ -63,8 +63,8 @@ Filesystem-heavy project operations use background tasks. Runs use immutable
 command configurations so later edits by another window cannot alter admission.
 
 Windows Job Objects use kill-on-close descendant ownership before the first
-worker command. Three native Windows host-process tests are skipped on Linux;
-the actual native CI outcomes must be checked independently. Firmware dispatch
+worker command. Four native Windows checks (host process ownership and precise file metadata)
+are skipped on Linux. They run on native Windows in the verified CI matrix. Firmware dispatch
 remains blocked on Windows until native ARM qualification. macOS execution and
 standalone installers remain unverified. No signed Windows/macOS installer or
 bundled QEMU/GDB/ARM toolchain is delivered.
@@ -84,9 +84,16 @@ REST/gh API reads returned Forbidden. A fresh local 3.11 reproduction passing
 251 tests does not erase that failure or prove its cause.
 
 Batch 2 improves declared build dependencies, installed GUI/package checks,
-native host supervision tests, and public JUnit-based failure summaries. Remote
-Batch 2 run conclusions are checked after push and reported in the delivery
-message. Merely adding this workflow is not evidence of native platform success.
+native host supervision tests, and public JUnit-based failure summaries. Remote Batch 2 run [38255127322](https://github.com/mtalhak003/FIRMAVEX/actions/runs/38255127322)
+completed successfully for code commit `84c0561f7798ffc45096a9df6da40cd6129dd3e8`: all six
+Windows/macOS/Linux Python 3.11/3.12 matrix jobs and the actual Ubuntu firmware
+regression job passed. Native host-process ownership, precise file metadata,
+Qt tests, package installation, and desktop smoke checks passed in that matrix.
+This does not qualify Windows/macOS ARM firmware execution or native installers.
+The initial failed Windows checks revealed mismatched stat/fstat metadata,
+UTF-8 test decoding, and inappropriate reads of an OS-locked control byte.
+Native Win32 path/handle queries now use the same precise metadata source;
+data-file comparison and UTF-8 checks remain strict.
 No main/research campaign is launched to obtain these checks.
 
 ## Research preservation
@@ -113,9 +120,13 @@ and optional cancellation support are additive product functionality.
 - `firmavex/desktop/window.py`
 - `firmavex/product/cli.py`
 - `firmavex/product/example.py`
+- `firmavex/product/file_state.py`
+- `firmavex/product/firmware.py`
 - `firmavex/product/protocol.py`
 - `firmavex/product/services.py`
+- `firmavex/product/store.py`
 - `firmavex/product/supervisor.py`
+- `firmavex/product/tools.py`
 - `firmavex/product/windows_job.py`
 - `firmavex/product/worker.py`
 - `pyproject.toml`
@@ -126,7 +137,9 @@ and optional cancellation support are additive product functionality.
 - `tests/desktop/test_real_firmware.py`
 - `tests/desktop/test_window.py`
 - `tests/product/test_desktop_jobs.py`
+- `tests/product/test_file_state.py`
 - `tests/product/test_packaging.py`
+- `tests/product/test_store.py`
 - `tests/product/test_supervisor.py`
 - `tests/product/test_windows_job.py`
 - `tools/product_ci_tests.py`

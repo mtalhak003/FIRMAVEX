@@ -143,9 +143,9 @@ reports. No finding repairs or changes the Step 19 research evidence gap.
 
 | Area | Linux | Windows | macOS |
 | --- | --- | --- | --- |
-| Desktop | Offscreen widgets and real workflow tested locally | Native Qt CI is required; not established by Linux | Native Qt CI is required; not established by Linux |
+| Desktop | Offscreen widgets and real workflow tested locally | Native offscreen Qt/installation CI passed (3.11/3.12) | Native offscreen Qt/installation CI passed (3.11/3.12) |
 | Firmware execution | Bounded actual ARM/QEMU/GDB checks pass locally | Explicitly blocked pending native ARM qualification | Native ARM execution unverified |
-| Process ownership | POSIX worker group/direct-child cleanup tested | Job Object implementation; native host-process tests in CI | POSIX abstraction; native qualification required |
+| Process ownership | POSIX worker group/direct-child cleanup tested | Job Object native host-process tests passed in CI | POSIX abstraction; native host tests passed in CI |
 | Installer/runtime pack | Python wheel/source installation | No signed installer/runtime pack | No notarized installer/runtime pack |
 
 The existing Windows firmware gate is deliberately retained. Passing a host Python
@@ -159,7 +159,10 @@ The old Ubuntu Python 3.11 unit selection passed when reproduced in a fresh loca
 3.11 environment; that does not identify or erase its historical CI failure.
 Batch 2 adds explicit build-backend development dependencies, desktop/package
 checks, Windows host ownership tests, and public JUnit-derived job summaries.
-Actual Batch 2 run conclusions must be checked; workflow presence is not a pass.
+Batch 2 run [38255127322](https://github.com/mtalhak003/FIRMAVEX/actions/runs/38255127322)
+passed all six native OS/Python matrix jobs and the Ubuntu real-firmware job
+for code commit `84c0561f7798ffc45096a9df6da40cd6129dd3e8`. These native host/Qt
+checks do not qualify Windows/macOS ARM execution, interactive usability, or installers.
 
 ## Next batch
 
