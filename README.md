@@ -45,14 +45,16 @@ engine reference.
   are tested. This does not qualify every Linux distribution or tool version.
 - **WSL2:** requires WSLg for the interactive GUI; this cloud batch is not native
   WSL qualification.
-- **Windows:** Job Object process-tree ownership is implemented with native host
-  tests in CI, but firmware dispatch remains blocked until native ARM runtime
-  qualification. An installer is not provided.
-- **macOS:** GUI and runtime qualification must be established by native tests;
-  Linux checks do not certify either. No signed/notarized installer is provided.
+- **Windows x86-64:** actual ARM adapter, supervised CLI, GUI and frozen-executable
+  example workflows passed native CI. Only the checksum-qualified MSYS2 UCRT64
+  QEMU/GDB profile is admitted. An unsigned per-user installer candidate is available.
+- **macOS Apple Silicon:** actual source and app-bundle example execution passed
+  native CI. Intel macOS remains unqualified; the DMG is unnotarized.
 
-The configured CI matrix is not itself evidence that jobs passed. See the
-Batch 2 validation record for the observed run status and any remaining blockers.
+These are development candidates, not a public beta. They do not yet include a
+qualified one-click QEMU/GDB runtime distribution. See the [Batch 3 validation
+record](docs/product/batch3-validation.md) for observed CI results and remaining
+gates. The Batch 2 record remains historical.
 
 ## Research preservation
 

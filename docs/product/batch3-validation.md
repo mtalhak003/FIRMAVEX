@@ -85,3 +85,24 @@ firmware subprocess policy. Timeouts were not relaxed. Dedicated tests check
 that probes/compiler cannot consume the worker command stream, including a real
 host EOF probe. Focused verification: `52 passed, 1 skipped`. Native CI must verify
 the complete supervised/GUI/frozen workflows before a full-path readiness claim.
+
+
+## Final observed CI result
+
+Code commit `bb77217d6d254d3c231723213f3b895a4ad4372c` passed both workflows:
+
+* [Native distribution/qualification 38282319695](https://github.com/mtalhak003/FIRMAVEX/actions/runs/38282319695):
+  all five jobs green (three package targets, Apple Silicon real firmware and Windows
+  real firmware). Windows supervised CLI, real Qt workflow, frozen application and
+  archive validation succeeded after stdin isolation. Source/frozen Windows receipts
+  identify image SHA-256 respectively
+  `f8cd7b41163149b052e4b8966b9ee6ffcbf570989e90b494e52052d0a611c0e1`
+  and `71f3db2a24ddf78ddcb863a3619cbc90698406df06bfc90343cde612be5355f7`.
+* [Regression 38282319967](https://github.com/mtalhak003/FIRMAVEX/actions/runs/38282319967):
+  all seven jobs green (six OS/Python unit/GUI combinations plus Ubuntu actual
+  firmware and the unchanged research regression suite).
+
+Earlier failed investigations remain in Actions history; none were disabled or
+represented as passes. This final update changes documentation only and does not
+change the qualified code. Packaging artifacts are tied to the above code commit;
+unsigned/unnotarized and broader public-beta limitations still apply.

@@ -9,8 +9,8 @@ from firmware qualification. Windows admission remains gated except for the exac
 | Platform | Application packaging | Actual ARM execution |
 | --- | --- | --- |
 | Linux x86-64 | Portable PyInstaller directory/tar, built on Linux | Tested on this Linux cloud host; see validation report |
-| Windows x86-64 | Per-user Inno Setup candidate, unsigned | Six native adapter tests passed; only checksum-qualified QEMU/GDB admitted |
-| macOS | Native `.app` and unnotarized DMG candidates | Independent example passed native macOS CI; broader/bundled firmware qualification pending |
+| Windows x86-64 | Per-user Inno Setup candidate, unsigned | Native adapter, supervised CLI/GUI and frozen example passed; checksum-qualified runtime only |
+| macOS | Native `.app` and unnotarized DMG candidates | Apple Silicon source and app-bundle example passed; Intel and wider firmware unqualified |
 | WSL2/WSLg | Linux package needs WSLg display and compatible Linux libraries | Not tested on an actual WSL host in this batch |
 
 Only symbolized ELF32 little-endian Cortex-M3 images with supported DWARF uint32
@@ -142,8 +142,7 @@ then runs real adapter/input/timeout/cancellation tests. This is an investigatio
 not a frozen or redistributed runtime pack. No signature checks are disabled.
 Six actual ARM adapter tests passed in run 38278936642 on Windows AMD64.
 The production gate now admits only the observed QEMU/GDB executable versions
-and SHA-256 digests. Other Windows architectures/builds remain blocked. Integrated
-supervised desktop and frozen execution have dedicated subsequent CI checks. Package recipes are not proof that
+and SHA-256 digests. Other Windows architectures/builds remain blocked. Integrated supervised desktop and frozen execution also passed subsequent native CI. Package recipes are not proof that
 those binaries work or that their dependency closure is portable.
 
 
@@ -159,3 +158,37 @@ Do not replace this profile automatically with a future package-feed version.
 The signed-feed installer is used in CI; no official one-click runtime ZIP is
 published yet. Ordinary-user runtime distribution and licensing audit remain
 public-beta blockers.
+
+
+## Observed qualification and artifacts
+
+At code commit `bb77217d6d254d3c231723213f3b895a4ad4372c`:
+
+* Distribution and native firmware: Actions run **38282319695**, successful.
+  Three package jobs plus Windows and Apple Silicon actual firmware jobs passed.
+* Regression matrix and Ubuntu complete suite: Actions run **38282319967**, successful.
+  All six OS/Python unit/GUI matrix jobs plus the actual-firmware Ubuntu job passed.
+* Windows source and frozen demonstrations each retained 13 real receipts:
+  exact trigger [2,1] at attempt 10; reproduction 3/3. The actual Qt workflow also
+  passed search, reproduction, export, cancellation accounting and process cleanup.
+* Apple Silicon source and app-bundle demonstrations each retained 13 real receipts.
+* Linux frozen application retained 13 real receipts. No full campaign was run.
+
+Open https://github.com/mtalhak003/FIRMAVEX/actions/runs/38282319695 and sign in.
+Under Artifacts download the matching `FIRMAVEX-<OS>-unsigned-candidate` ZIP.
+It contains the installer/DMG/portable tar and SHA256SUMS. Actual execution records
+are separate evidence artifacts; they are not runtime dependencies or research
+campaign results. Artifact retention can expire; these are not permanent releases.
+
+**Runtime prerequisites remain separate.** Windows qualification used the signed
+MSYS2 UCRT64 packages QEMU 11.1.2/GDB 18.1/ARM GCC 16.1.0. macOS used Homebrew
+QEMU 11.1.1/GDB 17.2/ARM GCC 16.2.0 on arm64. Linux CI used Ubuntu 24.04 packages.
+Installing these manually is still a developer prerequisite until vetted runtime
+packs are published. Installing/importing a user ELF needs QEMU/GDB, not ARM GCC;
+GCC is required for the source example. No automatic installer/download catalog
+or compiler-free example is provided in this batch.
+
+Runtime repair retains older generations, but reproduction still requires saved
+image/tool identities to match, including recorded paths. Activating a different
+generation may therefore require restoring the historical tool context before
+replay. No automatic historical-runtime selector or data migration is implemented.

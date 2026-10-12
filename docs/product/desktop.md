@@ -1,3 +1,7 @@
+> Current distribution and native runtime qualification: [Batch 3](batch3.md).
+> This document describes the Batch 2 UI workflow; its earlier platform limitations
+> are historical where superseded by the Batch 3 validation record.
+
 # FIRMAVEX Desktop — Batch 2
 
 Batch 2 is a functional PySide6 desktop workflow around the Batch 1 engine, not a
