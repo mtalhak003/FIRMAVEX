@@ -6,6 +6,33 @@ import shutil
 import pytest
 
 
+def assert_process_not_running(pid):
+    if os.name != 'nt':
+        with pytest.raises(ProcessLookupError):
+            os.kill(pid, 0)
+        return
+    # Windows os.kill(pid, 0) is not a harmless POSIX existence probe.
+    # Query a native process handle without signalling or terminating anything.
+    import ctypes
+    library = ctypes.WinDLL('kernel32', use_last_error=True)
+    library.OpenProcess.argtypes = [ctypes.c_uint32, ctypes.c_int32, ctypes.c_uint32]
+    library.OpenProcess.restype = ctypes.c_void_p
+    library.GetExitCodeProcess.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint32)]
+    library.GetExitCodeProcess.restype = ctypes.c_int32
+    library.CloseHandle.argtypes = [ctypes.c_void_p]
+    library.CloseHandle.restype = ctypes.c_int32
+    handle = library.OpenProcess(0x1000, False, pid)
+    if not handle:
+        assert ctypes.get_last_error() == 87  # ERROR_INVALID_PARAMETER: absent PID
+        return
+    try:
+        code = ctypes.c_uint32()
+        assert library.GetExitCodeProcess(handle, ctypes.byref(code))
+        assert code.value != 259  # STILL_ACTIVE
+    finally:
+        assert library.CloseHandle(handle)
+
+
 def test_real_desktop_build_import_search_reproduction_export_and_cancel(qtbot,tmp_path,monkeypatch):
     if not shutil.which('arm-none-eabi-gcc') or not shutil.which('qemu-system-arm') or not (shutil.which('arm-none-eabi-gdb') or shutil.which('gdb-multiarch')):
         if os.environ.get('FIRMAVEX_REQUIRE_RUNTIME')=='1':
@@ -57,7 +84,7 @@ def test_real_desktop_build_import_search_reproduction_export_and_cancel(qtbot,t
                 assert evidence['cleanup_verified'] and evidence['measurement_mode']=='real_firmware'
                 assert all(p['reaped'] for p in evidence['cleanup']['processes'])
                 for child in evidence['cleanup']['processes']:
-                    with pytest.raises(ProcessLookupError): os.kill(child['pid'],0)
+                    assert_process_not_running(child['pid'])
         # A required unreachable completion function gives enough time to
         # cancel a charged fresh attempt. It is not counted as safe firmware.
         w.complete_edit.setText('Default_Handler'); w.timeout_spin.setValue(5)

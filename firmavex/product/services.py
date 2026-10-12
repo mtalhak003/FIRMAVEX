@@ -42,13 +42,16 @@ def _config(value: ProductConfig | str | Path) -> ProductConfig:
 
 def doctor() -> dict:
     tools = discover()
+    from .platform_support import windows_profile
+    profile = windows_profile(tools) if os.name == "nt" else None
     return {
         "schema_version": 1, "success": True, "tools": tools.to_dict(),
         "host": {"system": platform.system(), "machine": platform.machine()},
-        "native_execution": "unsupported" if os.name == "nt" else "experimental",
+        "native_execution": ("qualified_example_runtime" if profile else "unsupported") if os.name == "nt" else "experimental",
+        "runtime_profile": profile,
         "limitations": [
-            "Native Windows execution remains gated pending actual ARM runtime qualification.",
-            "macOS native execution and installers have not been verified.",
+            "Windows execution requires the checksum-qualified native runtime profile.",
+            "Apple Silicon example execution is verified; broader firmware and signed installers are not qualified.",
             "Only symbolized Cortex-M3 ELF compatible with mps2-an385 is supported.",
         ],
     }
@@ -158,12 +161,12 @@ class _RecordedSession:
 def _execute_project(config, output_dir, *, cancel_event=None, event_callback=None,
                      replay_values=None, replay_attempts=0, parent=None,
                      _executor_factory=None):
-    if os.name == "nt" and _executor_factory is None:
-        raise ProductError("unsupported_platform",
-                           "Native Windows ARM execution is not qualified; the execution gate remains enabled.")
     validated = validate_project(config)
     config = _config(config)
     tools = discover(config)
+    if _executor_factory is None:
+        from .platform_support import require_native_support
+        require_native_support(tools)
     cancel = cancel_event if cancel_event is not None else threading.Event()
     mode = "real_firmware" if _executor_factory is None else "synthetic_test"
     run_id = str(uuid4())

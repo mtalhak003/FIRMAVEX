@@ -114,7 +114,10 @@ jobs:
   windows-firmware-candidate:
     name: Windows native ARM adapter qualification candidate
     runs-on: windows-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
+    env:
+      QT_QPA_PLATFORM: offscreen
+      FIRMAVEX_REQUIRE_RUNTIME: "1"
     steps:
       - uses: actions/checkout@v5
       - uses: msys2/setup-msys2@v2
@@ -136,7 +139,7 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - run: python -m pip install ".[dev]"
+      - run: python -m pip install ".[dev,desktop,gui-test]" "pyinstaller==6.16.0"
       - name: Probe signed-feed native runtime candidates
         env:
           MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
@@ -145,7 +148,7 @@ jobs:
           $env:PATH = (Join-Path $env:MSYS2_LOCATION "ucrt64\bin") + ";" + $env:PATH
           & "$env:pythonLocation\python.exe" -m tools.desktop_runtime_probe
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Real ARM adapter and cancellation tests (production gate unchanged)
+      - name: Real ARM adapter and cancellation tests
         env:
           MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
         shell: pwsh
@@ -153,3 +156,47 @@ jobs:
           $env:PATH = (Join-Path $env:MSYS2_LOCATION "ucrt64\bin") + ";" + $env:PATH
           & "$env:pythonLocation\python.exe" tools/product_ci_tests.py -q tests/product/test_runtime.py -k actual_
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Qualified Windows supervised real firmware demonstration
+        shell: pwsh
+        env:
+          MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
+        run: |
+          $env:PATH = (Join-Path $env:MSYS2_LOCATION "ucrt64\bin") + ";" + $env:PATH
+          & "$env:pythonLocation\python.exe" -m firmavex.product.cli demo --output-dir "$env:RUNNER_TEMP/windows-native-demo"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & "$env:pythonLocation\python.exe" -m tools.desktop_native_evidence "$env:RUNNER_TEMP/windows-native-demo"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Archive native Windows firmware evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Windows-native-supervised-firmware-evidence
+          path: ${{ runner.temp }}/windows-native-demo
+          if-no-files-found: warn
+      - name: Native Windows real desktop cancellation and export workflow
+        shell: pwsh
+        env:
+          MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
+        run: |
+          $env:PATH = (Join-Path $env:MSYS2_LOCATION "ucrt64\bin") + ";" + $env:PATH
+          & "$env:pythonLocation\python.exe" tools/product_ci_tests.py -q tests/desktop/test_real_firmware.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Frozen Windows actual ARM workflow
+        shell: pwsh
+        env:
+          MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
+        run: |
+          & "$env:pythonLocation\python.exe" -m PyInstaller --clean --noconfirm packaging/desktop.spec
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $env:PATH = (Join-Path $env:MSYS2_LOCATION "ucrt64\bin") + ";" + $env:PATH
+          & dist/FIRMAVEX/FIRMAVEX.exe --firmavex-cli demo --output-dir "$env:RUNNER_TEMP/windows-frozen-demo"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & "$env:pythonLocation\python.exe" -m tools.desktop_native_evidence "$env:RUNNER_TEMP/windows-frozen-demo"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Archive frozen Windows firmware evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Windows-frozen-firmware-evidence
+          path: ${{ runner.temp }}/windows-frozen-demo
+          if-no-files-found: warn

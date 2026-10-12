@@ -2,14 +2,14 @@
 
 This branch is a development candidate, not a public beta. Frozen research
 protocols, results and campaigns are unchanged. Runtime installation is distinct
-from firmware qualification. The existing native Windows execution gate remains.
+from firmware qualification. Windows admission remains gated except for the exact checksum-qualified native runtime profile.
 
 ## Compatibility boundaries
 
 | Platform | Application packaging | Actual ARM execution |
 | --- | --- | --- |
 | Linux x86-64 | Portable PyInstaller directory/tar, built on Linux | Tested on this Linux cloud host; see validation report |
-| Windows x86-64 | Per-user Inno Setup candidate, unsigned | Blocked pending native ARM/GDB qualification |
+| Windows x86-64 | Per-user Inno Setup candidate, unsigned | Six native adapter tests passed; only checksum-qualified QEMU/GDB admitted |
 | macOS | Native `.app` and unnotarized DMG candidates | Independent example passed native macOS CI; broader/bundled firmware qualification pending |
 | WSL2/WSLg | Linux package needs WSLg display and compatible Linux libraries | Not tested on an actual WSL host in this batch |
 
@@ -48,8 +48,7 @@ outer Actions ZIP, verify the included SHA256SUMS against the package bytes.
 Checksums detect corruption; authenticate the publisher/channel separately.
 
 * Windows: run `FIRMAVEX-Windows-unsigned.exe`. It installs for the current user,
-  creates a Start menu entry, and optionally a desktop shortcut. Native testing
-  remains blocked. Unsigned packages may prompt SmartScreen; do not disable OS
+  creates a Start menu entry, and optionally a desktop shortcut. Native testing requires the checksum-qualified MSYS2 UCRT64 runtime. Unsigned packages may prompt SmartScreen; do not disable OS
   security controls. GUI/installer CI checks are separate from ARM qualification.
 * Linux: extract the portable tar into a user-owned applications directory and
   launch `FIRMAVEX/FIRMAVEX`. Compatible host display, GL and libc are required;
@@ -127,8 +126,7 @@ of projects/results is separate and must be deliberate.
 
 ## Release gates
 
-Before public beta: actual native Windows firmware qualification with a licensed,
-checksum-pinned relocatable runtime; macOS Intel and Apple Silicon qualification;
+Before public beta: a licensed, checksum-pinned relocatable Windows runtime distribution; macOS Intel and Apple Silicon qualification;
 actual WSLg tests; runtime binary/source supply chain; signed Windows installer;
 Developer-ID signing/notarization; clean-VM install/upgrade/uninstall tests;
 compiler-free example import; GUI-only launcher; offline setup/repair usability
@@ -142,6 +140,22 @@ ARM GCC, and `gdb-multiarch` built with embedded Python and all targets. The
 Windows candidate job installs these through MSYS2's normal signed-package feed,
 then runs real adapter/input/timeout/cancellation tests. This is an investigation,
 not a frozen or redistributed runtime pack. No signature checks are disabled.
-The production Windows gate remains unchanged pending observed qualification
-and integrated supervised desktop execution. Package recipes are not proof that
+Six actual ARM adapter tests passed in run 38278936642 on Windows AMD64.
+The production gate now admits only the observed QEMU/GDB executable versions
+and SHA-256 digests. Other Windows architectures/builds remain blocked. Integrated
+supervised desktop and frozen execution have dedicated subsequent CI checks. Package recipes are not proof that
 those binaries work or that their dependency closure is portable.
+
+
+## Qualified Windows profile (schema/version 1)
+
+Profile `msys2-ucrt64-qemu11.1.2-gdb18.1-v1` is admitted only on x86-64 Windows,
+with independently hashed QEMU 11.1.2 and GDB 18.1 executable identities captured
+from the actual native test. See `firmavex/product/platform_support.py` for exact
+hashes. Version strings alone cannot open this gate. ARM64 Windows and other
+binary builds remain unsupported. This pins selected binaries, not the entire
+MSYS2 DLL/Python/data closure; final evidence still records actual tool identities.
+Do not replace this profile automatically with a future package-feed version.
+The signed-feed installer is used in CI; no official one-click runtime ZIP is
+published yet. Ordinary-user runtime distribution and licensing audit remain
+public-beta blockers.

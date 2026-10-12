@@ -3,7 +3,7 @@
 Starting checkpoint: `06e6c241252096d258ffbd627798928d72b6bdc4`.
 All changes are confined to product, desktop, packaging, tests and documentation.
 Main/research protocols, firmware fixtures, ground truth and campaign data are
-unchanged. Native Windows firmware execution remains gated.
+unchanged. Native Windows firmware execution remains gated except for the checksum-qualified profile.
 
 ## Actual local environment
 
@@ -15,7 +15,8 @@ Qt checks use offscreen rendering, not a human desktop/usability evaluation.
 * Baseline: `1911 passed, 4 skipped` in 194.27 seconds.
 * Targeted runtime-pack/tool/example/supervisor tests: `76 passed, 1 skipped`.
 * Runtime-pack-only regressions: `38 passed`.
-* Final complete suite: `1953 passed, 4 skipped` in 194.83 seconds.
+* Final complete suite after qualified-profile hardening: `1962 passed, 4 skipped` in 194.25 seconds.
+* Real GUI/profile focused verification: `10 passed`; profile/service/tool subset: `76 passed`.
 * PyInstaller native Linux build succeeded; frozen GUI smoke succeeded.
 * Frozen executable's real ARM example search observed `[2, 1]` at attempt 10.
 * Separate reproduction completed 3/3 attempts with the configured condition.
@@ -60,3 +61,18 @@ still fail. No test was disabled. Subsequent verification is reported separately
 The macOS qualification summary is now emitted as a public notice to expose actual
 host architecture, tool identities, image identity and receipt counts without raw
 debugger diagnostics. Saved actual receipts remain in an Actions artifact.
+
+
+## Subsequent native qualification
+
+Run `38278936642` succeeded with all three native packaging jobs, real Apple
+Silicon example execution, and six real Windows ARM adapter tests (safe/triggering
+inputs with/without signatures, missing-completion timeout and cancellation
+accounting). Windows host: AMD64; MSYS2 UCRT64 QEMU 11.1.2, GDB 18.1, ARM GCC
+16.1.0. The runtime profile admits only the captured executable hashes/version
+strings and x86-64 Windows. Other Windows runtimes remain blocked. Dedicated CI
+then tests supervised CLI, real Qt workflow and frozen executable firmware paths.
+
+Apple Silicon: QEMU 11.1.1, GDB 17.2, ARM GCC 16.2.0; 13 actual receipts, search
+trigger [2,1] at attempt 10, reproduction 3/3. These are example qualifications,
+not arbitrary firmware, Intel macOS, hardware or signed-installation validation.
