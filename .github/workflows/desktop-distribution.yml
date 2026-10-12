@@ -118,6 +118,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: msys2/setup-msys2@v2
+        id: msys2
         with:
           msystem: UCRT64
           update: false
@@ -130,14 +131,18 @@ jobs:
           python-version: "3.12"
       - run: python -m pip install ".[dev]"
       - name: Probe signed-feed native runtime candidates
+        env:
+          MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
         shell: pwsh
         run: |
-          $env:PATH = "C:\msys64\ucrt64\bin;" + $env:PATH
+          $env:PATH = (Join-Path $env:MSYS2_LOCATION "ucrt64\bin") + ";" + $env:PATH
           & "$env:pythonLocation\python.exe" -m firmavex.product.cli doctor
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Real ARM adapter and cancellation tests (production gate unchanged)
+        env:
+          MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
         shell: pwsh
         run: |
-          $env:PATH = "C:\msys64\ucrt64\bin;" + $env:PATH
+          $env:PATH = (Join-Path $env:MSYS2_LOCATION "ucrt64\bin") + ";" + $env:PATH
           & "$env:pythonLocation\python.exe" tools/product_ci_tests.py -q tests/product/test_runtime.py -k actual_
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
