@@ -18,3 +18,4 @@ recursive-include packaging *.py *.spec *.iss *.ps1 *.md *.txt
 include tools/desktop_distribution_manifest.py
 include tools/desktop_native_evidence.py
 include tools/desktop_runtime_probe.py
+include tools/desktop_ci_demo.py

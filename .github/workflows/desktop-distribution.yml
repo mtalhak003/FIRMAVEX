@@ -175,7 +175,7 @@ jobs:
           MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
         run: |
           $env:PATH = (Join-Path $env:MSYS2_LOCATION "ucrt64\bin") + ";" + $env:PATH
-          & "$env:pythonLocation\python.exe" -m firmavex.product.cli demo --output-dir "$env:RUNNER_TEMP/windows-native-demo"
+          & "$env:pythonLocation\python.exe" -m tools.desktop_ci_demo --output-dir "$env:RUNNER_TEMP/windows-native-demo"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & "$env:pythonLocation\python.exe" -m tools.desktop_native_evidence "$env:RUNNER_TEMP/windows-native-demo"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
