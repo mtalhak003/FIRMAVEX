@@ -4,12 +4,41 @@ from importlib.resources import files, as_file
 import json
 from pathlib import Path
 import subprocess
+import time
 
 from firmavex.product.errors import ProductError
 from firmavex.product.tools import _resolve, file_identity, _probe
 
 
-def build_example(output_dir: Path, compiler: str | None = None) -> dict:
+def _compile(command, cancel_event):
+    if cancel_event is None:
+        return subprocess.run(command, capture_output=True, text=True, timeout=60)
+    from .runtime import _spawn, _cleanup
+    if cancel_event.is_set():
+        raise KeyboardInterrupt("Example build cancelled.")
+    process, stdout, stderr = _spawn(command)
+    primary = None
+    try:
+        deadline = time.monotonic() + 60
+        while process.poll() is None:
+            if cancel_event.is_set():
+                raise KeyboardInterrupt("Example build cancelled.")
+            if time.monotonic() >= deadline:
+                raise subprocess.TimeoutExpired(command, 60)
+            time.sleep(0.02)
+        stdout.thread.join(timeout=2)
+        stderr.thread.join(timeout=2)
+        return subprocess.CompletedProcess(command, process.returncode, stdout.text(), stderr.text())
+    except BaseException as exc:
+        primary = exc
+        raise
+    finally:
+        cleanup = _cleanup([("compiler", process, stdout, stderr)], primary)
+        if not cleanup["success"] and primary is None:
+            raise ProductError("cleanup_failure", "Compiler process cleanup failed.", cleanup)
+
+
+def build_example(output_dir: Path, compiler: str | None = None, *, cancel_event=None) -> dict:
     output_dir = Path(output_dir).expanduser().absolute()
     # Exclusively own a fresh directory, including partial build diagnostics.
     try:
@@ -35,7 +64,7 @@ def build_example(output_dir: Path, compiler: str | None = None) -> dict:
                str(output_dir / "startup.c"), str(output_dir / "main.c"),
                "-o", str(firmware)]
     try:
-        result = subprocess.run(command, capture_output=True, text=True, timeout=60)
+        result = _compile(command, cancel_event)
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise ProductError("build_failed", f"Example build failed: {exc}") from exc
     if result.returncode:

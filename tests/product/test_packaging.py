@@ -55,6 +55,9 @@ def test_wheel_contains_product_and_single_legacy_namespace(distributions):
         names = set(archive.namelist())
     assert "firmavex/__init__.py" in names
     assert "firmavex/product/cli.py" in names
+    assert "firmavex/desktop/app.py" in names
+    assert "firmavex/desktop/window.py" in names
+    assert "firmavex/product/windows_job.py" in names
     assert "src/firmavex/evaluation/api.py" in names
     assert "firmavex/evaluation/api.py" not in names
     assert "firmware/benchmarks/cortex_m/startup.c" in names
@@ -112,10 +115,10 @@ assert (pathlib.Path(firmavex.__file__).parent / 'product/resources/example/main
 print(json.dumps({'version': firmavex.__version__, 'module': api.__name__}))
 """
     checked = _run([sys.executable, "-I", "-B", "-c", script, str(installed)], cwd=working)
-    assert json.loads(checked.stdout) == {"version": "0.1.0.dev1", "module": "src.firmavex.evaluation.api"}
+    assert json.loads(checked.stdout) == {"version": "0.2.0.dev1", "module": "src.firmavex.evaluation.api"}
     help_script = "import runpy,sys; sys.path.insert(0,sys.argv.pop(1)); runpy.run_module('firmavex',run_name='__main__')"
     help_result = _run([sys.executable, "-I", "-B", "-c", help_script, str(installed), "--help"], cwd=working)
-    for command in ("doctor", "validate", "run", "reproduce", "export"):
+    for command in ("doctor", "validate", "run", "reproduce", "export", "desktop"):
         assert command in help_result.stdout
 
 
@@ -146,3 +149,6 @@ def test_installed_entry_point_supervises_worker_outside_checkout(distributions)
     entry_point = scripts / ("firmavex.exe" if os.name == "nt" else "firmavex")
     help_result = _run([str(entry_point), "--help"], cwd=working)
     assert "reproduce" in help_result.stdout
+    desktop_entry = scripts / ("firmavex-desktop.exe" if os.name == "nt" else "firmavex-desktop")
+    desktop_help = _run([str(desktop_entry), "--help"], cwd=working)
+    assert "--project" in desktop_help.stdout and "--smoke-test" in desktop_help.stdout

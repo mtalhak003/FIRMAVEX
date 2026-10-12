@@ -17,6 +17,7 @@ _FIELDS = {
     "inspect": ({"run_dir"}, set()), "export": ({"run_dir", "output_dir"}, set()),
     "recover": ({"run_dir"}, set()), "restart": ({"run_dir", "output_dir"}, set()),
     "demo": ({"output_dir"}, set()),
+    "build_example": ({"output_dir"}, set()),
     "cancel": (set(), {"job_request_id"}), "shutdown": (set(), set()),
 }
 DIAGNOSTIC_PREVIEW_BYTES = 4096
@@ -160,6 +161,8 @@ class Worker:
                 result = self.services.restart_run(payload["run_dir"], payload["output_dir"], cancel_event=cancel, event_callback=callback)
             elif command == "demo":
                 result = self.services.run_demo(payload["output_dir"], cancel_event=cancel, event_callback=callback)
+            elif command == "build_example":
+                result = self.services.build_example_project(payload["output_dir"], cancel_event=cancel, event_callback=callback)
             else:
                 raise ProductError("protocol_error", "Unsupported job command.")
             self.emit(request_id, "result", result)

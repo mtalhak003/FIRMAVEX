@@ -2,12 +2,14 @@ include LICENSE README.md pyproject.toml
 recursive-include firmavex *.py *.c *.ld *.md
 recursive-include src/firmavex *.py
 recursive-include firmware/benchmarks/cortex_m *.c *.ld *.md manifest.json
-recursive-include docs/product *.md
+recursive-include docs/product *.md *.png
 prune tests
 recursive-include tests/product *.py
+recursive-include tests/desktop *.py
 global-exclude *.py[cod] *.elf *.ELF *.bin *.BIN *.exe *.EXE *.hex *.map
 global-exclude *.sqlite *.sqlite3 *.db *.log
 prune build
 prune dist
 prune .git
 prune .venv
+include tools/product_ci_tests.py

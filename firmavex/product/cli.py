@@ -13,6 +13,9 @@ from .errors import ProductError
 def parser() -> argparse.ArgumentParser:
     root = argparse.ArgumentParser(prog="firmavex", description="Firmware testing foundation for symbolized Cortex-M3 ELF on QEMU mps2-an385.")
     commands = root.add_subparsers(dest="command", required=True)
+    desktop = commands.add_parser("desktop", help="Launch the optional PySide6 desktop application.")
+    desktop.add_argument("--project")
+    desktop.add_argument("--smoke-test", action="store_true", help=argparse.SUPPRESS)
     commands.add_parser("doctor", help="Check real runtime tools and capabilities.")
     validate = commands.add_parser("validate", help="Validate a firmware project before execution.")
     validate.add_argument("config")
@@ -61,6 +64,19 @@ def _exit_status(result: dict[str, Any]) -> int:
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     try:
+        if args.command == "desktop":
+            try:
+                from firmavex.desktop.app import main as desktop_main
+            except ModuleNotFoundError as exc:
+                if exc.name and exc.name.startswith("PySide6"):
+                    raise ProductError("missing_dependency", "Install the desktop extra with python -m pip install 'firmavex-desktop[desktop]'.") from exc
+                raise
+            desktop_args = []
+            if args.project:
+                desktop_args.extend(["--project", args.project])
+            if args.smoke_test:
+                desktop_args.append("--smoke-test")
+            return desktop_main(desktop_args)
         if args.command == "worker":
             from .worker import main as worker_main
             return worker_main()

@@ -11,7 +11,7 @@ from .errors import ProductError
 
 SCHEMA_VERSION = 1
 MAX_LINE_BYTES = 1_048_576
-COMMANDS = frozenset({"doctor", "validate", "run", "reproduce", "inspect", "export", "recover", "restart", "cancel", "shutdown", "demo"})
+COMMANDS = frozenset({"doctor", "validate", "run", "reproduce", "inspect", "export", "recover", "restart", "cancel", "shutdown", "demo", "build_example"})
 EVENT_KINDS = frozenset({"accepted", "progress", "result", "error", "cancelling", "shutdown"})
 _REQUEST_ID = re.compile(r"[A-Za-z0-9_.:-]{1,128}\Z")
 

@@ -525,3 +525,17 @@ def run_demo(output_dir, *, cancel_event=None, event_callback=None):
                "research_campaign_executed": False}
     (output / "demo.json").write_text(json.dumps(summary, sort_keys=True, indent=2, allow_nan=False) + "\n", encoding="utf-8")
     return summary
+
+
+def build_example_project(output_dir, *, cancel_event=None, event_callback=None):
+    """Supervised desktop preparation: compile the independent example only."""
+    from .example import build_example
+    cancel = cancel_event if cancel_event is not None else threading.Event()
+    if cancel.is_set():
+        raise KeyboardInterrupt("Example build cancelled before admission.")
+    _emit(event_callback, {"type": "build_started", "firmware_dispatched": False})
+    built = build_example(output_dir, cancel_event=cancel)
+    if cancel.is_set():
+        raise KeyboardInterrupt("Example build cancelled; no firmware was executed.")
+    return {"success": True, **built, "firmware_dispatched": False,
+            "operation": "independent_example_build"}
