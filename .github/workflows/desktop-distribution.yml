@@ -1,7 +1,7 @@
 name: Desktop distribution candidates
 on:
   push:
-    branches: ["product/desktop-batch3", "product/desktop-batch4"]
+    branches: ["product/desktop-batch3", "product/desktop-batch4", "product/desktop-batch5"]
   workflow_dispatch:
 permissions:
   contents: read
