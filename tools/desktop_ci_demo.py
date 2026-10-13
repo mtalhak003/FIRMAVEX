@@ -20,7 +20,10 @@ def main(argv=None):
     if status:
         try:
             result = json.loads(text.splitlines()[-1])
-            message = json.dumps(result.get('error', result), sort_keys=True)[-6000:]
+            error = result.get('error', result)
+            compact = {key: value for key, value in error.items() if key != 'details'}
+            compact['details'] = {key: value for key, value in error.get('details', {}).items() if key != 'partial_result'}
+            message = json.dumps(compact, sort_keys=True)[-6000:]
         except (ValueError, IndexError):
             message = text[-6000:]
         message = message.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')

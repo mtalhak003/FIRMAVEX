@@ -187,7 +187,16 @@ class Supervisor:
             active_error = sys.exc_info()[1]
             cleanup_error: str | None = None
             cleanup_interruption: BaseException | None = None
-            # EOF tells the worker to cancel and join its active service.
+            # Use the existing protocol shutdown after a terminal result.
+            # This does not depend on pipe EOF (descendants can retain handles).
+            if terminal_result is not None and process.poll() is None:
+                try:
+                    send("shutdown", {}, "shutdown:" + uuid.uuid4().hex)
+                except ProductError:
+                    # It may already have exited; reaping/return-code checks
+                    # below still decide whether cleanup actually succeeded.
+                    pass
+            # EOF also tells the worker to cancel and join its active service.
             if process.stdin is not None:
                 try:
                     process.stdin.close()
@@ -267,7 +276,7 @@ class Supervisor:
                 elif active_error is not None and hasattr(active_error, "add_note"):
                     active_error.add_note(cleanup_error)
                 elif active_error is None:
-                    raise ProductError("cleanup_failure", cleanup_error, {"partial_result": terminal_result})
+                    raise ProductError("cleanup_failure", cleanup_error, {"partial_result": terminal_result, "stderr": bytes(diagnostics).decode("utf-8", errors="replace")[-8000:], "returncode": process.returncode})
             elif terminal_result is not None and process.returncode != 0 and active_error is None:
                 raise ProductError("worker_failure", "Worker emitted a result but did not exit successfully.",
                                    {"returncode": process.returncode, "partial_result": terminal_result})

@@ -66,9 +66,11 @@ class Toolchain:
 
 
 def discover(config=None, *, require_compiler: bool = False, _managed: bool = True) -> Toolchain:
-    from .runtime_pack import active_tools, verify_selected_generation
+    from .runtime_pack import active_tools, verify_selected_generation, runtime_root
     needs_managed = not getattr(config, "qemu", None) or not getattr(config, "gdb", None) or (require_compiler and not getattr(config, "compiler", None))
-    managed = active_tools() if _managed and needs_managed else {}
+    verified = {}
+    expected = {}
+    managed = active_tools(_verified=verified) if _managed and needs_managed else {}
     qemu = _resolve("qemu-system-arm", getattr(config, "qemu", None) or managed.get("qemu"))
     supplied_gdb = getattr(config, "gdb", None) or managed.get("gdb")
     gdb = _resolve("arm-none-eabi-gdb", supplied_gdb or shutil.which("arm-none-eabi-gdb")
@@ -77,14 +79,27 @@ def discover(config=None, *, require_compiler: bool = False, _managed: bool = Tr
     compiler = (_resolve("arm-none-eabi-gcc", supplied_compiler)
                 if require_compiler or supplied_compiler is not None else None)
     if _managed:
-        for selected in (qemu, gdb, compiler):
-            if selected is not None:
-                verify_selected_generation(selected)
+        root = runtime_root().resolve()
+        for name, selected in (("qemu", qemu), ("gdb", gdb), ("compiler", compiler)):
+            if selected is None:
+                continue
+            path = Path(selected).resolve()
+            generation = path.relative_to(root).parts[0] if root in path.parents else None
+            if generation is not None and generation not in verified:
+                verified[generation] = verify_selected_generation(selected)
+            if generation is not None:
+                relative = path.relative_to(root / generation).as_posix()
+                data = verified[generation]
+                if data is None or relative not in data['files']:
+                    raise ProductError('runtime_pack_invalid', 'Selected tool is absent from its verified inventory.')
+                expected[name] = data['files'][relative]
     identities = {}
     for name, path in (("qemu", qemu), ("gdb", gdb), ("compiler", compiler)):
         if path is None:
             continue
         before = file_identity(path)
+        if name in expected and before['sha256'] != expected[name]:
+            raise ProductError('runtime_pack_invalid', 'Selected runtime tool changed after inventory verification.')
         version = _probe([path, "--version"]).stdout.strip().splitlines()
         if not version:
             raise ProductError("dependency_probe_failed", f"Tool has no version output: {path}")

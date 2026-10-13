@@ -127,7 +127,7 @@ def test_toolchain_serialization_detached():
 def test_discovery_uses_managed_tools_and_explicit_override(fake_tool_probes, monkeypatch):
     from firmavex.product import runtime_pack as pack
     paths, calls = fake_tool_probes
-    monkeypatch.setattr(pack, 'active_tools', lambda: {'qemu': paths['qemu-system-arm'], 'gdb': paths['gdb-multiarch']})
+    monkeypatch.setattr(pack, 'active_tools', lambda **kwargs: {'qemu': paths['qemu-system-arm'], 'gdb': paths['gdb-multiarch']})
     result = tools.discover()
     assert result.qemu == paths['qemu-system-arm']
 
@@ -155,3 +155,34 @@ def test_generic_gdb_name_still_requires_arm_and_python_capabilities(fake_tool_p
     assert result.gdb == paths['gdb']
     assert any('show architecture' in command for command in calls)
     assert any(any('python import' in part for part in command) for command in calls)
+
+
+def test_historical_generation_is_fully_verified_once_per_discovery(fake_tool_probes, tmp_path, monkeypatch):
+    from firmavex.product import runtime_pack
+    paths, _ = fake_tool_probes
+    root = tmp_path / 'runtimes'; directory = root / ('a' * 32) / 'bin'; directory.mkdir(parents=True)
+    qemu = directory / 'qemu'; gdb = directory / 'gdb'
+    for path in (qemu, gdb): path.write_text('executable'); path.chmod(0o755)
+    monkeypatch.setattr(runtime_pack, 'runtime_root', lambda: root)
+    checks = []
+    def verify(path):
+        checks.append(path)
+        return {'files': {'bin/qemu': hashlib.sha256(b'executable').hexdigest(), 'bin/gdb': hashlib.sha256(b'executable').hexdigest()}}
+    monkeypatch.setattr(runtime_pack, 'verify_selected_generation', verify)
+    config = SimpleNamespace(qemu=str(qemu), gdb=str(gdb))
+    tools.discover(config); tools.discover(config)
+    assert checks == [str(qemu), str(qemu)]  # No persistent cache between calls.
+
+
+def test_tool_mutation_after_full_inventory_check_is_rejected(fake_tool_probes, tmp_path, monkeypatch):
+    from firmavex.product import runtime_pack
+    root = tmp_path / 'runtimes'; directory = root / ('a' * 32) / 'bin'; directory.mkdir(parents=True)
+    qemu = directory / 'qemu'; gdb = directory / 'gdb'
+    for path in (qemu, gdb): path.write_text('executable'); path.chmod(0o755)
+    monkeypatch.setattr(runtime_pack, 'runtime_root', lambda: root)
+    def verify(path):
+        gdb.write_bytes(b'changed after verification')
+        return {'files': {'bin/qemu': hashlib.sha256(b'executable').hexdigest(), 'bin/gdb': hashlib.sha256(b'executable').hexdigest()}}
+    monkeypatch.setattr(runtime_pack, 'verify_selected_generation', verify)
+    with pytest.raises(ProductError, match='after inventory'):
+        tools.discover(SimpleNamespace(qemu=str(qemu), gdb=str(gdb)))

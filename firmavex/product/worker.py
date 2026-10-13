@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+import os
 import threading
 import hashlib
 from typing import Any, BinaryIO
@@ -179,6 +180,8 @@ class Worker:
             else:
                 raise ProductError("protocol_error", "Unsupported job command.")
             self.emit(request_id, "result", result)
+            if os.environ.get("FIRMAVEX_WORKER_DIAGNOSTICS") == "1":
+                print("FIRMAVEX_WORKER_TERMINAL_EMITTED", file=sys.stderr, flush=True)
         except ProductError as exc:
             if exc.category == "protocol_error" and type(payload.get("output_dir")) is str:
                 exc.details["run_directory"] = payload["output_dir"]
@@ -230,7 +233,11 @@ def serve(input_stream: BinaryIO, output_stream: BinaryIO, services: Any = None)
                 # After a framing failure there is no trustworthy message boundary.
                 break
     finally:
+        if os.environ.get("FIRMAVEX_WORKER_DIAGNOSTICS") == "1":
+            print("FIRMAVEX_WORKER_CLOSING", file=sys.stderr, flush=True)
         worker.close()
+        if os.environ.get("FIRMAVEX_WORKER_DIAGNOSTICS") == "1":
+            print("FIRMAVEX_WORKER_JOINED", file=sys.stderr, flush=True)
     return 1 if worker.failed else 0
 
 

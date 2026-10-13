@@ -106,7 +106,7 @@ def verify(directory: Path) -> dict:
     return data
 
 
-def active_tools(root: Path | None = None) -> dict:
+def active_tools(root: Path | None = None, *, _verified=None) -> dict:
     root = Path(root) if root is not None else runtime_root()
     pointer = root / "active.json"
     if not pointer.exists():
@@ -120,6 +120,8 @@ def active_tools(root: Path | None = None) -> dict:
     if not isinstance(data["manifest_sha256"], str) or not HEX.fullmatch(data["manifest_sha256"]) or file_identity(directory / "runtime.json")["sha256"] != data["manifest_sha256"]:
         fail("Installed runtime manifest differs from the activated identity.")
     verified = verify(directory)
+    if _verified is not None:
+        _verified[data["generation"]] = verified
     return {name: str(directory / relative) for name, relative in verified["tools"].items()}
 
 
@@ -322,7 +324,7 @@ def verify_selected_generation(tool_path, root=None):
         expected = record.get('manifest_sha256')
     if file_identity(root / generation / 'runtime.json')['sha256'] != expected:
         fail('Selected runtime manifest has changed.')
-    verify(root / generation)
+    return verify(root / generation)
 
 
 if __name__ == "__main__":

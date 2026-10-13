@@ -282,3 +282,16 @@ def test_frozen_flag_on_python_does_not_select_unrelated_cli_sibling(tmp_path, m
     monkeypatch.setattr(module.sys, 'frozen', True, raising=False)
     monkeypatch.setattr(module.sys, 'executable', str(python))
     assert Supervisor().worker_argv == [str(python), '--firmavex-worker']
+
+
+def test_terminal_result_is_followed_by_explicit_shutdown():
+    source = PREFIX + "print(json.dumps({'schema_version':1,'request_id':r,'sequence':1,'kind':'result','payload':{'measurement_mode':'synthetic_test'}}),flush=True); c=json.loads(sys.stdin.readline()); sys.exit(0 if c['command']=='shutdown' else 9)"
+    assert Supervisor(worker(source)).execute('doctor', {})['measurement_mode'] == 'synthetic_test'
+
+
+def test_cleanup_failure_preserves_administrator_stderr():
+    source = PREFIX + "sys.stderr.write('synthetic shutdown diagnostic\\n');sys.stderr.flush();print(json.dumps({'schema_version':1,'request_id':r,'sequence':1,'kind':'result','payload':{'measurement_mode':'synthetic_test'}}),flush=True);import time;time.sleep(30)"
+    with pytest.raises(ProductError) as caught:
+        Supervisor(worker(source), cancellation_grace=0.1).execute('doctor', {})
+    assert caught.value.category == 'cleanup_failure'
+    assert 'synthetic shutdown diagnostic' in caught.value.details['stderr']
