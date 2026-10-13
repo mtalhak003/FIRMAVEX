@@ -66,9 +66,37 @@ class ArmBackend:
         result = services.run_project(
             request.source, output / "arm-run", cancel_event=cancel
         )
+        outcome = result.get("outcome")
+        accounting = result.get("accounting") or {}
+        complete = result.get("execution_evidence") == "complete"
+        if (
+            accounting.get("aborted") is True
+            or result.get("success") is not True
+            or not complete
+            or result.get("state") != "completed"
+        ):
+            status = (
+                "invalid_output"
+                if outcome == "invalid_output"
+                else "infrastructure_failure"
+            )
+        elif outcome == "configured_failure_observed":
+            status = "triggered"
+        elif outcome in {"domain_exhausted", "no_failure_within_budget"}:
+            status = "not_discovered"
+        else:
+            status = "invalid_output"
         return Result(
-            result.get("status", result.get("classification", "completed")),
-            {"legacy_result": result, "adapter": "unchanged product services"},
+            status,
+            {
+                "legacy_result": result,
+                "adapter": "unchanged product services",
+                "triggering_input": result.get("triggering_input"),
+                "measurement_mode": result.get("measurement_mode", "unverified"),
+                "cleanup_verified": complete
+                and result.get("success") is True
+                and not accounting.get("aborted", False),
+            },
         )
 
 

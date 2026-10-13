@@ -30,6 +30,9 @@ ARM delegates to existing product `run_project` without changing configuration,
 strategies, monitor, evidence or persistence. Its limits remain owned by the
 legacy project JSON; nondefault generic limits are rejected rather than ignored.
 New backends do not receive or modify research ground truth or partitions.
+The ARM adapter preserves infrastructure aborts and incomplete evidence as failures;
+a successful budget/domain exhaustion is `not_discovered`, not proof of safety.
+Triggering vectors and authoritative legacy accounting remain in the result.
 
 ## Supported-target matrix
 

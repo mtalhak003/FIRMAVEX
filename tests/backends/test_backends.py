@@ -514,3 +514,40 @@ def test_cli_readiness_exit_status(monkeypatch, status, expected):
 
     monkeypatch.setattr(compatibility, "check", lambda profile: {"status": status})
     assert main(["doctor", "verilog-icarus"]) == expected
+
+
+@pytest.mark.parametrize(
+    "outcome,success,complete,aborted,expected",
+    [
+        ("configured_failure_observed", True, True, False, "triggered"),
+        ("no_failure_within_budget", True, True, False, "not_discovered"),
+        ("domain_exhausted", True, True, False, "not_discovered"),
+        ("infrastructure_failure", False, False, True, "infrastructure_failure"),
+        ("configured_failure_observed", True, True, True, "infrastructure_failure"),
+        ("configured_failure_observed", True, False, False, "infrastructure_failure"),
+        ("invalid_output", False, False, False, "invalid_output"),
+        ("future_unknown", True, True, False, "invalid_output"),
+    ],
+)
+def test_arm_adapter_preserves_authoritative_outcomes(
+    tmp_path, monkeypatch, outcome, success, complete, aborted, expected
+):
+    from firmavex.product import services
+
+    legacy = {
+        "outcome": outcome,
+        "success": success,
+        "state": "completed" if success else "failed",
+        "execution_evidence": "complete" if complete else "incomplete",
+        "accounting": {"aborted": aborted},
+        "triggering_input": [2, 1],
+        "measurement_mode": "synthetic_test",
+    }
+    monkeypatch.setattr(services, "run_project", lambda *args, **kwargs: legacy)
+    result = execute(Request("cortex-m3-mps2", Path("project.json")), tmp_path / "out")
+    assert result["status"] == expected
+    assert result["evidence"]["legacy_result"] == legacy
+    assert result["evidence"]["triggering_input"] == [2, 1]
+    assert result["evidence"]["measurement_mode"] == "synthetic_test"
+    if aborted or not complete:
+        assert result["evidence"]["cleanup_verified"] is False
