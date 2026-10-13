@@ -97,6 +97,7 @@ def snapshot_runtime(directory, archive, *, packages, cancel=None):
     license_paths = []
     size = 0
     members = []
+    omitted_other_machines = []
     for path in sorted(directory.rglob('*')):
         _cancelled(cancel)
         if path.is_symlink():
@@ -104,10 +105,16 @@ def snapshot_runtime(directory, archive, *, packages, cancel=None):
         if not path.is_file():
             continue
         name = safe_name(path.relative_to(directory).as_posix())
+        # MSYS2's QEMU package contains many independent machine executables.
+        # This product invokes only qemu-system-arm; retain all shared libraries,
+        # modules, data and notices, but do not copy unrelated guest engines.
+        if name.startswith('bin/qemu-system-') and name.endswith('.exe') and name != 'bin/qemu-system-arm.exe':
+            omitted_other_machines.append(name)
+            continue
         members.append((name, path))
         size += path.stat().st_size
         if size > MAX_BYTES or len(members) > MAX_FILES - 1:
-            raise ProductError('runtime_snapshot_failed', 'The runtime dependency snapshot exceeds supported limits.')
+            raise ProductError('runtime_snapshot_failed', 'The runtime dependency snapshot exceeds supported limits.', {'size_bytes': size, 'files': len(members), 'maximum_bytes': MAX_BYTES, 'maximum_files': MAX_FILES - 1})
         files[name] = file_identity(path)['sha256']
         if name.startswith('share/licenses/'):
             license_paths.append(name)
@@ -116,6 +123,7 @@ def snapshot_runtime(directory, archive, *, packages, cancel=None):
     inventory_name = 'FIRMAVEX-VENDOR-PACKAGES.json'
     inventory = json.dumps({'schema_version': 1, 'vendor': BOOTSTRAP, 'installed_packages': packages,
                             'distribution_model': 'direct_vendor_download_then_local_snapshot',
+                            'omitted_other_machine_executables': omitted_other_machines,
                             'source_recipes': 'https://github.com/msys2/MINGW-packages'}, sort_keys=True, indent=2).encode()
     files[inventory_name] = hashlib.sha256(inventory).hexdigest()
     data = {'schema_version': 1, 'id': 'msys2-ucrt64-qemu11.1.2-gdb18.1-local-v1', 'host': host(),

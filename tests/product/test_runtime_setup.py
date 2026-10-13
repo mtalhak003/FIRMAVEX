@@ -59,6 +59,8 @@ def test_local_snapshot_retains_licenses_and_package_records(tmp_path):
     (root / 'bin').mkdir(parents=True)
     (root / 'bin/qemu-system-arm.exe').write_bytes(b'synthetic qemu')
     (root / 'bin/gdb-multiarch.exe').write_bytes(b'synthetic gdb')
+    (root / 'bin/qemu-system-x86_64.exe').write_bytes(b'unrelated machine')
+    (root / 'bin/dependency.dll').write_bytes(b'preserved shared library')
     license = root / 'share/licenses/gdb/COPYING'; license.parent.mkdir(parents=True)
     license.write_text('synthetic test license')
     archive = tmp_path / 'runtime.zip'
@@ -67,6 +69,9 @@ def test_local_snapshot_retains_licenses_and_package_records(tmp_path):
     with zipfile.ZipFile(archive) as contents:
         assert 'share/licenses/gdb/COPYING' in contents.namelist()
         assert 'FIRMAVEX-VENDOR-PACKAGES.json' in contents.namelist()
+        assert 'bin/qemu-system-x86_64.exe' not in contents.namelist()
+        assert 'bin/dependency.dll' in contents.namelist()
+        assert 'bin/qemu-system-arm.exe' in contents.namelist()
         assert all(not row.is_dir() for row in contents.infolist())
 
 
