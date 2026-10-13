@@ -28,7 +28,7 @@ class Supervisor:
         if getattr(sys, 'frozen', False):
             from pathlib import Path
             sibling = Path(executable).with_name('FIRMAVEX.exe' if os.name == 'nt' else 'FIRMAVEX')
-            if sibling.is_file():
+            if Path(executable).name.casefold() in {'firmavex-desktop', 'firmavex-desktop.exe'} and sibling.is_file():
                 executable = str(sibling)
         self.worker_argv = list(worker_argv or ([executable, "--firmavex-worker"] if getattr(sys, "frozen", False) else [sys.executable, "-m", "firmavex.product.worker"]))
         self.cancellation_grace = cancellation_grace

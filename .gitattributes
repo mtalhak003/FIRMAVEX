@@ -1,0 +1,4 @@
+# Product image provenance hashes exact LF source bytes on every checkout.
+firmavex/product/resources/example/*.c text eol=lf
+firmavex/product/resources/example/*.ld text eol=lf
+firmavex/product/resources/example/*.json text eol=lf

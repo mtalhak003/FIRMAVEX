@@ -1,14 +1,14 @@
 """Native Windows qualification of the actual publisher-install path (no mocks)."""
 import json
 import sys
-from firmavex.product.runtime_setup import install_vendor_runtime
+from firmavex.product.supervisor import Supervisor
 from firmavex.product.runtime_pack import generation_history, runtime_root, rollback
 from firmavex.product.tools import discover
 
 
 def main():
     try:
-        result = install_vendor_runtime(event_callback=lambda row: print(json.dumps(row), flush=True))
+        result = Supervisor().execute('setup_runtime', {}, event_callback=lambda row: print(json.dumps(row), flush=True))
         tools = discover()
         rows = generation_history()
         assert len(rows) == 1 and rows[0]['integrity'] == 'verified'

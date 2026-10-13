@@ -72,7 +72,7 @@ def discover(config=None, *, require_compiler: bool = False, _managed: bool = Tr
     qemu = _resolve("qemu-system-arm", getattr(config, "qemu", None) or managed.get("qemu"))
     supplied_gdb = getattr(config, "gdb", None) or managed.get("gdb")
     gdb = _resolve("arm-none-eabi-gdb", supplied_gdb or shutil.which("arm-none-eabi-gdb")
-                   or shutil.which("gdb-multiarch"))
+                   or shutil.which("gdb-multiarch") or shutil.which("gdb"))
     supplied_compiler = getattr(config, "compiler", None) or (managed.get("compiler") if require_compiler else None)
     compiler = (_resolve("arm-none-eabi-gcc", supplied_compiler)
                 if require_compiler or supplied_compiler is not None else None)

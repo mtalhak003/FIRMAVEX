@@ -273,3 +273,12 @@ def test_windowed_frozen_desktop_uses_console_worker_sidecar(tmp_path, monkeypat
     monkeypatch.setattr(module.sys, 'frozen', True, raising=False)
     monkeypatch.setattr(module.sys, 'executable', str(gui))
     assert Supervisor().worker_argv == [str(engine), '--firmavex-worker']
+
+
+def test_frozen_flag_on_python_does_not_select_unrelated_cli_sibling(tmp_path, monkeypatch):
+    import firmavex.product.supervisor as module
+    python = tmp_path / ('python.exe' if os.name == 'nt' else 'python')
+    (tmp_path / ('FIRMAVEX.exe' if os.name == 'nt' else 'FIRMAVEX')).touch()
+    monkeypatch.setattr(module.sys, 'frozen', True, raising=False)
+    monkeypatch.setattr(module.sys, 'executable', str(python))
+    assert Supervisor().worker_argv == [str(python), '--firmavex-worker']

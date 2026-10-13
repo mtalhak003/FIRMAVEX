@@ -146,3 +146,12 @@ def test_real_host_probe_receives_eof_not_parent_stdin():
     import sys
     result = tools._probe([sys.executable, '-c', 'import sys; print(repr(sys.stdin.read()))'], timeout=2)
     assert result.stdout.strip() == "''"
+
+
+def test_generic_gdb_name_still_requires_arm_and_python_capabilities(fake_tool_probes, monkeypatch):
+    paths, calls = fake_tool_probes
+    paths['gdb'] = paths.pop('gdb-multiarch')
+    result = tools.discover()
+    assert result.gdb == paths['gdb']
+    assert any('show architecture' in command for command in calls)
+    assert any(any('python import' in part for part in command) for command in calls)
