@@ -41,7 +41,7 @@ Runtime/package-manager installations may require separate administrative remova
 
 1. Read the compatibility page. **Check existing runtime** checks real executable
    capabilities; it does not run firmware or claim emulation succeeded.
-2. On Windows x86-64, authorize vendor download, then choose **Install / repair
+2. On the native-CI-qualified Windows x86-64 profile, authorize vendor download, then choose **Install / repair
    runtime automatically**. The download can be large and require several minutes
    and substantial free disk space. Installation is cancellable; keep the app
    open until cleanup finishes. Installation refuses incompatible runtime builds.
@@ -59,7 +59,13 @@ historical generation; it never deletes projects, results or other generations.
 A failed/cancelled pre-activation install retains the old pointer. New run records
 pin selected QEMU/GDB paths; reproduction verifies image, configuration and saved
 tool identities. If old files were removed or altered, reproduction fails closed.
-Full inventory verification can take time on a large runtime.
+Full inventory verification can exceed 15 seconds on Windows and remains
+background work; the GUI remains responsive. Every discovery checks each selected
+generation once (no persistent integrity cache), then rechecks selected executable
+identities against that inventory. Guest timeouts are separate from administrative
+preflight time. Abrupt termination during installation can leave an installation
+lock/temporary files requiring support-assisted recovery; unknown locks are not
+automatically deleted.
 
 ## Runtime integrity and licensing model
 
