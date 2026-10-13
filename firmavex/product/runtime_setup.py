@@ -11,6 +11,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import stat
 import tempfile
 import time
 import urllib.parse
@@ -146,6 +147,23 @@ def snapshot_runtime(directory, archive, *, packages, cancel=None):
     return file_identity(archive)['sha256']
 
 
+
+def _remove_private_tree(work):
+    """Only clear read-only attributes inside this newly owned temporary tree."""
+    work = Path(work)
+    def read_only(operation, filename, info):
+        error = info[1]
+        selected = Path(filename)
+        if not isinstance(error, PermissionError) or selected.is_symlink() or (hasattr(selected, 'is_junction') and selected.is_junction()):
+            raise error
+        try:
+            selected.resolve().relative_to(work.resolve())
+        except ValueError:
+            raise error
+        selected.chmod(selected.stat().st_mode | stat.S_IWRITE)
+        operation(filename)
+    shutil.rmtree(work, onerror=read_only)
+
 def install_vendor_runtime(*, cancel_event=None, event_callback=None, root=None):
     if host() != {'os': 'windows', 'arch': 'x86_64'}:
         raise ProductError('runtime_provider_unavailable', 'Automatic vendor setup currently supports native x86-64 Windows only. Use verified existing tools or a trusted offline runtime pack on this platform.')
@@ -155,6 +173,9 @@ def install_vendor_runtime(*, cancel_event=None, event_callback=None, root=None)
         raise ProductError('runtime_setup_failed', 'Runtime storage cannot be a symbolic link.')
     # No package-manager updates touch a pre-existing/global MSYS2 installation.
     work = Path(tempfile.mkdtemp(prefix='vendor-setup-', dir=root))
+    result = None
+    environment = None
+    msys = work / 'msys64'
     try:
         _progress(event_callback, 'download', 'Downloading the checksum-pinned MSYS2 bootstrap directly from its publisher.')
         bootstrap = work / 'msys2-bootstrap.exe'
@@ -185,8 +206,12 @@ def install_vendor_runtime(*, cancel_event=None, event_callback=None, root=None)
     finally:
         original = __import__('sys').exception()
         try:
-            shutil.rmtree(work)
+            if (msys / 'usr/bin/gpgconf.exe').is_file() and environment is not None:
+                # Pacman's agent belongs to this private keyring, never the user's.
+                _run([str(msys / 'usr/bin/bash.exe'), '--login', '-c', 'gpgconf --homedir /etc/pacman.d/gnupg --kill all'],
+                     cancel=None, callback=event_callback, env=environment, stage='private vendor agent cleanup', timeout=30)
+            _remove_private_tree(work)
         except BaseException as cleanup:
             if original is None:
-                raise ProductError('runtime_cleanup_failed', 'Temporary vendor installation could not be removed.', {'path': str(work), 'error': str(cleanup)}) from cleanup
+                raise ProductError('runtime_cleanup_failed', 'Temporary vendor installation could not be removed.', {'path': str(work), 'error': str(cleanup), 'activated_generation': result.get('generation') if result else None}) from cleanup
             original.add_note('Vendor temporary cleanup failed: ' + repr(cleanup))

@@ -113,9 +113,36 @@ def test_provider_failure_keeps_existing_selection_and_cleans_temporary(tmp_path
 def test_provider_preserves_interruption_when_cleanup_fails(tmp_path, monkeypatch):
     monkeypatch.setattr(setup, 'host', lambda: {'os':'windows','arch':'x86_64'})
     def interrupt(*args): raise KeyboardInterrupt('original cancellation')
-    def denied(*args): raise OSError('synthetic cleanup failure')
+    def denied(*args, **kwargs): raise OSError('synthetic cleanup failure')
     monkeypatch.setattr(setup, '_download', interrupt)
     monkeypatch.setattr(setup.shutil, 'rmtree', denied)
     with pytest.raises(KeyboardInterrupt, match='original cancellation') as caught:
         setup.install_vendor_runtime(root=tmp_path / 'runtime')
     assert any('cleanup' in note for note in caught.value.__notes__)
+
+
+def test_private_cleanup_retries_read_only_files_only_inside_owned_tree(tmp_path, monkeypatch):
+    import stat
+    work = tmp_path / 'owned'; work.mkdir()
+    file = work / 'read-only'; file.write_bytes(b'temporary'); file.chmod(0o444)
+    calls = []
+    def remove(root, *, onerror):
+        def unlink(name):
+            calls.append(name)
+            assert Path(name).stat().st_mode & stat.S_IWRITE
+            Path(name).unlink()
+        onerror(unlink, str(file), (PermissionError, PermissionError('read-only'), None))
+    monkeypatch.setattr(setup.shutil, 'rmtree', remove)
+    setup._remove_private_tree(work)
+    assert calls == [str(file)] and not file.exists()
+
+
+def test_private_cleanup_never_changes_file_outside_owned_tree(tmp_path, monkeypatch):
+    work = tmp_path / 'owned'; work.mkdir()
+    outside = tmp_path / 'user-data'; outside.write_bytes(b'keep'); outside.chmod(0o444)
+    def remove(root, *, onerror):
+        onerror(lambda name: pytest.fail('modified outside file'), str(outside),
+                (PermissionError, PermissionError('outside'), None))
+    monkeypatch.setattr(setup.shutil, 'rmtree', remove)
+    with pytest.raises(PermissionError): setup._remove_private_tree(work)
+    assert outside.read_bytes() == b'keep'
