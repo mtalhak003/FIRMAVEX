@@ -367,7 +367,10 @@ def test_actual_arm_firmware_input_after_startup(actual_product_example, signatu
 def test_actual_missing_completion_is_failure_despite_trigger(actual_product_example):
     from dataclasses import replace
     config, tools = actual_product_example
-    receipt = FirmwareExecutor(replace(config, completion_breakpoint="Default_Handler", timeout_seconds=0.4), tools).execute((2, 1))
+    # The bound includes debugger startup. 400 ms could expire before input
+    # injection on native Windows, never exercising the missing-completion case.
+    # Keep every evidence/timeout assertion, but allow real initialization.
+    receipt = FirmwareExecutor(replace(config, completion_breakpoint="Default_Handler", timeout_seconds=5.0), tools).execute((2, 1))
     assert not receipt.observation.success
     assert not receipt.observation.triggered
     assert receipt.observation.execution_signature is None
