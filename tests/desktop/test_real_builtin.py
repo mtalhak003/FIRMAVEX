@@ -49,16 +49,20 @@ def test_real_desktop_builtin_search_reproduction_export_and_cancel(qtbot,tmp_pa
     qtbot.addWidget(w); w.show()
     ticks=[]
     timer=QTimer(); timer.setInterval(20); timer.timeout.connect(lambda:ticks.append(True)); timer.start()
+    # Full managed-runtime integrity checks read a large vendor inventory.
+    # Bound administrative preflight separately from guest execution timeouts.
+    preflight_timeout = 120000
     try:
         w.check_tools()
-        qtbot.waitUntil(lambda:not w.busy,timeout=15000)
+        qtbot.waitUntil(lambda:not w.busy,timeout=preflight_timeout)
+        assert len(ticks) > 0  # Verification must not block the GUI event loop.
         assert 'mps2-an385' not in w.status_label.text() or 'unsupported' not in w.status_label.text()
         w.prepare_builtin_example()
         qtbot.waitUntil(lambda:w.project is not None and not w.busy,timeout=30000)
         assert w.configuration().compiler is None
         assert w.configuration().input_symbols==('product_inputs[0]','product_inputs[1]')
         w.start_run()
-        qtbot.waitUntil(lambda:w.result_record is not None and not w.busy,timeout=45000)
+        qtbot.waitUntil(lambda:w.result_record is not None and not w.busy,timeout=preflight_timeout)
         search=w.result_record; source=w.active_run
         assert search['success'] and search['measurement_mode']=='real_firmware'
         assert search['triggering_input']==[2,1] and search['accounting']['attempted_executions']==10
@@ -67,7 +71,7 @@ def test_real_desktop_builtin_search_reproduction_export_and_cancel(qtbot,tmp_pa
         assert 'Charged evaluator attempts: 10' in w.report_view.toPlainText()
         assert 'waiting for worker cleanup' not in w.status_label.text()
         w.reproduce()
-        qtbot.waitUntil(lambda:w.result_record is not search and not w.busy,timeout=30000)
+        qtbot.waitUntil(lambda:w.result_record is not search and not w.busy,timeout=preflight_timeout)
         replay=w.result_record; replay_path=w.active_run
         assert replay['outcome']=='reproduced_in_emulator'
         assert replay['reproduction']['matching_observations']==3
@@ -100,7 +104,7 @@ def test_real_desktop_builtin_search_reproduction_export_and_cancel(qtbot,tmp_pa
                     return any(event['kind']=='trial_requested' for event in store.snapshot()['events'])
             except Exception:
                 return False
-        qtbot.waitUntil(admitted,timeout=15000)
+        qtbot.waitUntil(admitted,timeout=preflight_timeout)
         QTimer.singleShot(100,w.cancel_job)
         qtbot.waitUntil(lambda:not w.busy,timeout=20000)
         assert w.result_record is not None,w.validation_text.toPlainText()

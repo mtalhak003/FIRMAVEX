@@ -107,7 +107,7 @@ class SetupWizard(QWizard):
     @Slot()
     def check(self):
         self.ready = False
-        self.runtime.status.setText('Checking actual tool capabilities…')
+        self.runtime.status.setText('Checking actual tool capabilities and the complete runtime inventory. Large installations may take a minute; firmware is not running…')
         self.main_window.check_tools()
         self.refresh()
 

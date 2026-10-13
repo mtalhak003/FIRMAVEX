@@ -56,16 +56,20 @@ def doctor() -> dict:
     }
 
 
-def validate_project(config_or_path: ProductConfig | str | Path) -> dict:
-    config = _config(config_or_path)
+def _validated_project(config: ProductConfig):
     image = inspect_elf(config)
     tools = discover(config)
-    return {
+    report = {
         "schema_version": 1, "success": True, "configuration": config.to_dict(),
         "firmware": image, "tools": tools.to_dict(),
         "validation_scope": "ELF/configuration/tool capabilities; guest compatibility requires execution",
     }
 
+    return report, tools
+
+
+def validate_project(config_or_path: ProductConfig | str | Path) -> dict:
+    return _validated_project(_config(config_or_path))[0]
 
 def _emit(callback: Callable | None, payload: dict) -> None:
     if callback is not None:
@@ -160,9 +164,8 @@ class _RecordedSession:
 def _execute_project(config, output_dir, *, cancel_event=None, event_callback=None,
                      replay_values=None, replay_attempts=0, parent=None,
                      _executor_factory=None):
-    validated = validate_project(config)
     config = _config(config)
-    tools = discover(config)
+    validated, tools = _validated_project(config)
     if _executor_factory is None:
         from .platform_support import require_native_support
         require_native_support(tools)
