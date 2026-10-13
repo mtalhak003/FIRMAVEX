@@ -5,6 +5,7 @@ native file information avoids comparing CRT timestamps with Win32 timestamps.
 Observable consistency is not an atomic snapshot or an adversarial-race guarantee.
 """
 import ctypes
+from functools import lru_cache
 import os
 from pathlib import Path
 import sys
@@ -14,7 +15,9 @@ def _stat_state(value):
     return value.st_dev, value.st_ino, value.st_size, value.st_mtime_ns, value.st_ctime_ns
 
 
-def _windows_state(handle):
+@lru_cache(maxsize=1)
+def _windows_api():
+    """Keep ABI types/functions stable instead of rebuilding them per snapshot."""
     DWORD=ctypes.c_uint32
     class FileTime(ctypes.Structure):
         _fields_=[('low',DWORD),('high',DWORD)]
@@ -30,6 +33,15 @@ def _windows_state(handle):
     api.GetFileInformationByHandle.restype=ctypes.c_int32
     api.GetFileInformationByHandleEx.argtypes=[ctypes.c_void_p,ctypes.c_int32,ctypes.c_void_p,DWORD]
     api.GetFileInformationByHandleEx.restype=ctypes.c_int32
+    api.CreateFileW.argtypes=[ctypes.c_wchar_p,ctypes.c_uint32,ctypes.c_uint32,ctypes.c_void_p,
+                             ctypes.c_uint32,ctypes.c_uint32,ctypes.c_void_p]
+    api.CreateFileW.restype=ctypes.c_void_p
+    api.CloseHandle.argtypes=[ctypes.c_void_p];api.CloseHandle.restype=ctypes.c_int32
+    return api, Information, Basic
+
+
+def _windows_state(handle):
+    api, Information, Basic = _windows_api()
     info,basic=Information(),Basic()
     if not api.GetFileInformationByHandle(handle,ctypes.byref(info)):
         raise ctypes.WinError(ctypes.get_last_error())
@@ -41,11 +53,7 @@ def _windows_state(handle):
 def path_state(path, stat=None):
     if sys.platform!='win32':
         return _stat_state(stat if stat is not None else Path(path).stat())
-    api=ctypes.WinDLL('kernel32',use_last_error=True)
-    api.CreateFileW.argtypes=[ctypes.c_wchar_p,ctypes.c_uint32,ctypes.c_uint32,ctypes.c_void_p,
-                             ctypes.c_uint32,ctypes.c_uint32,ctypes.c_void_p]
-    api.CreateFileW.restype=ctypes.c_void_p
-    api.CloseHandle.argtypes=[ctypes.c_void_p];api.CloseHandle.restype=ctypes.c_int32
+    api, _, _ = _windows_api()
     handle=api.CreateFileW(str(Path(path)),0x80,7,None,3,0,None)
     if handle is None or handle==ctypes.c_void_p(-1).value:
         raise ctypes.WinError(ctypes.get_last_error())
