@@ -20,8 +20,8 @@ def main(arguments=None):
         process = subprocess.run([sys.executable, '-m', 'pytest', *args, '--junitxml='+str(report)],
                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors='replace')
         print(process.stdout, end='', flush=True)
-        if process.returncode and not report.exists():
-            diagnostic = ('pytest exited ' + str(process.returncode) + ' without JUnit output: ' + process.stdout[-7000:])
+        if process.returncode:
+            diagnostic = ('pytest exited ' + str(process.returncode) + '; actual final process output: ' + process.stdout[-7000:])
             escaped = diagnostic.replace('%','%25').replace('\r','%0D').replace('\n','%0A')
             print('::error title=FIRMAVEX test process failure::'+escaped, flush=True)
         if report.exists():

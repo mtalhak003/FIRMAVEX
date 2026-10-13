@@ -112,13 +112,13 @@ def snapshot_runtime(directory, archive, *, packages, cancel=None):
         if name.startswith('bin/qemu-system-') and name.endswith('.exe') and name != 'bin/qemu-system-arm.exe':
             omitted_other_machines.append(name)
             continue
-        if name.startswith(('include/', 'lib/pkgconfig/', 'lib/cmake/', 'share/doc/', 'share/man/', 'share/info/', 'share/aclocal/')) or (name.startswith('lib/') and name.endswith(('.a', '.la'))) or (name.startswith('lib/python') and '/test/' in name):
+        if name.startswith(('include/', 'lib/pkgconfig/', 'lib/cmake/', 'share/doc/', 'share/man/', 'share/info/', 'share/aclocal/', 'share/icons/', 'share/themes/', 'share/gtk-doc/', 'share/help/')) or (name.startswith('lib/') and name.endswith(('.a', '.la'))) or (name.startswith('lib/python') and '/test/' in name):
             omitted_development_files.append(name)
             continue
         members.append((name, path))
         size += path.stat().st_size
         if size > MAX_BYTES or len(members) > MAX_FILES - 1:
-            raise ProductError('runtime_snapshot_failed', 'The runtime dependency snapshot exceeds supported limits.', {'size_bytes': size, 'files': len(members), 'maximum_bytes': MAX_BYTES, 'maximum_files': MAX_FILES - 1})
+            raise ProductError('runtime_snapshot_failed', 'The runtime dependency snapshot exceeds supported limits.', {'size_bytes': size, 'files': len(members), 'maximum_bytes': MAX_BYTES, 'maximum_files': MAX_FILES - 1, 'last_member': name})
         files[name] = file_identity(path)['sha256']
         if name.startswith('share/licenses/'):
             license_paths.append(name)

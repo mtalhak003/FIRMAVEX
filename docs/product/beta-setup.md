@@ -70,9 +70,10 @@ The bootstrap is verified before execution. A private temporary installation
 updates through signed pacman repositories, installs UCRT64 QEMU and
 `gdb-multiarch`, and snapshots ARM QEMU/GDB with all shared libraries, modules and data, omitting
 unrelated `qemu-system-*` executables, build-only headers/static libraries,
-package-development metadata/manuals and Python test resources. The omission
-inventory is retained; runtime libraries/modules/data and vendor license
-files and exact installed package records. The private vendor installation is
+package-development metadata/manuals, Python test resources and GUI
+theme/icon assets unused by headless QEMU. The omission
+inventory is retained, along with vendor license files and exact installed
+package records. The private vendor installation is
 removed after import. User/global MSYS2 installations are not upgraded.
 
 The admitted native profile remains the Batch 3-tested QEMU 11.1.2 / GDB 18.1
@@ -94,6 +95,10 @@ legally auditable dependency closure. Linux delegates runtime licensing/updates 
 the distro. License checksums are integrity evidence, not legal advice/guarantees.
 
 ## Build and verification
+
+Qt/PySide6 is pinned to 6.11.1: 6.12 produced a reproducible shutdown
+reference-count abort with CPython 3.11, even after tests completed. The same
+GUI tests exit successfully with 6.11.1; no tests were disabled.
 
 PyInstaller 6.16.0 builds native GUI and console-worker executables from one shared
 bundle. `distribution-manifest.json` records actual Git/dirty state, file hashes,

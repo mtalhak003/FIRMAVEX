@@ -2,7 +2,7 @@
 from pathlib import Path
 import json
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Slot
 from PySide6.QtWidgets import (QWizard, QWizardPage, QVBoxLayout, QLabel,
                               QPushButton, QCheckBox, QComboBox)
 
@@ -92,7 +92,10 @@ class SetupWizard(QWizard):
         self.setButtonText(QWizard.FinishButton, 'Finish setup')
         self.refresh()
 
-    def refresh(self, *unused):
+    @Slot()
+    @Slot(bool)
+    @Slot(int)
+    def refresh(self, unused=None):
         idle = not self.main_window.busy
         self.runtime.check.setEnabled(idle)
         self.runtime.offline.setEnabled(idle)
@@ -101,12 +104,14 @@ class SetupWizard(QWizard):
         self.runtime.install.setEnabled(idle and self.runtime.consent.isChecked() and host() == {'os': 'windows', 'arch': 'x86_64'})
         self.runtime.completeChanged.emit()
 
+    @Slot()
     def check(self):
         self.ready = False
         self.runtime.status.setText('Checking actual tool capabilities…')
         self.main_window.check_tools()
         self.refresh()
 
+    @Slot()
     def install(self):
         if self.main_window.busy or not self.runtime.consent.isChecked() or host() != {'os': 'windows', 'arch': 'x86_64'}:
             return
@@ -114,15 +119,18 @@ class SetupWizard(QWizard):
         self.runtime.status.setText('Installing into private per-user storage; existing projects and runtime generations are retained.')
         self.main_window._start('setup_runtime', {})
 
+    @Slot()
     def history(self):
         self.main_window._start('runtime_history', {})
 
+    @Slot()
     def restore(self):
         generation = self.runtime.generations.currentData()
         if generation:
             self.ready = False
             self.main_window._start('rollback_runtime', {'generation': generation})
 
+    @Slot(dict)
     def _runtime_result(self, result):
         command = self.main_window._job
         if command == 'doctor':
@@ -142,6 +150,7 @@ class SetupWizard(QWizard):
             self.runtime.status.setText('Verified generations listed. ' + ('Integrity failures: ' + '; '.join(errors) if errors else 'Projects/results are not removed by rollback.'))
         self.refresh()
 
+    @Slot(dict)
     def _runtime_error(self, error):
         self.ready = False
         category = error.get('category', 'setup_error')
@@ -153,11 +162,13 @@ class SetupWizard(QWizard):
         self.runtime.status.setText(category.replace('_', ' ').capitalize() + ': ' + message + '\n' + hints.get(category, 'The diagnostic details remain available in the main window.'))
         self.refresh()
 
+    @Slot(dict)
     def _runtime_event(self, event):
         payload = event.get('payload', {})
         if payload.get('type') == 'runtime_setup':
             self.runtime.status.setText(payload.get('message', payload.get('stage', 'Runtime setup')))
 
+    @Slot()
     def idle(self):
         if self.pending_reject:
             self.pending_reject = False
