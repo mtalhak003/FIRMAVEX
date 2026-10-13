@@ -24,7 +24,13 @@ class Supervisor:
     def __init__(self, worker_argv: Sequence[str] | None = None, *, cancellation_grace: float = 15.0):
         if cancellation_grace <= 0:
             raise ValueError("Cancellation grace must be positive.")
-        self.worker_argv = list(worker_argv or ([sys.executable, "--firmavex-worker"] if getattr(sys, "frozen", False) else [sys.executable, "-m", "firmavex.product.worker"]))
+        executable = sys.executable
+        if getattr(sys, 'frozen', False):
+            from pathlib import Path
+            sibling = Path(executable).with_name('FIRMAVEX.exe' if os.name == 'nt' else 'FIRMAVEX')
+            if sibling.is_file():
+                executable = str(sibling)
+        self.worker_argv = list(worker_argv or ([executable, "--firmavex-worker"] if getattr(sys, "frozen", False) else [sys.executable, "-m", "firmavex.product.worker"]))
         self.cancellation_grace = cancellation_grace
 
     def execute(self, command: str, payload: dict[str, Any], *,
@@ -40,7 +46,7 @@ class Supervisor:
         if os.name == "posix":
             kwargs["start_new_session"] = True
         elif os.name == "nt":
-            kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+            kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
         try:
             process = subprocess.Popen(self.worker_argv, **kwargs)
         except OSError as exc:

@@ -19,3 +19,9 @@ include tools/desktop_distribution_manifest.py
 include tools/desktop_native_evidence.py
 include tools/desktop_runtime_probe.py
 include tools/desktop_ci_demo.py
+
+recursive-include firmavex/product/resources *.json
+
+include packaging/FIRMAVEX.desktop packaging/signing-readiness.json
+include tools/build_linux_deb.py tools/build_product_example_image.py
+include tools/desktop_setup_ci.py

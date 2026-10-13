@@ -6,7 +6,6 @@ private test seams and are always identified as synthetic_test.
 """
 
 from __future__ import annotations
-
 from dataclasses import asdict, replace
 from datetime import datetime, timezone
 import hashlib
@@ -167,6 +166,7 @@ def _execute_project(config, output_dir, *, cancel_event=None, event_callback=No
     if _executor_factory is None:
         from .platform_support import require_native_support
         require_native_support(tools)
+    config = replace(config, qemu=tools.qemu, gdb=tools.gdb)
     cancel = cancel_event if cancel_event is not None else threading.Event()
     mode = "real_firmware" if _executor_factory is None else "synthetic_test"
     run_id = str(uuid4())
@@ -448,6 +448,8 @@ def reproduce_run(run_dir, output_dir, attempts=3, *, cancel_event=None, event_c
     if result["measurement_mode"] != "real_firmware" and _executor_factory is None:
         raise ProductError("synthetic_result", "Synthetic test observations cannot be promoted to real-firmware reproduction.")
     config = load_config(Path(run_dir) / "project.json")
+    saved_tools = snapshot["metadata"]["tools"]
+    config = replace(config, qemu=config.qemu or saved_tools["qemu"], gdb=config.gdb or saved_tools["gdb"])
     identity = inspect_elf(config)
     if identity["firmware_sha256"] != result["firmware_sha256"]:
         raise ProductError("firmware_changed", "Saved firmware identity changed; reproduction rejected.")
@@ -472,6 +474,8 @@ def restart_run(run_dir, output_dir, *, cancel_event=None, event_callback=None):
     if snapshot["state"] not in {"interrupted", "cancelled", "failed"}:
         raise ProductError("restart_not_authorized", "Only an explicitly interrupted/cancelled/failed run can be restarted.")
     config = load_config(Path(run_dir) / "project.json")
+    saved_tools = snapshot["metadata"]["tools"]
+    config = replace(config, qemu=config.qemu or saved_tools["qemu"], gdb=config.gdb or saved_tools["gdb"])
     identity = inspect_elf(config)
     if identity["firmware_sha256"] != snapshot["metadata"].get("firmware", {}).get("firmware_sha256"):
         raise ProductError("firmware_changed", "Saved firmware identity changed; restart rejected.")
@@ -505,13 +509,17 @@ def export_run(run_dir, output_dir):
             "firmware_executed": False}
 
 
-def run_demo(output_dir, *, cancel_event=None, event_callback=None):
+def run_demo(output_dir, *, cancel_event=None, event_callback=None, _builtin=False):
     from .example import build_example
     output = Path(output_dir)
     if output.exists() or output.is_symlink():
         raise ProductError("output_exists", "Demo refuses an existing output directory.")
     output.mkdir(parents=True)
-    built = build_example(output / "build")
+    if _builtin:
+        from .bundled_example import prepare_example
+        built = prepare_example(output / "build", cancel_event=cancel_event)
+    else:
+        built = build_example(output / "build")
     config_file = built["config_file"]
     validated = validate_project(config_file)
     search = run_project(config_file, output / "search", cancel_event=cancel_event, event_callback=event_callback)
@@ -542,3 +550,23 @@ def build_example_project(output_dir, *, cancel_event=None, event_callback=None)
         raise KeyboardInterrupt("Example build cancelled; no firmware was executed.")
     return {"success": True, **built, "firmware_dispatched": False,
             "operation": "independent_example_build"}
+
+
+def prepare_example_project(output_dir, *, cancel_event=None, event_callback=None):
+    from .bundled_example import prepare_example
+    return prepare_example(output_dir, cancel_event=cancel_event, event_callback=event_callback)
+
+
+def setup_runtime(*, cancel_event=None, event_callback=None):
+    from .runtime_setup import install_vendor_runtime
+    return install_vendor_runtime(cancel_event=cancel_event, event_callback=event_callback)
+
+
+def runtime_history():
+    from .runtime_pack import generation_history
+    return {"success": True, "generations": generation_history(), "firmware_executed": False}
+
+
+def rollback_runtime(generation, *, cancel_event=None):
+    from .runtime_pack import rollback
+    return rollback(generation, cancel_event=cancel_event)

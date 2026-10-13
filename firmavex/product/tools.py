@@ -41,7 +41,8 @@ def _resolve(name: str, supplied: str | None) -> str:
 def _probe(command: list[str], *, timeout: float = 10.0) -> subprocess.CompletedProcess:
     try:
         result = subprocess.run(command, stdin=subprocess.DEVNULL, capture_output=True, text=True,
-                                timeout=timeout, errors="replace")
+                                timeout=timeout, errors="replace",
+                                **({"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}), env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"})
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise ProductError("dependency_probe_failed", f"Unable to probe {command[0]}: {exc}") from exc
     if result.returncode:
@@ -65,8 +66,9 @@ class Toolchain:
 
 
 def discover(config=None, *, require_compiler: bool = False, _managed: bool = True) -> Toolchain:
-    from .runtime_pack import active_tools
-    managed = active_tools() if _managed else {}
+    from .runtime_pack import active_tools, verify_selected_generation
+    needs_managed = not getattr(config, "qemu", None) or not getattr(config, "gdb", None) or (require_compiler and not getattr(config, "compiler", None))
+    managed = active_tools() if _managed and needs_managed else {}
     qemu = _resolve("qemu-system-arm", getattr(config, "qemu", None) or managed.get("qemu"))
     supplied_gdb = getattr(config, "gdb", None) or managed.get("gdb")
     gdb = _resolve("arm-none-eabi-gdb", supplied_gdb or shutil.which("arm-none-eabi-gdb")
@@ -74,6 +76,10 @@ def discover(config=None, *, require_compiler: bool = False, _managed: bool = Tr
     supplied_compiler = getattr(config, "compiler", None) or (managed.get("compiler") if require_compiler else None)
     compiler = (_resolve("arm-none-eabi-gcc", supplied_compiler)
                 if require_compiler or supplied_compiler is not None else None)
+    if _managed:
+        for selected in (qemu, gdb, compiler):
+            if selected is not None:
+                verify_selected_generation(selected)
     identities = {}
     for name, path in (("qemu", qemu), ("gdb", gdb), ("compiler", compiler)):
         if path is None:
@@ -89,12 +95,12 @@ def discover(config=None, *, require_compiler: bool = False, _managed: bool = Tr
     if not any(line.split() and line.split()[0] == "mps2-an385"
                for line in machines.splitlines()):
         raise ProductError("unsupported_runtime", "QEMU lacks the mps2-an385 machine.")
-    result = _probe([gdb, "--nx", "--nh", "--batch", "-iex", "set auto-load off",
+    result = _probe([gdb, "--nx", "--nh", "--batch", "-iex", "set auto-load off", "-iex", "set python dont-write-bytecode on",
                      "-ex", "python import hashlib; print('FIRMAVEX_GDB_CAPABILITY_V1=' + hashlib.sha256(b'probe').hexdigest())"])
     expected = "FIRMAVEX_GDB_CAPABILITY_V1=" + hashlib.sha256(b"probe").hexdigest()
     if expected not in result.stdout.splitlines():
         raise ProductError("unsupported_runtime", "GDB requires working embedded Python and hashlib.")
-    architecture = _probe([gdb, "--nx", "--nh", "--batch", "-iex", "set auto-load off",
+    architecture = _probe([gdb, "--nx", "--nh", "--batch", "-iex", "set auto-load off", "-iex", "set python dont-write-bytecode on",
                             "-ex", "set architecture arm", "-ex", "show architecture"])
     if "arm" not in architecture.stdout.lower():
         raise ProductError("unsupported_runtime", "GDB does not support the ARM target.")

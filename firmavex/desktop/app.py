@@ -35,6 +35,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.smoke_test:
         # No tools, example build, or firmware dispatch is admitted by smoke.
         QTimer.singleShot(100, window.close)
+    elif args.project is None and not (window.data_root / "first-launch.json").exists():
+        QTimer.singleShot(0, window.show_setup)
     return application.exec()
 
 

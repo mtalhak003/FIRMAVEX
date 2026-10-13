@@ -40,6 +40,14 @@ def parser() -> argparse.ArgumentParser:
     export.add_argument("--output-dir", required=True)
     demo = commands.add_parser("demo", help="Build and run the bounded independent product demonstration.")
     demo.add_argument("--output-dir", required=True)
+    builtin = commands.add_parser("demo-builtin", help="Run the verified built-in image without a compiler.")
+    builtin.add_argument("--output-dir", required=True)
+    prepared = commands.add_parser("prepare-example", help="Copy the verified built-in image without execution or compilation.")
+    prepared.add_argument("--output-dir", required=True)
+    commands.add_parser("setup-runtime", help="Guided signed-vendor runtime setup (Windows x86-64).")
+    commands.add_parser("runtime-history", help="Verify recorded runtime generations.")
+    rolled = commands.add_parser("rollback-runtime", help="Activate a verified historical runtime.")
+    rolled.add_argument("generation")
     commands.add_parser("worker", help=argparse.SUPPRESS)
     return root
 
@@ -96,7 +104,10 @@ def main(argv: list[str] | None = None) -> int:
                 if not 1 <= args.attempts <= 100:
                     raise ProductError("configuration_error", "Reproduction attempts must be from 1 to 100.")
                 payload["attempts"] = args.attempts
-            result = Supervisor().execute(args.command, payload, event_callback=_progress)
+            if args.command == "rollback-runtime":
+                payload["generation"] = args.generation
+            operation = {"demo-builtin": "demo_builtin", "prepare-example": "prepare_example", "setup-runtime": "setup_runtime", "runtime-history": "runtime_history", "rollback-runtime": "rollback_runtime"}.get(args.command, args.command)
+            result = Supervisor().execute(operation, payload, event_callback=_progress)
         print(json.dumps(result, sort_keys=True, allow_nan=False))
         return _exit_status(result)
     except ProductError as exc:

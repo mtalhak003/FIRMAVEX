@@ -1,7 +1,7 @@
 name: Desktop distribution candidates
 on:
   push:
-    branches: ["product/desktop-batch3"]
+    branches: ["product/desktop-batch3", "product/desktop-batch4"]
   workflow_dispatch:
 permissions:
   contents: read
@@ -35,7 +35,7 @@ jobs:
           fi
       - name: Linux installed application smoke
         if: runner.os == 'Linux'
-        run: dist/FIRMAVEX/FIRMAVEX --smoke-test
+        run: dist/FIRMAVEX/FIRMAVEX-Desktop --smoke-test
       - name: Linux frozen actual ARM execution
         if: runner.os == 'Linux'
         run: |
@@ -45,10 +45,10 @@ jobs:
           python -m tools.desktop_native_evidence "$RUNNER_TEMP/frozen-firmware-demo"
       - name: Windows installed application smoke
         if: runner.os == 'Windows'
-        run: dist/FIRMAVEX/FIRMAVEX.exe --smoke-test
+        run: dist/FIRMAVEX/FIRMAVEX-Desktop.exe --smoke-test
       - name: macOS installed application smoke
         if: runner.os == 'macOS'
-        run: dist/FIRMAVEX.app/Contents/MacOS/FIRMAVEX --smoke-test
+        run: dist/FIRMAVEX.app/Contents/MacOS/FIRMAVEX-Desktop --smoke-test
       - name: Windows unsigned installer
         if: runner.os == 'Windows'
         shell: pwsh
@@ -62,6 +62,9 @@ jobs:
       - name: macOS unnotarized DMG
         if: runner.os == 'macOS'
         run: hdiutil create -volname FIRMAVEX -srcfolder dist/FIRMAVEX.app -ov -format UDZO dist/FIRMAVEX-macOS-unnotarized.dmg
+      - name: Linux Debian package
+        if: runner.os == 'Linux'
+        run: python -m tools.build_linux_deb dist/FIRMAVEX dist/FIRMAVEX-Linux-amd64.deb
       - name: Linux portable application
         if: runner.os == 'Linux'
         run: tar -C dist -czf dist/FIRMAVEX-Linux-portable.tar.gz FIRMAVEX
@@ -71,7 +74,7 @@ jobs:
           python - <<'PY'
           import hashlib, pathlib
           root = pathlib.Path('dist')
-          files = sorted(p for p in root.iterdir() if p.is_file() and p.suffix in {'.exe', '.dmg', '.gz'})
+          files = sorted(p for p in root.iterdir() if p.is_file() and p.suffix in {'.exe', '.dmg', '.gz', '.deb'})
           (root/'SHA256SUMS').write_text(''.join(hashlib.sha256(p.read_bytes()).hexdigest()+'  '+p.name+'\n' for p in files))
           PY
       - uses: actions/upload-artifact@v4
@@ -81,6 +84,7 @@ jobs:
             dist/*.exe
             dist/*.dmg
             dist/*.tar.gz
+            dist/*.deb
             dist/SHA256SUMS
           if-no-files-found: error
   macos-firmware-qualification:

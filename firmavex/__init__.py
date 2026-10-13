@@ -4,4 +4,4 @@ This package deliberately does not alias or reload legacy engine modules.
 Product services import their immutable engine records from ``src.firmavex``.
 """
 
-__version__ = "0.2.0.dev1"
+__version__ = "0.3.0.dev1"

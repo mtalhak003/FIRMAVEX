@@ -96,7 +96,7 @@ def test_probe_failure_preserves_activation(tmp_path, probes, monkeypatch):
         pack.install(archive, digest, root=root)
     assert (root / 'active.json').read_bytes() == before
     assert not (root / 'install.lock').exists()
-    assert len(list(root.iterdir())) == 2
+    assert len(list(root.iterdir())) == 3
 
 
 def test_active_inventory_extra_file_fails(tmp_path, probes):
@@ -223,3 +223,86 @@ def test_probe_cannot_rewrite_inventory_to_hide_mutation(tmp_path, monkeypatch):
     with pytest.raises(ProductError, match='manifest changed'):
         pack.install(archive, digest, root=root)
     assert not (root / 'active.json').exists()
+
+
+@pytest.fixture(autouse=True)
+def synthetic_profile_admission(monkeypatch):
+    # This module uses fake executables and fake probes, never real firmware.
+    # Native profile enforcement is tested separately and by the actual OS jobs.
+    monkeypatch.setattr('firmavex.product.platform_support.require_native_support', lambda tools: None)
+
+
+def test_safe_rollback_retains_both_generations(tmp_path, probes):
+    archive, digest = make_pack(tmp_path)
+    root = tmp_path / 'installed'
+    first = pack.install(archive, digest, root=root)
+    second = pack.install(archive, digest, root=root)
+    rows = pack.generation_history(root)
+    assert len(rows) == 2 and all(row['integrity'] == 'verified' for row in rows)
+    assert [row['generation'] for row in rows if row['active']] == [second['generation']]
+    result = pack.rollback(first['generation'], root=root)
+    assert result['success'] and not result['firmware_executed']
+    assert first['generation'] in pack.active_tools(root)['qemu']
+    assert (root / second['generation']).exists()
+
+
+def test_corrupted_history_cannot_be_activated(tmp_path, probes):
+    archive, digest = make_pack(tmp_path)
+    root = tmp_path / 'installed'
+    first = pack.install(archive, digest, root=root)
+    second = pack.install(archive, digest, root=root)
+    before = (root / 'active.json').read_bytes()
+    (root / first['generation'] / 'bin/gdb').write_bytes(b'changed')
+    with pytest.raises(ProductError, match='checksum'):
+        pack.rollback(first['generation'], root=root)
+    assert (root / 'active.json').read_bytes() == before
+    rows = pack.generation_history(root)
+    assert any(row['integrity'] == 'failed' for row in rows)
+    assert second['generation'] in pack.active_tools(root)['gdb']
+
+
+@pytest.mark.parametrize('value', ['../bad', '', None, True, 'a' * 31, 'Z' * 32])
+def test_rollback_rejects_unrecorded_generation_names(tmp_path, value):
+    with pytest.raises(ProductError):
+        pack.rollback(value, root=tmp_path)
+
+
+def test_profile_rejection_does_not_activate(tmp_path, probes, monkeypatch):
+    archive, digest = make_pack(tmp_path)
+    root = tmp_path / 'installed'
+    def denied(tools):
+        raise ProductError('unsupported_platform', 'Not qualified')
+    monkeypatch.setattr('firmavex.product.platform_support.require_native_support', denied)
+    with pytest.raises(ProductError, match='Not qualified'):
+        pack.install(archive, digest, root=root)
+    assert list(root.iterdir()) == []
+
+
+def test_selected_old_generation_integrity_is_checked(tmp_path, probes):
+    archive, digest = make_pack(tmp_path)
+    root = tmp_path / 'installed'
+    first = pack.install(archive, digest, root=root)
+    path = pack.active_tools(root)['qemu']
+    pack.install(archive, digest, root=root)
+    pack.verify_selected_generation(path, root)
+    (root / first['generation'] / 'LICENSES.txt').write_bytes(b'changed')
+    with pytest.raises(ProductError, match='checksum'):
+        pack.verify_selected_generation(path, root)
+
+
+def test_rollback_cancelled_during_probe_never_changes_selection(tmp_path, probes, monkeypatch):
+    import threading
+    archive, digest = make_pack(tmp_path)
+    root = tmp_path / 'installed'
+    first = pack.install(archive, digest, root=root)
+    pack.install(archive, digest, root=root)
+    before = (root / 'active.json').read_bytes()
+    cancelled = threading.Event()
+    def probe(*args, **kwargs):
+        cancelled.set()
+        return SimpleNamespace(to_dict=lambda: {})
+    monkeypatch.setattr('firmavex.product.tools.discover', probe)
+    with pytest.raises(KeyboardInterrupt):
+        pack.rollback(first['generation'], root=root, cancel_event=cancelled)
+    assert (root / 'active.json').read_bytes() == before
+    assert not (root / 'install.lock').exists()

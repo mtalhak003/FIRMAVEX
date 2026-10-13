@@ -73,17 +73,7 @@ def build_example(output_dir: Path, compiler: str | None = None, *, cancel_event
                            {"stdout": result.stdout, "stderr": result.stderr})
     if file_identity(executable) != {key: identity[key] for key in ("path", "sha256", "size_bytes")}:
         raise ProductError("artifact_changed", "Compiler changed during example build.")
-    config = {"schema_version": 1, "firmware": "example.elf",
-              "input_symbols": ["product_inputs[0]", "product_inputs[1]"],
-              "input_min": 0, "input_max": 3,
-              "ready_breakpoint": "product_input_ready",
-              "completion_breakpoint": "product_complete",
-              "failure_symbol": "product_failure", "failure_value": 1,
-              "execution_budget": 16, "strategy": "enumerative", "seed": None,
-              "timeout_seconds": 10.0, "startup_timeout_seconds": 5.0,
-              "collect_signature": True,
-              "guided_archive_size": 32, "guided_mutation_attempts": 8,
-              "compiler": executable, "qemu": None, "gdb": None}
+    config = example_configuration(executable)
     config_path = output_dir / "project.json"
     config_path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
     evidence = {"schema_version": 1, "compiler": identity, "command": command,
@@ -94,3 +84,17 @@ def build_example(output_dir: Path, compiler: str | None = None, *, cancel_event
     return {"output_dir": str(output_dir), "firmware": str(firmware),
             "firmware_file": str(firmware), "config_file": str(config_path),
             "config": str(config_path), "command": command, "build": evidence}
+
+
+def example_configuration(compiler=None):
+    return {"schema_version": 1, "firmware": "example.elf",
+              "input_symbols": ["product_inputs[0]", "product_inputs[1]"],
+              "input_min": 0, "input_max": 3,
+              "ready_breakpoint": "product_input_ready",
+              "completion_breakpoint": "product_complete",
+              "failure_symbol": "product_failure", "failure_value": 1,
+              "execution_budget": 16, "strategy": "enumerative", "seed": None,
+              "timeout_seconds": 10.0, "startup_timeout_seconds": 5.0,
+              "collect_signature": True,
+              "guided_archive_size": 32, "guided_mutation_attempts": 8,
+              "compiler": compiler, "qemu": None, "gdb": None}

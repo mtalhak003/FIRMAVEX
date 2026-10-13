@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "windows": {
+    "required": ["Authenticode certificate or approved remote signing service", "trusted timestamp service", "signtool verification after signing"],
+    "status": "credentials_not_configured",
+    "currently_signed": false
+  },
+  "macos": {
+    "required": ["Developer ID Application identity", "hardened runtime and reviewed entitlements", "notarytool credential profile", "stapling and Gatekeeper assessment"],
+    "status": "credentials_not_configured",
+    "currently_notarized": false
+  }
+}

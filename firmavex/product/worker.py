@@ -18,6 +18,9 @@ _FIELDS = {
     "recover": ({"run_dir"}, set()), "restart": ({"run_dir", "output_dir"}, set()),
     "demo": ({"output_dir"}, set()),
     "build_example": ({"output_dir"}, set()),
+    "prepare_example": ({"output_dir"}, set()), "setup_runtime": (set(), set()),
+    "runtime_history": (set(), set()), "rollback_runtime": ({"generation"}, set()),
+    "demo_builtin": ({"output_dir"}, set()),
     "cancel": (set(), {"job_request_id"}), "shutdown": (set(), set()),
 }
 DIAGNOSTIC_PREVIEW_BYTES = 4096
@@ -161,6 +164,16 @@ class Worker:
                 result = self.services.restart_run(payload["run_dir"], payload["output_dir"], cancel_event=cancel, event_callback=callback)
             elif command == "demo":
                 result = self.services.run_demo(payload["output_dir"], cancel_event=cancel, event_callback=callback)
+            elif command == "prepare_example":
+                result = self.services.prepare_example_project(payload["output_dir"], cancel_event=cancel, event_callback=callback)
+            elif command == "setup_runtime":
+                result = self.services.setup_runtime(cancel_event=cancel, event_callback=callback)
+            elif command == "runtime_history":
+                result = self.services.runtime_history()
+            elif command == "rollback_runtime":
+                result = self.services.rollback_runtime(payload["generation"], cancel_event=cancel)
+            elif command == "demo_builtin":
+                result = self.services.run_demo(payload["output_dir"], cancel_event=cancel, event_callback=callback, _builtin=True)
             elif command == "build_example":
                 result = self.services.build_example_project(payload["output_dir"], cancel_event=cancel, event_callback=callback)
             else:

@@ -262,3 +262,14 @@ def test_native_windows_supervisor_reaps_python_descendant_after_worker_death(tm
         inspector.join(timeout=11)
         for handle in child_handles:
             library.CloseHandle(handle)
+
+
+def test_windowed_frozen_desktop_uses_console_worker_sidecar(tmp_path, monkeypatch):
+    import firmavex.product.supervisor as module
+    from pathlib import Path
+    gui = tmp_path / ('FIRMAVEX-Desktop.exe' if os.name == 'nt' else 'FIRMAVEX-Desktop')
+    engine = tmp_path / ('FIRMAVEX.exe' if os.name == 'nt' else 'FIRMAVEX')
+    engine.touch()
+    monkeypatch.setattr(module.sys, 'frozen', True, raising=False)
+    monkeypatch.setattr(module.sys, 'executable', str(gui))
+    assert Supervisor().worker_argv == [str(engine), '--firmavex-worker']

@@ -677,3 +677,22 @@ def test_completed_result_cannot_silently_lose_all_execution_receipts(project, t
     db.close()
     with pytest.raises(ProductError, match="missing execution receipts"):
         services.inspect_run(root)
+
+
+def test_reproduction_pins_original_tools_after_active_runtime_changes(project, tmp_path, monkeypatch):
+    config, original = project
+    parent = tmp_path / 'original'
+    services.run_project(config, parent, _executor_factory=factory(SyntheticExecutor()))
+    saved = services.load_config(parent / 'project.json')
+    assert saved.qemu == original.qemu and saved.gdb == original.gdb
+    seen = []
+    def require_saved(configuration, **kwargs):
+        seen.append((configuration.qemu, configuration.gdb))
+        assert configuration.qemu == original.qemu
+        assert configuration.gdb == original.gdb
+        return original
+    monkeypatch.setattr(services, 'discover', require_saved)
+    result = services.reproduce_run(parent, tmp_path / 'replayed', 3,
+                                   _executor_factory=factory(SyntheticExecutor()))
+    assert result['reproduction']['matching_observations'] == 3
+    assert len(seen) >= 2

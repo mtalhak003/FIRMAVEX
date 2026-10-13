@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "firmavex-desktop"
-version = "0.2.0.dev1"
+version = "0.3.0.dev1"
 description = "Desktop firmware testing using QEMU and an ARM-capable GDB"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -46,7 +46,7 @@ include = [
 exclude = ["tests", "tests.*"]
 
 [tool.setuptools.package-data]
-"firmavex.product" = ["resources/example/*.c", "resources/example/*.ld", "resources/example/*.md"]
+"firmavex.product" = ["resources/example/*.c", "resources/example/*.ld", "resources/example/*.md", "resources/example/*.json"]
 "firmware.benchmarks.cortex_m" = [
     "*.c", "*.ld", "README.md",
     "corpus/*.c", "corpus/manifest.json",

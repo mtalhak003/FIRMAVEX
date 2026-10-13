@@ -7,7 +7,10 @@ tool, and a supervised firmware execution worker. The desktop supports project
 creation, compatible ELF import, configuration, tool checks, bounded testing,
 progress and cancellation, saved results, reproduction, and report export.
 
-This is an **alpha product**, without native installers or bundled runtime tools.
+This is a **beta-readiness development candidate**. Unsigned Windows installers,
+Linux portable/Debian packages and unnotarized macOS DMGs are built in native CI.
+See [first launch and runtime setup](docs/product/beta-setup.md) for qualification
+status, download instructions and remaining blockers.
 The execution profile is symbolized ARM Cortex-M3 ELF compatible with QEMU
 `mps2-an385`, with typed uint32 inputs and explicit input-ready/completion functions.
 Arbitrary vendor MCU firmware, raw BIN, hardware execution, and automatic
@@ -29,7 +32,7 @@ firmavex-desktop
 ```
 
 Use a Linux graphical desktop or WSLg. In the application, **Check runtime tools**,
-then **Build independent example**. Review its configuration, choose **Run bounded
+then **Try built-in example (no compiler)**. Review its configuration, choose **Run bounded
 test**, and reproduce the saved triggering vector from Results. These operations
 use an independent example, never the frozen research campaign.
 

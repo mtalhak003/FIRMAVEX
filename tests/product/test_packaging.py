@@ -64,6 +64,7 @@ def test_wheel_contains_product_and_single_legacy_namespace(distributions):
     assert "firmware/benchmarks/cortex_m/linker.ld" in names
     assert "firmware/benchmarks/cortex_m/corpus/manifest.json" in names
     assert "firmware/benchmarks/cortex_m/corpus_v2/manifest.json" in names
+    assert "firmavex/product/resources/example/image.json" in names
     assert "firmavex/product/resources/example/main.c" in names
     assert "firmavex/product/resources/example/startup.c" in names
     assert "firmavex/product/resources/example/linker.ld" in names
@@ -80,6 +81,7 @@ def test_sdist_contains_build_inputs_and_product_tests(distributions):
     assert "pyproject.toml" in names
     assert "docs/product/install.md" in names
     assert "tests/product/test_packaging.py" in names
+    assert "firmavex/product/resources/example/image.json" in names
     assert "firmavex/product/resources/example/main.c" in names
     assert "src/firmavex/strategies/guided.py" in names
     assert not any(name.startswith("tests/test_") for name in names)
@@ -115,7 +117,7 @@ assert (pathlib.Path(firmavex.__file__).parent / 'product/resources/example/main
 print(json.dumps({'version': firmavex.__version__, 'module': api.__name__}))
 """
     checked = _run([sys.executable, "-I", "-B", "-c", script, str(installed)], cwd=working)
-    assert json.loads(checked.stdout) == {"version": "0.2.0.dev1", "module": "src.firmavex.evaluation.api"}
+    assert json.loads(checked.stdout) == {"version": "0.3.0.dev1", "module": "src.firmavex.evaluation.api"}
     help_script = "import runpy,sys; sys.path.insert(0,sys.argv.pop(1)); runpy.run_module('firmavex',run_name='__main__')"
     help_result = _run([sys.executable, "-I", "-B", "-c", help_script, str(installed), "--help"], cwd=working)
     for command in ("doctor", "validate", "run", "reproduce", "export", "desktop"):

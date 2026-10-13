@@ -86,9 +86,11 @@ def _allocate_port() -> int:
         return listener.getsockname()[1]
 
 
-def _spawn(command: list[str]):
-    options = {"stdin": subprocess.DEVNULL, "stdout": subprocess.PIPE,
+def _spawn(command: list[str], *, env=None):
+    options = {"env": {**(os.environ if env is None else env), "PYTHONDONTWRITEBYTECODE": "1"}, "stdin": subprocess.DEVNULL, "stdout": subprocess.PIPE,
                "stderr": subprocess.PIPE}
+    if os.name == "nt":
+        options["creationflags"] = subprocess.CREATE_NO_WINDOW
     # Inherit the supervised worker's process group so forced worker cleanup
     # can also reap QEMU/GDB. Direct API calls own the explicit child handles.
     process = subprocess.Popen(command, **options)
@@ -349,7 +351,7 @@ class FirmwareExecutor:
             with _debugger_directory() as directory:
                 script = Path(directory) / "observe.gdb"
                 script.write_text(_debugger_script(self.config, values, port, marker), encoding="utf-8")
-                command = [self.tools.gdb, "--nx", "--nh", "--batch", "-iex", "set auto-load off",
+                command = [self.tools.gdb, "--nx", "--nh", "--batch", "-iex", "set auto-load off", "-iex", "set python dont-write-bytecode on",
                            str(self.config.firmware), "-x", str(script)]
                 gdb, gout, gerr = _spawn(command)
                 processes.append(("gdb", gdb, gout, gerr))

@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=FIRMAVEX Desktop
+Comment=Configured Cortex-M3 firmware testing in QEMU
+Exec=/opt/firmavex/FIRMAVEX-Desktop
+Terminal=false
+Categories=Development;Debugger;

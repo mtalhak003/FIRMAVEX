@@ -10,10 +10,11 @@ from firmavex.product.cli import main as cli
 def main(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument('--output-dir', required=True)
+    parser.add_argument('--builtin', action='store_true', help='Use the verified image; no ARM compiler is invoked.')
     args = parser.parse_args(argv)
     output = io.StringIO()
     with redirect_stdout(output):
-        status = cli(['demo', '--output-dir', args.output_dir])
+        status = cli(['demo-builtin' if args.builtin else 'demo', '--output-dir', args.output_dir])
     text = output.getvalue()
     print(text, end='')
     if status:

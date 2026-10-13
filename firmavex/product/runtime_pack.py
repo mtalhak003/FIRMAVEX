@@ -123,12 +123,14 @@ def active_tools(root: Path | None = None) -> dict:
     return {name: str(directory / relative) for name, relative in verified["tools"].items()}
 
 
-def install(archive: Path, expected_sha256: str, *, root: Path | None = None) -> dict:
+def install(archive: Path, expected_sha256: str, *, root: Path | None = None, cancel_event=None) -> dict:
     """Trust the separately obtained checksum, not the ZIP's own claims.
 
     Capability probes execute pack binaries only AFTER checksum verification.
     The user must trust the publisher before installing executable code.
     """
+    if cancel_event is not None and cancel_event.is_set():
+        raise KeyboardInterrupt("Runtime installation cancelled.")
     if not isinstance(expected_sha256, str) or not HEX.fullmatch(expected_sha256):
         fail("Supply an independently obtained lowercase SHA-256 checksum.")
     archive = Path(archive)
@@ -155,6 +157,8 @@ def install(archive: Path, expected_sha256: str, *, root: Path | None = None) ->
                 fail("Runtime archive exceeds extraction limits.")
             seen = set()
             for item in members:
+                if cancel_event is not None and cancel_event.is_set():
+                    raise KeyboardInterrupt("Runtime installation cancelled before activation.")
                 name = safe_name(item.filename)
                 mode = item.external_attr >> 16
                 if name.casefold() in seen or item.is_dir() or stat.S_IFMT(mode) not in {0, stat.S_IFREG} or item.flag_bits & 1:
@@ -172,10 +176,15 @@ def install(archive: Path, expected_sha256: str, *, root: Path | None = None) ->
         from .tools import discover
         selected = {key: str(directory / value) for key, value in data["tools"].items()}
         tools = discover(SimpleNamespace(**selected), _managed=False)
+        from .platform_support import require_native_support
+        require_native_support(tools)
         # Probes may alter files: never activate a generation that no longer matches.
         if verify(directory) != data:
             fail("Runtime manifest changed during capability probes.")
+        if cancel_event is not None and cancel_event.is_set():
+            raise KeyboardInterrupt("Runtime installation cancelled before activation.")
         temporary.write_text(json.dumps({"generation": generation, "manifest_sha256": file_identity(directory / "runtime.json")["sha256"]}, sort_keys=True) + "\n", encoding="utf-8")
+        _atomic_json(root / (generation + ".activation.json"), {"schema_version": 1, "generation": generation, "manifest_sha256": file_identity(directory / "runtime.json")["sha256"], "archive_sha256": expected_sha256})
         os.replace(temporary, root / "active.json")
         activated = True
         return {"installed": True, "generation": generation, "pack_id": data["id"],
@@ -186,6 +195,7 @@ def install(archive: Path, expected_sha256: str, *, root: Path | None = None) ->
         try:
             temporary.unlink(missing_ok=True)
             if not activated:
+                (root / (generation + ".activation.json")).unlink(missing_ok=True)
                 shutil.rmtree(directory, ignore_errors=True)
             lock.rmdir()
         except BaseException as cleanup:
@@ -209,6 +219,110 @@ def main(argv=None):
     except (ProductError, OSError, ValueError, zipfile.BadZipFile) as exc:
         print(str(exc), file=sys.stderr)
         return 1
+
+
+def _atomic_json(path, data):
+    temporary = path.with_name(path.name + '.' + uuid.uuid4().hex + '.tmp')
+    try:
+        with temporary.open('x', encoding='utf-8') as stream:
+            json.dump(data, stream, sort_keys=True)
+            stream.write('\n')
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def generation_history(root=None):
+    root = Path(root) if root is not None else runtime_root()
+    records = []
+    current = json.loads((root / 'active.json').read_text(encoding='utf-8')) if (root / 'active.json').exists() else {}
+    for path in sorted(root.glob('*.activation.json')):
+        try:
+            if path.is_symlink():
+                fail('Activation record cannot be a link.')
+            record = json.loads(path.read_text(encoding='utf-8'))
+            generation = path.name.split('.')[0]
+            if path.is_symlink() or not isinstance(record, dict) or not re.fullmatch(r'[a-f0-9]{32}', generation) or record.get('generation') != generation or type(record.get('schema_version')) is not int or record.get('schema_version') != 1:
+                fail('Invalid runtime activation record.')
+            directory = root / generation
+            if file_identity(directory / 'runtime.json')['sha256'] != record['manifest_sha256']:
+                fail('Historical manifest was changed.')
+            verified = verify(directory)
+            records.append({'generation': generation, 'pack_id': verified['id'], 'active': current.get('generation') == generation, 'integrity': 'verified'})
+        except (ProductError, OSError, ValueError, KeyError) as exc:
+            records.append({'generation': path.name.split('.')[0], 'active': current.get('generation') == path.name.split('.')[0], 'integrity': 'failed', 'error': str(exc)})
+    return records
+
+
+def rollback(generation, *, root=None, cancel_event=None):
+    if not isinstance(generation, str) or not re.fullmatch(r'[a-f0-9]{32}', generation):
+        fail('Select a recorded runtime generation.')
+    root = Path(root) if root is not None else runtime_root()
+    def cancelled():
+        if cancel_event is not None and cancel_event.is_set():
+            raise KeyboardInterrupt('Runtime rollback cancelled before activation.')
+    cancelled()
+    lock = root / 'install.lock'
+    try:
+        lock.mkdir()
+    except FileExistsError:
+        fail('A runtime installation or rollback already owns the lock.')
+    try:
+        record_path = root / (generation + '.activation.json')
+        if record_path.is_symlink():
+            fail('Activation record cannot be a link.')
+        record = json.loads(record_path.read_text(encoding='utf-8'))
+        directory = root / generation
+        if not isinstance(record, dict) or type(record.get('schema_version')) is not int or record.get('schema_version') != 1 or record.get('generation') != generation or file_identity(directory / 'runtime.json')['sha256'] != record.get('manifest_sha256'):
+            fail('Runtime activation identity is inconsistent.')
+        data = verify(directory)
+        from types import SimpleNamespace
+        from .tools import discover
+        from .platform_support import require_native_support
+        tools = discover(SimpleNamespace(**{name: str(directory / relative) for name, relative in data['tools'].items()}), _managed=False)
+        require_native_support(tools)
+        if verify(directory) != data or file_identity(directory / 'runtime.json')['sha256'] != record['manifest_sha256']:
+            fail('Runtime changed during rollback probes.')
+        cancelled()
+        _atomic_json(root / 'active.json', {'generation': generation, 'manifest_sha256': record['manifest_sha256']})
+        return {'success': True, 'generation': generation, 'pack_id': data['id'], 'firmware_executed': False}
+    finally:
+        original = sys.exception()
+        try:
+            lock.rmdir()
+        except BaseException as exc:
+            if original is None:
+                raise
+            original.add_note('Rollback lock cleanup failed: ' + repr(exc))
+
+
+def verify_selected_generation(tool_path, root=None):
+    """Historical explicit paths must still satisfy their recorded inventory."""
+    root = (Path(root) if root is not None else runtime_root()).resolve()
+    selected = Path(tool_path).resolve()
+    if root not in selected.parents:
+        return
+    relative = selected.relative_to(root)
+    generation = relative.parts[0]
+    if not re.fullmatch(r'[a-f0-9]{32}', generation):
+        fail('Selected tool does not belong to a recorded runtime generation.')
+    record_path = root / (generation + '.activation.json')
+    if record_path.exists():
+        if record_path.is_symlink():
+            fail('Activation record cannot be a link.')
+        record = json.loads(record_path.read_text(encoding='utf-8'))
+        expected = record.get('manifest_sha256')
+    else:
+        # Preserve read-only compatibility with the active Batch 3 generation.
+        record = json.loads((root / 'active.json').read_text(encoding='utf-8'))
+        if record.get('generation') != generation:
+            fail('Historical generation has no activation record.')
+        expected = record.get('manifest_sha256')
+    if file_identity(root / generation / 'runtime.json')['sha256'] != expected:
+        fail('Selected runtime manifest has changed.')
+    verify(root / generation)
 
 
 if __name__ == "__main__":

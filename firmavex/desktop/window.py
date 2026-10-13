@@ -135,6 +135,11 @@ class MainWindow(QMainWindow):
             action.setShortcut(shortcut)
             action.triggered.connect(callback)
             menu.addAction(action)
+        examples = self.menuBar().addMenu("&Examples")
+        for text, callback in (("Verified built-in image (no compiler)", self.prepare_builtin_example), ("Build from source (requires ARM GCC)", self.build_example)):
+            action = QAction(text, self)
+            action.triggered.connect(callback)
+            examples.addAction(action)
 
     def _button(self, text, callback, *, name=None):
         button = QPushButton(text)
@@ -161,17 +166,19 @@ class MainWindow(QMainWindow):
         row = QHBoxLayout()
         self.new_button = self._button("New firmware project", lambda: self.navigation.setCurrentRow(1))
         self.open_button = self._button("Open project…", self._pick_open_project)
-        self.example_button = self._button("Build independent example", self.build_example)
+        self.example_button = self._button("Try built-in example (no compiler)", self.prepare_builtin_example)
         for button in (self.new_button, self.open_button, self.example_button):
             row.addWidget(button)
         layout.addLayout(row)
+        self.setup_button = self._button("First-launch setup and runtime repair…", self.show_setup)
+        layout.addWidget(self.setup_button)
         self.doctor_button = self._button("Check runtime tools", self.check_tools)
         layout.addWidget(self.doctor_button)
         self.runtime_install_button = self._button("Install / repair trusted runtime pack…", self.install_runtime_pack)
         self.runtime_verify_button = self._button("Verify installed runtime pack", self.verify_runtime_pack)
         layout.addWidget(self.runtime_install_button)
         layout.addWidget(self.runtime_verify_button)
-        self.tool_status = QLabel("Check QEMU and ARM-capable GDB before testing. ARM GCC is required to build the example.")
+        self.tool_status = QLabel("Check QEMU and ARM-capable GDB before testing. The built-in example requires no compiler.")
         self.tool_status.setWordWrap(True)
         layout.addWidget(self.tool_status)
         self.tool_details = QPlainTextEdit()
@@ -385,7 +392,7 @@ class MainWindow(QMainWindow):
         idle = not self.busy and not self._closing
         project = self.project is not None
         for button in (self.new_button, self.open_button, self.example_button,
-                       self.runtime_install_button, self.runtime_verify_button,
+                       self.setup_button, self.runtime_install_button, self.runtime_verify_button,
                        self.doctor_button, self.create_button, self.firmware_button,
                        self.project_dir_button, self.open_run_button):
             button.setEnabled(idle)
@@ -591,6 +598,23 @@ class MainWindow(QMainWindow):
         if accepted:
             self._local_operation(lambda: install(Path(path), digest.strip()), self._runtime_report)
 
+    def show_setup(self):
+        if self.busy:
+            return
+        from .setup_wizard import SetupWizard
+        existing = getattr(self, '_setup_wizard', None)
+        if existing is not None and existing.isVisible():
+            existing.raise_()
+            return
+        self._setup_wizard = SetupWizard(self)
+        self._setup_wizard.setAttribute(Qt.WA_DeleteOnClose)
+        self._setup_wizard.finished.connect(lambda: setattr(self, "_setup_wizard", None))
+        self._setup_wizard.open()
+
+    def prepare_builtin_example(self):
+        output = self.data_root / 'examples' / _fresh_name('builtin-example')
+        self._start('prepare_example', {'output_dir': str(output)}, output=output)
+
     def check_tools(self):
         self._start("doctor", {})
 
@@ -660,7 +684,7 @@ class MainWindow(QMainWindow):
 
     def _result(self, result):
         command = self._job
-        if command in {"doctor", "validate", "build_example", "export"} and result.get("success") is False:
+        if command in {"doctor", "validate", "build_example", "prepare_example", "setup_runtime", "rollback_runtime", "runtime_history", "export"} and result.get("success") is False:
             self._error({"category": "operation_failed", "message": "The operation returned a failed result.", "details": result})
             return
         if command == "doctor":
@@ -668,15 +692,17 @@ class MainWindow(QMainWindow):
             identities = result.get("tools", {}).get("identities", {})
             versions = " • ".join(str(identities[name].get("version", name)) for name in ("qemu", "gdb") if name in identities)
             platform_note = "Native firmware execution remains unsupported." if result.get("native_execution") == "unsupported" else "Guest compatibility is checked during execution."
-            self.tool_status.setText((versions or "Runtime capability report received.") + "\n" + platform_note + " ARM GCC availability is checked when building the example.")
+            self.tool_status.setText((versions or "Runtime capability report received.") + "\n" + platform_note + " The built-in example requires no compiler.")
+        elif command in {"setup_runtime", "runtime_history", "rollback_runtime"}:
+            self._runtime_report(result)
         elif command == "validate":
             self.validation_text.setPlainText("Validation passed. Guest compatibility still requires execution.\n\n" + _json(result))
-        elif command == "build_example":
+        elif command in {"build_example", "prepare_example"}:
             config = load_config(result["config_file"])
             root = self.data_root / "projects" / _fresh_name("example-project")
             # Controller is still completing cleanup. Import starts after idle.
             self._pending_example = (root, config)
-            self.tool_details.setPlainText("Independent example compiled; importing project after worker cleanup.\n\n" + _json(result))
+            self.tool_details.setPlainText(("Verified example image prepared without compilation" if command == "prepare_example" else "Independent example compiled") + "; importing project after worker cleanup.\n\n" + _json(result))
         elif command in {"run", "restart", "reproduce"}:
             self.active_run = self._job_output
             self.inspection = None
