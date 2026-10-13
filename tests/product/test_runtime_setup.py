@@ -61,6 +61,11 @@ def test_local_snapshot_retains_licenses_and_package_records(tmp_path):
     (root / 'bin/gdb-multiarch.exe').write_bytes(b'synthetic gdb')
     (root / 'bin/qemu-system-x86_64.exe').write_bytes(b'unrelated machine')
     (root / 'bin/dependency.dll').write_bytes(b'preserved shared library')
+    (root / 'include').mkdir()
+    (root / 'include/developer.h').write_bytes(b'not used by execution')
+    (root / 'lib').mkdir()
+    (root / 'lib/required.dll').write_bytes(b'needed runtime library')
+    (root / 'lib/unused.a').write_bytes(b'link-time only')
     license = root / 'share/licenses/gdb/COPYING'; license.parent.mkdir(parents=True)
     license.write_text('synthetic test license')
     archive = tmp_path / 'runtime.zip'
@@ -72,6 +77,9 @@ def test_local_snapshot_retains_licenses_and_package_records(tmp_path):
         assert 'bin/qemu-system-x86_64.exe' not in contents.namelist()
         assert 'bin/dependency.dll' in contents.namelist()
         assert 'bin/qemu-system-arm.exe' in contents.namelist()
+        assert 'include/developer.h' not in contents.namelist()
+        assert 'lib/unused.a' not in contents.namelist()
+        assert 'lib/required.dll' in contents.namelist()
         assert all(not row.is_dir() for row in contents.infolist())
 
 

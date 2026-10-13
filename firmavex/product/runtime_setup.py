@@ -98,6 +98,7 @@ def snapshot_runtime(directory, archive, *, packages, cancel=None):
     size = 0
     members = []
     omitted_other_machines = []
+    omitted_development_files = []
     for path in sorted(directory.rglob('*')):
         _cancelled(cancel)
         if path.is_symlink():
@@ -110,6 +111,9 @@ def snapshot_runtime(directory, archive, *, packages, cancel=None):
         # modules, data and notices, but do not copy unrelated guest engines.
         if name.startswith('bin/qemu-system-') and name.endswith('.exe') and name != 'bin/qemu-system-arm.exe':
             omitted_other_machines.append(name)
+            continue
+        if name.startswith(('include/', 'lib/pkgconfig/', 'lib/cmake/', 'share/doc/', 'share/man/', 'share/info/', 'share/aclocal/')) or (name.startswith('lib/') and name.endswith(('.a', '.la'))) or (name.startswith('lib/python') and '/test/' in name):
+            omitted_development_files.append(name)
             continue
         members.append((name, path))
         size += path.stat().st_size
@@ -124,6 +128,7 @@ def snapshot_runtime(directory, archive, *, packages, cancel=None):
     inventory = json.dumps({'schema_version': 1, 'vendor': BOOTSTRAP, 'installed_packages': packages,
                             'distribution_model': 'direct_vendor_download_then_local_snapshot',
                             'omitted_other_machine_executables': omitted_other_machines,
+                            'omitted_development_files': omitted_development_files,
                             'source_recipes': 'https://github.com/msys2/MINGW-packages'}, sort_keys=True, indent=2).encode()
     files[inventory_name] = hashlib.sha256(inventory).hexdigest()
     data = {'schema_version': 1, 'id': 'msys2-ucrt64-qemu11.1.2-gdb18.1-local-v1', 'host': host(),

@@ -69,7 +69,9 @@ Windows downloads MSYS2 **2026-09-27** directly from the publisher:
 The bootstrap is verified before execution. A private temporary installation
 updates through signed pacman repositories, installs UCRT64 QEMU and
 `gdb-multiarch`, and snapshots ARM QEMU/GDB with all shared libraries, modules and data, omitting
-unrelated `qemu-system-*` machine executables. It retains vendor license
+unrelated `qemu-system-*` executables, build-only headers/static libraries,
+package-development metadata/manuals and Python test resources. The omission
+inventory is retained; runtime libraries/modules/data and vendor license
 files and exact installed package records. The private vendor installation is
 removed after import. User/global MSYS2 installations are not upgraded.
 
