@@ -10,16 +10,86 @@ import os
 import subprocess
 import sys
 import tempfile
+import threading
+import signal
+import shutil
 import xml.etree.ElementTree as ET
+
+
+def run_tests(args, report):
+    """Stream bounded diagnostic history; own pytest descendants on every exit."""
+    from firmavex.product.windows_job import WindowsJob
+    command = [sys.executable, '-u', '-c',
+               "import sys,runpy; sys.stdin.buffer.read(1); sys.argv[0]='pytest'; runpy.run_module('pytest',run_name='__main__')", '-p',
+               'tools.product_ci_diagnostics', *args, '--junitxml='+str(report)]
+    kwargs = {'start_new_session': True} if os.name == 'posix' else {}
+    process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                               **kwargs)
+    owner = None
+    transcript = report.with_suffix('.log').open('wb')
+    history = bytearray()
+    lock = threading.Lock()
+    def stream():
+        while True:
+            data = os.read(process.stdout.fileno(), 4096)
+            if not data:
+                break
+            transcript.write(data)
+            transcript.flush()
+            with lock:
+                history.extend(data)
+                del history[:-65536]
+            # Binary writes retain traceback text even with a non-UTF8 console.
+            sys.stdout.buffer.write(data)
+            sys.stdout.buffer.flush()
+    try:
+        if os.name == 'nt':
+            owner = WindowsJob()
+            owner.assign(int(process._handle))
+        process.stdin.write(b'1')
+        process.stdin.close()
+        reader = threading.Thread(target=stream, daemon=True)
+        reader.start()
+        try:
+            process.wait(timeout=900)
+        except subprocess.TimeoutExpired:
+            print('::error::Pytest selection exceeded 900s; terminating owned test tree.', flush=True)
+            raise
+    finally:
+        if owner is not None:
+            owner.close()
+        if os.name == 'posix':
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        elif process.poll() is None:
+            process.kill()
+        process.wait(timeout=10)
+        if 'reader' in locals():
+            reader.join(timeout=10)
+            if reader.is_alive():
+                raise RuntimeError('CI output reader did not finish after owned tree cleanup')
+        process.stdout.close()
+        transcript.close()
+    with lock:
+        output = bytes(history).decode('utf-8', errors='replace')
+    return subprocess.CompletedProcess(command, process.returncode, stdout=output)
 
 
 def main(arguments=None):
     args = sys.argv[1:] if arguments is None else arguments
     with tempfile.TemporaryDirectory(prefix='firmavex-ci-') as directory:
         report = Path(directory)/'pytest.xml'
-        process = subprocess.run([sys.executable, '-m', 'pytest', *args, '--junitxml='+str(report)],
-                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors='replace')
-        print(process.stdout, end='', flush=True)
+        try:
+            process = run_tests(args, report)
+        finally:
+            destination = os.environ.get('FIRMAVEX_CI_DIAGNOSTICS')
+            if destination:
+                archive = Path(destination) / Path(directory).name
+                archive.mkdir(parents=True, exist_ok=False)
+                for source in Path(directory).iterdir():
+                    shutil.copyfile(source, archive/source.name)
         if process.returncode:
             diagnostic = ('pytest exited ' + str(process.returncode) + '; actual final process output: ' + process.stdout[-7000:])
             escaped = diagnostic.replace('%','%25').replace('\r','%0D').replace('\n','%0A')

@@ -22,6 +22,7 @@ jobs:
     env:
       QT_QPA_PLATFORM: offscreen
       PYTEST_QT_API: pyside6
+      FIRMAVEX_CI_DIAGNOSTICS: ${{ runner.temp }}/firmavex-ci-diagnostics
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -39,6 +40,7 @@ jobs:
           python tools/product_ci_tests.py -q
           tests/backends/test_qualification.py
           tests/product/test_local_interface.py
+          tests/product/test_ci_diagnostics.py
           tests/product/test_release.py
           tests/product/test_config.py
           tests/product/test_protocol.py
@@ -67,6 +69,14 @@ jobs:
         run: python tools/product_ci_tests.py -q tests/desktop -k "not real_desktop"
       - name: Smoke-test installed desktop without firmware dispatch
         run: firmavex-desktop --smoke-test
+      - name: Retain regression diagnostics even after failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: product-diagnostics-${{ matrix.os }}-py${{ matrix.python }}
+          path: ${{ runner.temp }}/firmavex-ci-diagnostics
+          if-no-files-found: warn
+          retention-days: 14
 
   linux-real-firmware:
     name: Ubuntu / real product firmware and existing regressions
@@ -75,6 +85,7 @@ jobs:
     env:
       QT_QPA_PLATFORM: offscreen
       PYTEST_QT_API: pyside6
+      FIRMAVEX_CI_DIAGNOSTICS: ${{ runner.temp }}/firmavex-ci-diagnostics
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -110,3 +121,11 @@ jobs:
           "$RUNNER_TEMP/firmavex-venv/bin/firmavex" inspect "$RUNNER_TEMP/firmavex-product-demo/search"
       - name: Whitespace check
         run: git diff --check
+      - name: Retain real regression diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: product-diagnostics-linux-real
+          path: ${{ runner.temp }}/firmavex-ci-diagnostics
+          if-no-files-found: warn
+          retention-days: 14

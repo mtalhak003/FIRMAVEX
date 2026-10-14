@@ -228,7 +228,15 @@ def test_native_windows_supervisor_reaps_python_descendant_after_worker_death(tm
     import ctypes
     import time
     pid_file = tmp_path / "host-child.pid"
-    source = PREFIX + f"import subprocess,pathlib;p=subprocess.Popen([sys.executable,'-c','import time;time.sleep(120)']);pathlib.Path({str(pid_file)!r}).write_text(str(p.pid));sys.exit(3)"
+    ready_file = tmp_path / "host-child-inspected"
+    source = PREFIX + (
+        "import subprocess,pathlib,time;"
+        "p=subprocess.Popen([sys.executable,'-c','import time;time.sleep(120)']);"
+        f"pathlib.Path({str(pid_file)!r}).write_text(str(p.pid));"
+        "deadline=time.monotonic()+10;"
+        f"\nwhile not pathlib.Path({str(ready_file)!r}).exists() and time.monotonic()<deadline: time.sleep(.005)"
+        "\nsys.exit(3)"
+    )
     # Open a synchronization handle while the actual child is still alive;
     # retaining this handle permits reliable post-cleanup termination checks.
     child_handles = []
