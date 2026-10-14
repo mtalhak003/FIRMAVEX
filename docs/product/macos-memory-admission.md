@@ -81,3 +81,32 @@ make their availability depend on macOS passing. A future macOS solution needs
 actual over-limit refusal/termination and descendant tests, source/frozen/installed
 ARM/RV32/HDL execution, GUI, cancellation, reproduction, cleanup, exports and
 upgrade/removal checks before revising this recommendation.
+
+## Measured native investigation at 8ab7f41
+
+[Native job 115942649651](https://github.com/mtalhak003/FIRMAVEX/actions/runs/38590177869/job/115942649651)
+compiled and executed the independent C helper as uid 501. These are native OS
+probe results, not firmware or enforcement qualification:
+
+| Measured case | Result |
+|---|---|
+| Small C, default allocator | 420,447,076,352 virtual bytes; 1,081,344 resident bytes |
+| Small C, nano disabled, AS attempts | 419,910,172,672 virtual bytes; 917,504 resident bytes |
+| AS, both existing caps, both allocator modes | `setrlimit` rejected with errno 22 (`EINVAL`); `/usr/bin/true` not dispatched |
+| DATA, both caps, default allocator | rejected with errno 22 |
+| Mach footprint, both caps, default allocator | symbol available; return 8 (`KERN_NO_ACCESS`) |
+| Memorystatus fatal properties, both caps, default allocator | symbol available; return -1, errno 1 (`EPERM`) |
+
+The C helper is smaller in resident memory, but not small enough in **virtual**
+map size. Separately supervising it cannot change kernel admission. Disabling
+nano allocation does not solve the demonstrated AS failure. No API call here
+establishes an alternative enforceable, unprivileged memory boundary.
+
+The original per-case notices reached GitHub's ten-notice display limit; the
+artifact contains the full investigation. Grouped notices now preserve all 16
+observations in the public view. A JSON-lines file also retains completed probe
+observations if a later case fails. The recommended policy therefore remains
+**macOS Apple Silicon native unified execution unsupported**. This is a measured
+blocker for the tested OS/tool arrangement, not a claim that no possible macOS
+architecture could ever enforce a memory policy. A privileged helper or separate
+VM policy would require explicit design, installation and native security review.

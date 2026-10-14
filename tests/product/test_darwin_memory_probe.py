@@ -58,3 +58,24 @@ def test_investigation_runs_before_original_native_checks_and_retains_both_logs(
     assert '${{ runner.temp }}/darwin-memory-investigation' in workflow
     assert '${{ runner.temp }}/native-security-regressions.log' in workflow
     assert 'continue-on-error' not in workflow
+
+
+def test_interruption_is_not_replaced_by_cleanup_errors(monkeypatch):
+    from types import SimpleNamespace
+    cancellation = KeyboardInterrupt('original cancellation')
+    closed = []
+    def interrupt(**kwargs):
+        raise cancellation
+    def bad_close():
+        closed.append('stdout')
+        raise OSError('close failed')
+    process = SimpleNamespace(pid=42, communicate=interrupt, wait=lambda **kwargs: None,
+                              stdout=SimpleNamespace(close=bad_close),
+                              stderr=SimpleNamespace(close=lambda: closed.append('stderr')))
+    monkeypatch.setattr(probe.subprocess, 'Popen', lambda *args, **kwargs: process)
+    monkeypatch.setattr(probe.os, 'killpg', lambda *args: None, raising=False)
+    with pytest.raises(KeyboardInterrupt) as captured:
+        probe._run(['/controlled/probe'], env={})
+    assert captured.value is cancellation
+    assert closed == ['stdout', 'stderr']
+    assert any('close failed' in note for note in cancellation.__notes__)

@@ -32,19 +32,27 @@ def _run(argv, *, env, timeout=30):
         primary = exc
         raise
     finally:
-        try:
+        errors = []
+        def terminate_group():
             try:
                 os.killpg(process.pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
-            process.wait(timeout=5)
-        except BaseException as cleanup:
-            if primary is None:
-                raise
-            primary.add_note('Probe cleanup failed: ' + str(cleanup))
-        finally:
-            process.stdout.close()
-            process.stderr.close()
+        for action in (terminate_group, lambda: process.wait(timeout=5),
+                       process.stdout.close, process.stderr.close):
+            try:
+                action()
+            except BaseException as cleanup:
+                errors.append(cleanup)
+        if primary is not None:
+            for error in errors:
+                primary.add_note('Probe cleanup failed: ' + str(error))
+        elif errors:
+            failure = next((error for error in errors if not isinstance(error, Exception)), errors[0])
+            for error in errors:
+                if error is not failure:
+                    failure.add_note('Additional probe cleanup failure: ' + str(error))
+            raise failure
 
 
 def validate_observation(record, mode, cap, code):
@@ -100,7 +108,8 @@ def investigate(output):
                 record = {'allocator': allocator, 'observation': observation,
                           'exit_status': code, 'stderr': stderr}
                 records.append(record)
-                print('::notice title=Darwin native memory investigation::' + json.dumps(record, sort_keys=True), flush=True)
+                with (output / 'observations.jsonl').open('a', encoding='utf-8') as stream:
+                    stream.write(json.dumps(record, sort_keys=True) + '\n')
     result = {'schema_version': 1, 'kind': 'native_os_memory_investigation',
               'firmware_executions': 0, 'sandbox_qualification': False,
               'production_limits_changed': False,
@@ -111,6 +120,13 @@ def investigate(output):
               'binary_sha256': hashlib.sha256(binary.read_bytes()).hexdigest(),
               'records': records}
     (output / 'investigation.json').write_text(json.dumps(result, sort_keys=True, indent=2) + '\n', encoding='utf-8')
+    # GitHub retains at most ten notices per step. Two grouped records preserve
+    # all sixteen observations in the public view, rather than dropping six.
+    for allocator in ('default', 'nano_disabled'):
+        summary = {'allocator': allocator, 'records': [r for r in records if r['allocator'] == allocator]}
+        print('::notice title=Darwin native memory investigation::' + json.dumps(summary, sort_keys=True), flush=True)
+    metadata = {key: value for key, value in result.items() if key not in {'records', 'compiler'}}
+    print('::notice title=Darwin investigation identity::' + json.dumps(metadata, sort_keys=True).replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A'), flush=True)
     return result
 
 
