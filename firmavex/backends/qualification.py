@@ -44,7 +44,7 @@ def require_windows_qualification(profile):
             raise RuntimeError("Incomplete native compatibility catalog")
         selected = find_many(sorted(names))
         if all(
-            file_identity(selected[name].path)["sha256"] == expected[name]["sha256"]
+            file_identity(selected[name])["sha256"] == expected[name]["sha256"]
             for name in names
         ):
             return

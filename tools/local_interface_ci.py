@@ -178,9 +178,18 @@ def main(argv=None):
     try:
         qualify(args.output, args.engine)
     except Exception as exc:
+        error = json.dumps(
+            {
+                "type": type(exc).__name__,
+                "message": str(exc),
+                "details": getattr(exc, "details", {}),
+            },
+            sort_keys=True,
+            default=str,
+        )[-10000:]
         print(
             "::error title=Local interface qualification::"
-            + str(exc).replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+            + error.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
         )
         return 1
     return 0

@@ -13,8 +13,12 @@ def windows(monkeypatch):
 
 
 def test_empty_catalog_cannot_enable_native_windows(windows, monkeypatch):
-    resource = SimpleNamespace(joinpath=lambda name: SimpleNamespace(read_text=lambda **kwargs: json.dumps({'schema_version': 1, 'profiles': []})))
-    monkeypatch.setattr(qualification, 'files', lambda package: resource)
+    resource = SimpleNamespace(
+        joinpath=lambda name: SimpleNamespace(
+            read_text=lambda **kwargs: json.dumps({"schema_version": 1, "profiles": []})
+        )
+    )
+    monkeypatch.setattr(qualification, "files", lambda package: resource)
     with pytest.raises(RuntimeError, match="not passed"):
         qualification.require_windows_qualification("riscv32-virt")
 
@@ -50,7 +54,7 @@ def test_catalog_requires_every_selected_digest(windows, monkeypatch):
     monkeypatch.setattr(
         qualification,
         "find_many",
-        lambda names: {name: SimpleNamespace(path=name) for name in names},
+        lambda names: {name: name for name in names},
     )
     monkeypatch.setattr(
         qualification,
@@ -63,5 +67,43 @@ def test_catalog_requires_every_selected_digest(windows, monkeypatch):
     monkeypatch.setattr(
         qualification, "file_identity", lambda path: {"sha256": "c" * 64}
     )
+    with pytest.raises(RuntimeError, match="not passed"):
+        qualification.require_windows_qualification("riscv32-virt")
+
+
+def test_catalog_checks_real_file_bytes_with_discovery_path_strings(
+    windows, tmp_path, monkeypatch
+):
+    """The production discovery API returns strings, never Selection objects."""
+    import hashlib
+
+    paths = {}
+    expected = {}
+    for name in ("qemu-system-riscv32", "gdb-multiarch"):
+        path = tmp_path / name
+        data = ("synthetic gate test, not runtime evidence: " + name).encode()
+        path.write_bytes(data)
+        paths[name] = str(path)
+        expected[name] = {"sha256": hashlib.sha256(data).hexdigest()}
+    record = {
+        "schema_version": 1,
+        "profiles": [
+            {
+                "system": "Windows",
+                "architecture": "x86_64",
+                "profile": "riscv32-virt",
+                "tools": expected,
+            }
+        ],
+    }
+    resource = SimpleNamespace(
+        joinpath=lambda name: SimpleNamespace(
+            read_text=lambda **kwargs: json.dumps(record)
+        )
+    )
+    monkeypatch.setattr(qualification, "files", lambda package: resource)
+    monkeypatch.setattr(qualification, "find_many", lambda names: paths)
+    qualification.require_windows_qualification("riscv32-virt")
+    (tmp_path / "gdb-multiarch").write_bytes(b"changed")
     with pytest.raises(RuntimeError, match="not passed"):
         qualification.require_windows_qualification("riscv32-virt")
