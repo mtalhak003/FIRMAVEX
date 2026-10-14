@@ -1,6 +1,6 @@
 # Batch 6: unified offline desktop
 
-The **Backends** workspace in the desktop application's Tools menu uses the
+The **Backends** workspace in the desktop application's Backends menu uses the
 same supervised worker as the existing ARM interface. Choose ARM Cortex-M3,
 RISC-V RV32, or Verilog/Icarus. Controls describe the method accurately: ARM is
 bounded firmware search, RV32 is a configured symbol observation, and Icarus is
@@ -128,3 +128,11 @@ The unified-desktop GitHub workflow runs source GUI, source worker, frozen worke
 and installed application checks on Ubuntu x64, Windows x64 and Apple Silicon,
 plus reinstall/removal checks preserving independently stored records. Native
 qualification must succeed before claiming a platform/backend combination.
+
+## Batch 6 qualification checkpoint
+
+The Ubuntu x64 job in [run 38546993532](https://github.com/mtalhak003/FIRMAVEX/actions/runs/38546993532) passed actual source, frozen and installed ARM/RV32/HDL execution, reproduction, cancellation, persistence and export, including package reinstall/removal with retained results. This is example-based qualification, not arbitrary-target support.
+
+The same workflow did **not** qualify native Windows or macOS multi-backend execution. Windows publisher package installation failed before execution. Darwin rejected RLIMIT_AS admission even when requested limits were below inherited caps; this remains a fail-closed limitation, not permission to omit memory controls. Older ARM-only macOS execution evidence does not qualify the new adapters. The Windows native compatibility catalog intentionally contains no approved entries until complete native evidence exists. Candidate qualification requires explicit administrator opt-in and conveys no support guarantee.
+
+Installers remain unsigned/unnotarized unless a particular artifact supplies independently verifiable signing evidence. CI failures and partial results must be reviewed before beta distribution.

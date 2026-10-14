@@ -20,11 +20,14 @@ def tool(name):
     return find(name)
 
 
-def require_native_candidate():
+def require_native_candidate(profile=None):
     """An explicit candidate environment enables actual CI tests, never support claims."""
-    if os.name == "nt" and os.environ.get("FIRMAVEX_QUALIFY_BACKENDS") != "1":
-        raise RuntimeError("New native Windows backends require actual qualification; only explicit candidate qualification is enabled")
-
+    if profile is None:
+        if os.name == "nt" and os.environ.get("FIRMAVEX_QUALIFY_BACKENDS") != "1":
+            raise RuntimeError("Native Windows target requires explicit qualification")
+        return
+    from .qualification import require_windows_qualification
+    require_windows_qualification(profile)
 
 def snapshot(source, destination, maximum):
     from .security import read_bytes, checked_path
@@ -135,7 +138,7 @@ class RiscvBackend:
     profile = profiles["riscv32-virt"]
 
     def execute(self, request, output, cancel):
-        require_native_candidate()
+        require_native_candidate(self.profile.id)
         image = output / "firmware.elf"
         identity = snapshot(request.source, image, request.limits.artifact_bytes)
         with image.open("rb") as stream:
@@ -298,7 +301,7 @@ class IcarusBackend:
     profile = profiles["verilog-icarus"]
 
     def execute(self, request, output, cancel):
-        require_native_candidate()
+        require_native_candidate(self.profile.id)
         source = output / "testbench.v"
         identity = snapshot(request.source, source, request.limits.artifact_bytes)
         # A single self-contained testbench is the supported initial boundary.

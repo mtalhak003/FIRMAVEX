@@ -146,7 +146,7 @@ def test_valid_rv_request_preserves_values_limits_and_explicit_trust(view):
     assert payload["request"]["values"] == [0xFFFFFFFF, 2]
     assert payload["request"]["limits"]["timeout_seconds"] == 17.5
     assert payload["request"]["limits"]["artifact_bytes"] == 3 * 1024 * 1024
-    assert "backend-workspace/runs" in payload["output_dir"]
+    assert Path(payload["output_dir"]).parent == window.data_root / "runs"
     assert not window.profile_combo.isEnabled() and window.cancel_button.isEnabled()
 
 
@@ -227,14 +227,14 @@ def test_saved_record_is_read_only_and_reproduction_requires_new_trust(view):
     window.source_edit.setText("/owned/counter.v")
     window.trust_box.setChecked(True)
     window.inspect(Path("/saved/run"))
-    assert controller.calls[-1] == ("backend_inspect", {"run_dir": "/saved/run"})
+    assert controller.calls[-1] == ("backend_inspect", {"run_dir": str(Path("/saved/run"))})
     controller.finish({"status": "triggered", "evidence": {"measurement_mode": "synthetic_test"}})
     assert not window.trust_box.isChecked() and not window.reproduce_button.isEnabled()
     window.trust_box.setChecked(True)
     assert window.reproduce_button.isEnabled()
     window.reproduce()
     command, payload = controller.calls[-1]
-    assert command == "backend_reproduce" and payload["run_dir"] == "/saved/run"
+    assert command == "backend_reproduce" and Path(payload["run_dir"]) == Path("/saved/run")
     assert payload["trust"] == "trusted_project"
     assert window.active_run != Path("/saved/run") and window.record is None
 
@@ -272,7 +272,7 @@ def test_export_uses_a_fresh_directory_and_preserves_the_run(view, tmp_path, mon
     monkeypatch.setattr("firmavex.desktop.universal.QFileDialog.getExistingDirectory", lambda *a: str(tmp_path))
     window.export()
     command, payload = controller.calls[-1]
-    assert command == "backend_export" and payload["run_dir"] == "/owned/run"
+    assert command == "backend_export" and Path(payload["run_dir"]) == Path("/owned/run")
     assert Path(payload["output_dir"]).parent == tmp_path
     assert not Path(payload["output_dir"]).exists()
     assert window.active_run == Path("/owned/run")

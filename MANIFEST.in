@@ -34,3 +34,5 @@ include tools/backend_qualification.py
 recursive-include firmavex/backends/examples *.json
 
 include tools/universal_desktop_ci.py
+
+include firmavex/backends/native_profiles.json
