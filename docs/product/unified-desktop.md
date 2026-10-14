@@ -168,3 +168,18 @@ The native workflow retains `native-security-regressions.log` even on failure.
 Its pipeline propagates the test exit status; downstream qualification does not
 run after failed admission checks. A failed macOS job remains failed, rather than
 being converted into a skip or a support claim.
+
+Repair run [38583721321](https://github.com/mtalhak003/FIRMAVEX/actions/runs/38583721321)
+confirmed Windows now passes the unchanged ownership/path/resource regressions
+and actual ARM/RV32 source execution and reproduction. Its HDL step exposed an
+additional transport boundary: exact result lines must accept native CRLF as
+well as LF. Both formats use the same single PASS/FAIL marker rule; duplicate,
+malformed or nonzero-exit results remain invalid. Qualification failures now
+publish recorded simulator stdout/stderr and exit status instead of dropping
+the diagnostic context.
+
+The macOS diagnostic in job 115920023461 measured launcher virtual mappings of
+420,837,490,688 bytes and resident memory of 21,102,592 bytes in the 134,217,728-byte
+admission test. These are virtual address mappings versus resident RAM, not a
+claim that the process consumed 420 GB of physical memory. The kernel rejected
+the requested cap before target dispatch. All failing checks remain enabled.

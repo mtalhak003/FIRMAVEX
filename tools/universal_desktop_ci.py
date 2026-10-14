@@ -99,7 +99,12 @@ def _arm_receipts(directory, expected, *, cancelled=False):
 def verify_completed(record, profile, expected):
     """Reject labels alone, contradictory outcomes, and missing native evidence."""
     _require(type(record.get("schema_version")) is int and record["schema_version"] == 1, "Unexpected result schema")
-    _require(record.get("status") == expected, f"Unexpected {profile} outcome: {record.get('status')}")
+    if record.get("status") != expected:
+        evidence = record.get("evidence", {})
+        exc = ValueError(f"Unexpected {profile} outcome: {record.get('status')}")
+        exc.details = {key: evidence.get(key) for key in
+                       ("returncode", "stdout", "stderr", "compile_stdout", "compile_stderr", "cleanup_verified", "error")}
+        raise exc
     evidence = record["evidence"]
     _require(evidence.get("cleanup_verified") is True, "Completion has unverified cleanup")
     if profile == "cortex-m3-mps2":

@@ -297,6 +297,14 @@ class RiscvBackend:
             evidence["cleanup_verified"] = cleaned
 
 
+def _icarus_status(stdout, returncode):
+    """One exact result line, accepting native LF or CRLF transport endings."""
+    matches = re.findall(r"^FIRMAVEX_TEST_RESULT=(PASS|FAIL)\r?$", stdout, re.MULTILINE)
+    if len(matches) != 1 or returncode != 0:
+        return "invalid_output"
+    return "passed" if matches[0] == "PASS" else "triggered"
+
+
 class IcarusBackend:
     profile = profiles["verilog-icarus"]
 
@@ -362,11 +370,9 @@ class IcarusBackend:
                 returncode=code,
                 measurement_mode="real_simulation",
             )
-            matches = re.findall(
-                r"^FIRMAVEX_TEST_RESULT=(PASS|FAIL)$", stdout, re.MULTILINE
-            )
-            if len(matches) != 1 or code != 0:
-                return Result("invalid_output", evidence)
+            status = _icarus_status(stdout, code)
+            if status == "invalid_output":
+                return Result(status, evidence)
             inspect_artifacts(output, request.limits.artifact_bytes)
             for record in evidence["tools"].values():
                 if file_identity(record["identity"]["path"]) != record["identity"]:
@@ -378,7 +384,7 @@ class IcarusBackend:
                 ):
                     raise RuntimeError("Invalid waveform artifact")
                 evidence["artifacts"].append({"name": path.name, **file_identity(path)})
-            return Result("passed" if matches[0] == "PASS" else "triggered", evidence)
+            return Result(status, evidence)
         except BaseException as exc:
             primary = exc
             exc.backend_evidence = evidence

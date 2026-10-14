@@ -551,3 +551,24 @@ def test_arm_adapter_preserves_authoritative_outcomes(
     assert result["evidence"]["measurement_mode"] == "synthetic_test"
     if aborted or not complete:
         assert result["evidence"]["cleanup_verified"] is False
+
+
+@pytest.mark.parametrize('newline', ['\n', '\r\n'])
+@pytest.mark.parametrize('outcome,expected', [('PASS', 'passed'), ('FAIL', 'triggered')])
+def test_icarus_result_native_line_endings(newline, outcome, expected):
+    from firmavex.backends.implementations import _icarus_status
+    assert _icarus_status('VCD info: opened waveform.vcd.' + newline + 'FIRMAVEX_TEST_RESULT=' + outcome + newline, 0) == expected
+
+
+@pytest.mark.parametrize('stdout,code', [
+    ('FIRMAVEX_TEST_RESULT=PASS\r\n', 1),
+    ('FIRMAVEX_TEST_RESULT=PASS\r\nFIRMAVEX_TEST_RESULT=FAIL\r\n', 0),
+    ('FIRMAVEX_TEST_RESULT=PASS\nFIRMAVEX_TEST_RESULT=PASS\n', 0),
+    ('FIRMAVEX_TEST_RESULT=PASS trailing\r\n', 0),
+    (' FIRMAVEX_TEST_RESULT=PASS\r\n', 0),
+    ('FIRMAVEX_TEST_RESULT=PASS\rgarbage', 0),
+    ('', 0),
+])
+def test_icarus_line_endings_do_not_weaken_result_validation(stdout, code):
+    from firmavex.backends.implementations import _icarus_status
+    assert _icarus_status(stdout, code) == 'invalid_output'
