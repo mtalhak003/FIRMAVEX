@@ -289,6 +289,10 @@ def fake_debugger(monkeypatch):
     module.Breakpoint, module.breakpoints = Breakpoint, lambda: tuple(targets)
     module.parse_and_eval = lambda name: Value(state[name])
     module.execute, module.write = execute, output.append
+    state["flushes"] = 0
+    def flush():
+        state["flushes"] += 1
+    module.flush = flush
     monkeypatch.setitem(sys.modules, "gdb", module)
     def run(script):
         body = script[len("python\n"):].removesuffix("\nend\n")
@@ -307,6 +311,7 @@ def test_debugger_executes_startup_then_injects_and_observes(config, fake_debugg
     output = run(_debugger_script(config, values, 54321, "M="))
     data = _parse_completion(output, "M=", config, values)
     assert data["triggered"] is triggered
+    assert state["flushes"] == 2
     assert (state["inputs[0]"], state["inputs[1]"]) == values
     assert callbacks == []
     if signature:

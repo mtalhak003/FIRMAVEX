@@ -22,6 +22,12 @@ _FIELDS = {
     "prepare_example": ({"output_dir"}, set()), "setup_runtime": (set(), set()),
     "runtime_history": (set(), set()), "rollback_runtime": ({"generation"}, set()),
     "demo_builtin": ({"output_dir"}, set()),
+    "backend_check": ({"profile"}, set()),
+    "backend_prepare": ({"profile", "output_dir"}, set()),
+    "backend_execute": ({"request", "output_dir", "trust"}, set()),
+    "backend_inspect": ({"run_dir"}, set()),
+    "backend_reproduce": ({"run_dir", "output_dir", "trust"}, set()),
+    "backend_export": ({"run_dir", "output_dir"}, set()),
     "cancel": (set(), {"job_request_id"}), "shutdown": (set(), set()),
 }
 DIAGNOSTIC_PREVIEW_BYTES = 4096
@@ -144,7 +150,23 @@ class Worker:
         request_id, command, payload = message["request_id"], message["command"], message["payload"]
         try:
             callback = lambda data: self.emit(request_id, "progress", data)
-            if command == "doctor":
+            if command.startswith("backend_"):
+                from . import backend_services as backend
+                if command == "backend_check":
+                    result = backend.check(payload["profile"])
+                elif command == "backend_prepare":
+                    result = backend.prepare(payload["profile"], payload["output_dir"], cancel_event=cancel)
+                elif command == "backend_execute":
+                    result = backend.execute(payload["request"],payload["output_dir"],trust=payload["trust"],cancel_event=cancel,event_callback=callback)
+                elif command == "backend_inspect":
+                    result = backend.inspect(payload["run_dir"])
+                elif command == "backend_reproduce":
+                    result = backend.reproduce(payload["run_dir"],payload["output_dir"],trust=payload["trust"],cancel_event=cancel,event_callback=callback)
+                elif command == "backend_export":
+                    result = backend.export(payload["run_dir"],payload["output_dir"])
+                else:
+                    raise ProductError("protocol_error", "Unsupported backend command")
+            elif command == "doctor":
                 result = self.services.doctor()
             elif command == "validate":
                 result = self.services.validate_project(payload["config"])
@@ -195,7 +217,11 @@ class Worker:
             output_dir = payload.get("output_dir")
             if output_dir is not None:
                 try:
-                    details["partial_result"] = self.services.inspect_run(output_dir)
+                    if command.startswith("backend_"):
+                        from .backend_services import inspect as inspect_backend
+                        details["partial_result"] = inspect_backend(output_dir)
+                    else:
+                        details["partial_result"] = self.services.inspect_run(output_dir)
                 except Exception as inspection_error:
                     details["inspection_error"] = str(inspection_error)
             self.emit(request_id, "error", ProductError("cancelled", "Execution was interrupted; inspect the partial run before restart.", details).to_dict())

@@ -342,8 +342,9 @@ def test_nonobject_result_fails_closed(qtbot, record):
 
 
 @pytest.mark.parametrize("nested", [False, True])
-def test_synthetic_factory_cannot_claim_real_firmware(qtbot, nested):
-    real = {"measurement_mode": "real_firmware"}
+@pytest.mark.parametrize("mode", ["real_firmware", "real_simulation"])
+def test_synthetic_factory_cannot_claim_real_firmware(qtbot, nested, mode):
+    real = {"measurement_mode": mode}
     result = synthetic(evidence=real) if nested else real
     controller = controller_for(lambda *args: result)
     values = collect(controller)

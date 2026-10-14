@@ -1,7 +1,7 @@
 """Offline, headless backend contract; independent of frozen research protocols."""
 
 from .api import Backend, Capabilities, Limits, Request, Result, TargetProfile, profiles
-from .engine import execute, inspect_run
+from .engine import execute, execute_trusted, inspect_run
 
 __all__ = [
     "Backend",
@@ -12,5 +12,6 @@ __all__ = [
     "TargetProfile",
     "profiles",
     "execute",
+    "execute_trusted",
     "inspect_run",
 ]

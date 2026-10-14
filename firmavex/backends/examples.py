@@ -5,14 +5,14 @@ from pathlib import Path
 import threading
 from .api import Limits
 from .process import Processes
-from .implementations import tool, snapshot, finish
+from .implementations import tool, finish
 from .engine import _write
 from firmavex.product.tools import file_identity
 
 
 def prepare(profile, output):
-    output = Path(output).expanduser().resolve()
-    output.mkdir(parents=True, exist_ok=False)
+    from .security import fresh_directory
+    output = fresh_directory(output)
     resources = files("firmavex.backends").joinpath("examples")
     if profile == "verilog-icarus":
         path = output / "counter.v"
@@ -27,6 +27,7 @@ def prepare(profile, output):
         for name in ("riscv.c", "riscv.S", "riscv.ld"):
             (output / name).write_bytes(resources.joinpath(name).read_bytes())
         compiler = tool("riscv64-unknown-elf-gcc")
+        compiler_identity = file_identity(compiler)
         processes = Processes(threading.Event(), Limits(60))
         primary = None
         flags = [
@@ -73,11 +74,13 @@ def prepare(profile, output):
             code, stdout, stderr = processes.run(command, output)
             if code:
                 raise RuntimeError("Linker failed: " + stderr)
+            if file_identity(compiler) != compiler_identity:
+                raise RuntimeError("Compiler changed during example build")
             record = {
                 "schema_version": 1,
                 "profile": profile,
                 "compiler": {
-                    "identity": file_identity(compiler),
+                    "identity": compiler_identity,
                     "version": version.splitlines()[0],
                 },
                 "flags": flags,

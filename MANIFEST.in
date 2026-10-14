@@ -30,3 +30,7 @@ recursive-include firmavex/backends/examples *.S *.v
 recursive-include tests/backends *.py
 
 include tools/backend_qualification.py
+
+recursive-include firmavex/backends/examples *.json
+
+include tools/universal_desktop_ci.py

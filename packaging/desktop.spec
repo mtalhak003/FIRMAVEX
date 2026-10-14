@@ -6,6 +6,10 @@ import sys
 root = Path(SPECPATH).parent
 hidden = collect_submodules('firmavex') + collect_submodules('src.firmavex')
 data = collect_data_files('firmavex.product') + collect_data_files('firmware.benchmarks.cortex_m')
+# The console sidecar dispatches the same versioned backend worker as the GUI.
+# Include HDL sources, RV32 build inputs, and the verified compiler-free image
+# catalog. These are application assets; no QEMU/GDB/Icarus runtime is bundled.
+data += collect_data_files('firmavex.backends')
 data += [(str(root / 'LICENSE'), 'notices'), (str(root / 'packaging' / 'THIRD_PARTY_NOTICES.md'), 'notices')]
 data += [(str(path), 'notices') for path in (root / 'packaging' / 'licenses').glob('*')]
 a = Analysis([str(root / 'packaging' / 'desktop_entry.py'), str(root / 'packaging' / 'desktop_gui_entry.py')], pathex=[str(root)],

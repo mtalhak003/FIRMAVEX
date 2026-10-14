@@ -1,0 +1,142 @@
+name: Unified desktop native backend qualification
+on:
+  push:
+    branches: ["product/desktop-batch6"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest, macos-14]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    env:
+      QT_QPA_PLATFORM: offscreen
+      FIRMAVEX_REQUIRE_RUNTIME: "1"
+      FIRMAVEX_REQUIRE_BACKENDS: "1"
+      # Candidate opt-in is deliberately separate from public qualification.
+      FIRMAVEX_QUALIFY_BACKENDS: "1"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: msys2/setup-msys2@v2
+        if: runner.os == 'Windows'
+        id: msys2
+        with:
+          msystem: UCRT64
+          update: true
+      - name: Windows publisher-signed runtime packages
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: pacman -S --needed --noconfirm mingw-w64-ucrt-x86_64-qemu mingw-w64-ucrt-x86_64-gdb-multiarch mingw-w64-ucrt-x86_64-iverilog
+      - name: Expose native Windows runtimes to CPython
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
+        run: |
+          (Join-Path $env:MSYS2_LOCATION 'ucrt64\bin') | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+      - name: Ubuntu native runtime and Qt libraries
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y qemu-system-arm qemu-system-misc gdb-multiarch iverilog libegl1 libgl1 libopengl0 libxkbcommon-x11-0 libxcb-cursor0
+      - name: Apple Silicon native runtime candidates
+        if: runner.os == 'macOS'
+        run: brew install qemu gdb icarus-verilog
+      - run: python -m pip install ".[dev,desktop,gui-test]" "pyinstaller==6.16.0"
+      - name: Native ownership, path and resource regression tests
+        run: python tools/product_ci_tests.py -q tests/backends/test_records_security.py tests/backends/test_process_security.py tests/product/test_backend_services.py
+      - name: Real source backend execution, reproduction, cancellation, export
+        run: python -m tools.universal_desktop_ci --output "${{ runner.temp }}/unified-source"
+      - name: Real source unified GUI workflows
+        run: python tools/product_ci_tests.py -q tests/desktop/test_real_universal.py
+      - name: Freeze application, console worker, backend launchers and assets
+        run: python -m PyInstaller --clean --noconfirm packaging/desktop.spec
+      - name: Real frozen backends without a child Python installation
+        shell: bash
+        run: |
+          app=dist/FIRMAVEX/FIRMAVEX
+          desktop=dist/FIRMAVEX/FIRMAVEX-Desktop
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            app=dist/FIRMAVEX/FIRMAVEX.exe
+            desktop=dist/FIRMAVEX/FIRMAVEX-Desktop.exe
+          elif [ "${{ runner.os }}" = "macOS" ]; then
+            app=dist/FIRMAVEX.app/Contents/MacOS/FIRMAVEX
+            desktop=dist/FIRMAVEX.app/Contents/MacOS/FIRMAVEX-Desktop
+          fi
+          "$desktop" --smoke-test
+          python -m tools.universal_desktop_ci --output "$RUNNER_TEMP/unified-frozen" --engine "$app"
+      - name: Windows installed backends, upgrade, uninstall and retained results
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" packaging/windows.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $destination = Join-Path $env:RUNNER_TEMP 'FIRMAVEX installed unified with spaces'
+          $installer = (Resolve-Path dist/FIRMAVEX-Windows-unsigned.exe).Path
+          $archive = Join-Path $env:RUNNER_TEMP 'unified-installed'
+          foreach ($iteration in 1..2) {
+            $p = Start-Process $installer -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=`"$destination`"" -Wait -PassThru
+            if ($p.ExitCode -ne 0) { throw 'Installation or upgrade failed' }
+            $gui = Start-Process (Join-Path $destination 'FIRMAVEX-Desktop.exe') -ArgumentList '--smoke-test' -Wait -PassThru
+            if ($gui.ExitCode -ne 0) { throw 'Installed unified GUI startup failed' }
+            if ($iteration -eq 1) {
+              python -m tools.universal_desktop_ci --output $archive --engine (Join-Path $destination 'FIRMAVEX.exe')
+              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+              $identity = (Get-FileHash (Join-Path $archive 'qualification.json') -Algorithm SHA256).Hash
+            } elseif ((Get-FileHash (Join-Path $archive 'qualification.json') -Algorithm SHA256).Hash -ne $identity) {
+              throw 'Upgrade changed the independently stored execution archive'
+            }
+          }
+          $p = Start-Process (Join-Path $destination 'unins000.exe') -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw 'Uninstall failed' }
+          if (Test-Path (Join-Path $destination 'FIRMAVEX-Desktop.exe')) { throw 'Uninstall did not remove application' }
+          if ((Get-FileHash (Join-Path $archive 'qualification.json') -Algorithm SHA256).Hash -ne $identity) { throw 'Uninstall changed execution archive' }
+      - name: Ubuntu installed backends, upgrade, removal and retained results
+        if: runner.os == 'Linux'
+        run: |
+          python -m tools.build_linux_deb dist/FIRMAVEX dist/FIRMAVEX-Linux-amd64.deb
+          sudo apt-get install -y ./dist/FIRMAVEX-Linux-amd64.deb
+          /opt/firmavex/FIRMAVEX-Desktop --smoke-test
+          python -m tools.universal_desktop_ci --output "$RUNNER_TEMP/unified-installed" --engine /opt/firmavex/FIRMAVEX
+          identity=$(sha256sum "$RUNNER_TEMP/unified-installed/qualification.json")
+          sudo dpkg -i dist/FIRMAVEX-Linux-amd64.deb
+          /opt/firmavex/FIRMAVEX-Desktop --smoke-test
+          test "$(sha256sum "$RUNNER_TEMP/unified-installed/qualification.json")" = "$identity"
+          sudo apt-get remove -y firmavex-desktop
+          test ! -e /opt/firmavex/FIRMAVEX-Desktop
+          test "$(sha256sum "$RUNNER_TEMP/unified-installed/qualification.json")" = "$identity"
+      - name: Apple Silicon DMG installation, upgrade, removal and retained results
+        if: runner.os == 'macOS'
+        run: |
+          hdiutil create -volname FIRMAVEX -srcfolder dist/FIRMAVEX.app -ov -format UDZO dist/FIRMAVEX-macOS-unnotarized.dmg
+          mount="$RUNNER_TEMP/FIRMAVEX mounted image"
+          destination="$RUNNER_TEMP/FIRMAVEX installed with spaces/FIRMAVEX.app"
+          mkdir -p "$mount" "$(dirname "$destination")"
+          hdiutil attach dist/FIRMAVEX-macOS-unnotarized.dmg -readonly -nobrowse -mountpoint "$mount"
+          trap 'hdiutil detach "$mount"' EXIT
+          ditto "$mount/FIRMAVEX.app" "$destination"
+          "$destination/Contents/MacOS/FIRMAVEX-Desktop" --smoke-test
+          python -m tools.universal_desktop_ci --output "$RUNNER_TEMP/unified-installed" --engine "$destination/Contents/MacOS/FIRMAVEX"
+          identity=$(shasum -a 256 "$RUNNER_TEMP/unified-installed/qualification.json")
+          ditto "$mount/FIRMAVEX.app" "$destination"
+          "$destination/Contents/MacOS/FIRMAVEX-Desktop" --smoke-test
+          test "$(shasum -a 256 "$RUNNER_TEMP/unified-installed/qualification.json")" = "$identity"
+          rm -rf "$destination"
+          test ! -e "$destination"
+          test "$(shasum -a 256 "$RUNNER_TEMP/unified-installed/qualification.json")" = "$identity"
+      - name: Preserve actual results, logs, waveforms, and failure evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FIRMAVEX-${{ matrix.os }}-unified-native-evidence
+          path: |
+            ${{ runner.temp }}/unified-source
+            ${{ runner.temp }}/unified-frozen
+            ${{ runner.temp }}/unified-installed
+          if-no-files-found: warn

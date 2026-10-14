@@ -47,7 +47,7 @@ include = [
 exclude = ["tests", "tests.*"]
 
 [tool.setuptools.package-data]
-"firmavex.backends" = ["examples/*.c", "examples/*.S", "examples/*.ld", "examples/*.v"]
+"firmavex.backends" = ["examples/*.c", "examples/*.S", "examples/*.ld", "examples/*.v", "examples/*.json"]
 "firmavex.product" = ["resources/example/*.c", "resources/example/*.ld", "resources/example/*.md", "resources/example/*.json"]
 "firmware.benchmarks.cortex_m" = [
     "*.c", "*.ld", "README.md",

@@ -30,7 +30,8 @@ BOOTSTRAP = {
     'source': 'https://github.com/msys2/msys2-installer',
     'license_information': 'https://www.msys2.org/docs/licenses/',
 }
-PACKAGES = ('mingw-w64-ucrt-x86_64-qemu', 'mingw-w64-ucrt-x86_64-gdb-multiarch')
+PACKAGES = ('mingw-w64-ucrt-x86_64-qemu', 'mingw-w64-ucrt-x86_64-gdb-multiarch',
+            'mingw-w64-ucrt-x86_64-iverilog')
 
 
 def _cancelled(cancel):
@@ -108,9 +109,11 @@ def snapshot_runtime(directory, archive, *, packages, cancel=None):
             continue
         name = safe_name(path.relative_to(directory).as_posix())
         # MSYS2's QEMU package contains many independent machine executables.
-        # This product invokes only qemu-system-arm; retain all shared libraries,
-        # modules, data and notices, but do not copy unrelated guest engines.
-        if name.startswith('bin/qemu-system-') and name.endswith('.exe') and name != 'bin/qemu-system-arm.exe':
+        # Retain the ARM and RV32 desktop engines, all shared libraries,
+        # modules, Icarus subtools, data and notices. Other guest engines are
+        # omitted. The schema-1 ARM tool map remains unchanged; additional
+        # backend tools are discoverable only through the verified inventory.
+        if name.startswith('bin/qemu-system-') and name.endswith('.exe') and name not in {'bin/qemu-system-arm.exe', 'bin/qemu-system-riscv32.exe'}:
             omitted_other_machines.append(name)
             continue
         if name.startswith(('include/', 'lib/pkgconfig/', 'lib/cmake/', 'share/doc/', 'share/man/', 'share/info/', 'share/aclocal/', 'share/icons/', 'share/themes/', 'share/gtk-doc/', 'share/help/')) or (name.startswith('lib/') and name.endswith(('.a', '.la'))) or (name.startswith('lib/python') and '/test/' in name):

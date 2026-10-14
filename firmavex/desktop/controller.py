@@ -31,10 +31,10 @@ _ACTIVE_LOCK = threading.Lock()
 def _reject_real_test_labels(value: Any) -> None:
     """Keep an injected synthetic supervisor from claiming firmware evidence."""
     if type(value) is dict:
-        if value.get("measurement_mode") == "real_firmware":
+        if value.get("measurement_mode") in {"real_firmware", "real_simulation"}:
             raise ProductError(
                 "test_boundary_error",
-                "An injected desktop supervisor cannot claim real firmware execution.",
+                "An injected desktop supervisor cannot claim real firmware or simulation execution.",
                 {"measurement_mode": "synthetic_test"},
             )
         for item in value.values():

@@ -68,7 +68,7 @@ class _Drain:
 
     def _read(self):
         try:
-            while chunk := self.stream.read(8192):
+            while chunk := getattr(self.stream, "read1", self.stream.read)(8192):
                 self.total += len(chunk)
                 self.data.extend(chunk)
                 if len(self.data) > LOG_LIMIT:
@@ -235,6 +235,7 @@ try:
         raise gdb.GdbError("Unexpected breakpoint state.")
     continue_to(ready)
     gdb.write(settings["marker"][:-1] + "_PROGRESS=" + json.dumps({{"stage": "ready"}}) + "\\n")
+    gdb.flush()
     # Fail early if both names resolve to the same executable location.
     ready_addresses = {{location.address for location in ready.locations}}
     complete_addresses = {{location.address for location in completion.locations}}
@@ -249,6 +250,7 @@ try:
         injected[name] = value
     ready.delete()
     gdb.write(settings["marker"][:-1] + "_PROGRESS=" + json.dumps({{"stage": "injected"}}) + "\\n")
+    gdb.flush()
     if settings["signature"]:
         gdb.execute({_collector_command()!r})
     else:
@@ -357,7 +359,20 @@ class FirmwareExecutor:
                 processes.append(("gdb", gdb, gout, gerr))
                 evidence["gdb_pid"] = gdb.pid
                 deadline = time.monotonic() + self.config.timeout_seconds
+                emitted_stages = set()
                 while gdb.poll() is None:
+                    if self.event_callback is not None:
+                        prefix = marker[:-1] + "_PROGRESS="
+                        for line in gout.text().splitlines():
+                            if not line.startswith(prefix):
+                                continue
+                            try:
+                                progress = json.loads(line[len(prefix):])
+                            except ValueError:
+                                continue
+                            if progress in ({"stage": "ready"}, {"stage": "injected"}) and progress["stage"] not in emitted_stages:
+                                emitted_stages.add(progress["stage"])
+                                self.event_callback({"type": "runtime_stage", "stage": progress["stage"], "attempt_id": evidence["attempt_id"]})
                     self._cancel()
                     if qemu.poll() is not None:
                         raise RuntimeError("QEMU exited during debugger observation.")

@@ -4,6 +4,12 @@ import sys
 
 def main(argv=None):
     args = list(sys.argv[1:] if argv is None else argv)
+    if args == ["--backend-child"]:
+        from firmavex.backends.launcher import main as child
+        return child()
+    if args and args[0] == "--firmavex-backends":
+        from firmavex.backends.cli import main as backends
+        return backends(args[1:])
     if args == ["--firmavex-worker"]:
         from firmavex.product.worker import main as worker
         return worker()

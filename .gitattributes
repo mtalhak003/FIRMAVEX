@@ -2,3 +2,9 @@
 firmavex/product/resources/example/*.c text eol=lf
 firmavex/product/resources/example/*.ld text eol=lf
 firmavex/product/resources/example/*.json text eol=lf
+
+firmavex/backends/examples/*.c text eol=lf
+firmavex/backends/examples/*.S text eol=lf
+firmavex/backends/examples/*.ld text eol=lf
+firmavex/backends/examples/*.v text eol=lf
+firmavex/backends/examples/*.json text eol=lf

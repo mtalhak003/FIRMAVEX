@@ -74,6 +74,7 @@ class MainWindow(QMainWindow):
         self._local_task = None
         self._closing = False
         self._config_template: ProductConfig | None = None
+        self._universal_window = None
         self.setWindowTitle("FIRMAVEX Desktop — firmware testing")
         self.resize(1160, 800)
         self.setMinimumSize(860, 620)
@@ -102,7 +103,7 @@ class MainWindow(QMainWindow):
         header.addStretch()
         header.addWidget(self.project_label)
         outer.addLayout(header)
-        self.warning = QLabel("Emulated Cortex-M3 testing • compatible symbolized ELF only • no hardware validation")
+        self.warning = QLabel("Emulated Cortex-M3 testing • compatible symbolized ELF only • trusted projects only • not a security sandbox • no hardware validation")
         self.warning.setWordWrap(True)
         outer.addWidget(self.warning)
         split = QSplitter()
@@ -140,6 +141,40 @@ class MainWindow(QMainWindow):
             action = QAction(text, self)
             action.triggered.connect(callback)
             examples.addAction(action)
+        backends = self.menuBar().addMenu("&Backends")
+        self.backend_action = QAction("Processor and HDL workspace…", self)
+        self.backend_action.triggered.connect(self.show_backends)
+        backends.addAction(self.backend_action)
+
+    def show_backends(self):
+        """Open a separate capability-aware workspace; preserve the ARM editor."""
+        if self.busy or self._closing:
+            self.status_label.setText("Wait for the active ARM job and cleanup before switching workspaces.")
+            return
+        from .universal import UniversalWindow
+        if self._universal_window is None:
+            self._universal_window = UniversalWindow(data_root=self.data_root, parent=self)
+            self._universal_window.setWindowModality(Qt.WindowModality.WindowModal)
+            self._universal_window.arm_configuration_requested.connect(self._return_to_arm)
+            self._universal_window.runtime_setup_requested.connect(self._backend_setup)
+            self._universal_window.controller.idle.connect(self._backend_idle)
+        self._universal_window.show()
+        self._universal_window.raise_()
+        self._universal_window.activateWindow()
+
+    def _return_to_arm(self):
+        if self._universal_window is not None and not self._universal_window.busy:
+            self._universal_window.close()
+            self.navigation.setCurrentRow(1)
+
+    def _backend_idle(self):
+        if self._closing:
+            self.close()
+
+    def _backend_setup(self):
+        if self._universal_window is not None and not self._universal_window.busy:
+            self._universal_window.close()
+            self.show_setup()
 
     def _button(self, text, callback, *, name=None):
         button = QPushButton(text)
@@ -860,6 +895,13 @@ class MainWindow(QMainWindow):
             self._local_operation(lambda: self._new_result_directory("restart"), ready)
 
     def closeEvent(self, event: QCloseEvent):
+        if self._universal_window is not None:
+            self._universal_window.close()
+            if self._universal_window.busy:
+                self._closing = True
+                self.status_label.setText("Closing after backend cancellation, persistence, and worker cleanup…")
+                event.ignore()
+                return
         if self.busy:
             self._closing = True
             self.controller.shutdown()

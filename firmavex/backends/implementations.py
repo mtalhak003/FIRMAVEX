@@ -1,10 +1,9 @@
-"""Concrete adapters. New tools are executed only on qualified POSIX paths."""
+"""Concrete adapters, with explicit native candidate qualification gates."""
 
 import json
 import os
 from pathlib import Path
 import re
-import shutil
 import socket
 import time
 import uuid
@@ -13,27 +12,37 @@ from elftools.elf.elffile import ELFFile
 from firmavex.product.tools import file_identity
 from firmavex.product.runtime import _allocate_port, _debugger_script, _parse_completion
 from .api import Result, profiles
-from .process import Processes
+from .process import Processes, emit_process_event, inspect_artifacts
 
 
 def tool(name):
-    path = shutil.which(name)
-    if not path:
-        raise RuntimeError(f"Missing runtime dependency: {name}")
-    return str(Path(path).resolve())
+    from .tools import find
+    return find(name)
+
+
+def require_native_candidate():
+    """An explicit candidate environment enables actual CI tests, never support claims."""
+    if os.name == "nt" and os.environ.get("FIRMAVEX_QUALIFY_BACKENDS") != "1":
+        raise RuntimeError("New native Windows backends require actual qualification; only explicit candidate qualification is enabled")
 
 
 def snapshot(source, destination, maximum):
-    source = source.expanduser().resolve(strict=True)
-    if not source.is_file() or source.stat().st_size > maximum:
-        raise ValueError("Input must be a bounded regular file")
-    before = file_identity(source)
-    shutil.copyfile(source, destination)
-    after = file_identity(source)
-    copied = file_identity(destination)
-    if before != after or before["sha256"] != copied["sha256"]:
-        raise RuntimeError("Input changed during snapshot")
-    return copied
+    from .security import read_bytes, checked_path
+    destination = checked_path(destination, exists=False)
+    with destination.open("xb") as stream:
+        stream.write(read_bytes(source, maximum))
+    return file_identity(destination)
+
+
+def riscv_debugger_script(config, values, port, marker):
+    """Reuse observation semantics; flush RV administrative progress over pipes."""
+    lines = _debugger_script(config, values, port, marker).splitlines()
+    result = []
+    for line in lines:
+        result.append(line)
+        if line.lstrip().startswith('gdb.write(settings["marker"]'):
+            result.append("    gdb.flush(gdb.STDOUT)")
+    return "\n".join(result) + "\n"
 
 
 def finish(processes, primary, evidence=None):
@@ -63,9 +72,31 @@ class ArmBackend:
         from firmavex.product import services
 
         # Delegate the entire established search/accounting path unchanged.
-        result = services.run_project(
-            request.source, output / "arm-run", cancel_event=cancel
-        )
+        try:
+            result = services.run_project(
+                request.source, output / "arm-run", cancel_event=cancel,
+                event_callback=emit_process_event,
+            )
+        except BaseException as original:
+            # The established service persists charged interruption accounting
+            # and re-raises. Retain it at the adapter boundary without changing
+            # cancellation semantics or inferring absent receipts.
+            try:
+                snapshot, artifacts = services._read_run(output / "arm-run")
+                retained = snapshot.get("result")
+                if retained is not None:
+                    original.backend_evidence = {
+                        "legacy_result": retained,
+                        "adapter": "unchanged product services",
+                        "triggering_input": retained.get("triggering_input"),
+                        "measurement_mode": retained.get("measurement_mode", "unverified"),
+                        "cleanup_verified": (snapshot.get("accounting_verification", {}).get("status") == "receipt_accounting_consistent"
+                                             and all(item["record"].get("evidence", {}).get("cleanup_verified") is True for item in snapshot["attempts"])),
+                        "accounting_verification": snapshot.get("accounting_verification", {"status": "unknown"}),
+                    }
+            except BaseException as inspection:
+                original.add_note(f"Retained ARM interruption evidence could not be verified: {type(inspection).__name__}: {inspection}")
+            raise
         outcome = result.get("outcome")
         accounting = result.get("accounting") or {}
         complete = result.get("execution_evidence") == "complete"
@@ -104,8 +135,7 @@ class RiscvBackend:
     profile = profiles["riscv32-virt"]
 
     def execute(self, request, output, cancel):
-        if os.name != "posix":
-            raise RuntimeError("RISC-V native Windows execution is not qualified")
+        require_native_candidate()
         image = output / "firmware.elf"
         identity = snapshot(request.source, image, request.limits.artifact_bytes)
         with image.open("rb") as stream:
@@ -140,6 +170,8 @@ class RiscvBackend:
                 found = symbols.get_symbol_by_name(name) if symbols else None
                 if not found or len(found) != 1 or found[0]["st_shndx"] == "SHN_UNDEF":
                     raise ValueError(f"Required symbol missing/ambiguous: {name}")
+        from .tools import find_many
+        selections = find_many(("qemu-system-riscv32", "gdb-multiarch"))
         processes = Processes(cancel, request.limits)
         primary = None
         evidence = {
@@ -151,7 +183,7 @@ class RiscvBackend:
             "completion_observed": False,
         }
         try:
-            qemu, gdb = tool("qemu-system-riscv32"), tool("gdb-multiarch")
+            qemu, gdb = selections["qemu-system-riscv32"], selections["gdb-multiarch"]
             for name, path in (("qemu", qemu), ("gdb", gdb)):
                 code, stdout, stderr = processes.run([path, "--version"], output)
                 if code:
@@ -200,6 +232,7 @@ class RiscvBackend:
                     if time.monotonic() >= deadline:
                         raise TimeoutError("Debugger endpoint timeout")
                     time.sleep(0.02)
+            emit_process_event({"type": "backend_stage", "stage": "debugger_ready", "pid": child.pid})
             config = SimpleNamespace(
                 input_symbols=("input_a", "input_b"),
                 ready_breakpoint="input_ready",
@@ -210,7 +243,7 @@ class RiscvBackend:
             )
             marker = "FIRMAVEX_BACKEND_" + uuid.uuid4().hex + "="
             script = output / "observe.gdb"
-            script.write_text(_debugger_script(config, request.values, port, marker))
+            script.write_text(riscv_debugger_script(config, request.values, port, marker), encoding="utf-8")
             code, stdout, stderr = processes.run(
                 [
                     gdb,
@@ -226,6 +259,7 @@ class RiscvBackend:
                     str(script),
                 ],
                 output,
+                progress_marker=marker[:-1] + "_PROGRESS=",
             )
             evidence.update(stdout=stdout, stderr=stderr)
             if code:
@@ -238,6 +272,9 @@ class RiscvBackend:
             )
             if identity["sha256"] != file_identity(image)["sha256"]:
                 raise RuntimeError("Firmware snapshot changed")
+            for record in evidence["tools"].values():
+                if file_identity(record["identity"]["path"]) != record["identity"]:
+                    raise RuntimeError("Runtime executable changed during execution")
             return Result("triggered" if observed["triggered"] else "passed", evidence)
         except BaseException as exc:
             primary = exc
@@ -261,6 +298,7 @@ class IcarusBackend:
     profile = profiles["verilog-icarus"]
 
     def execute(self, request, output, cancel):
+        require_native_candidate()
         source = output / "testbench.v"
         identity = snapshot(request.source, source, request.limits.artifact_bytes)
         # A single self-contained testbench is the supported initial boundary.
@@ -275,6 +313,8 @@ class IcarusBackend:
             raise ValueError(
                 "External file/system operations are unsupported in this profile"
             )
+        from .tools import find_many
+        selections = find_many(("iverilog", "vvp"))
         processes = Processes(cancel, request.limits)
         primary = None
         evidence = {
@@ -285,7 +325,7 @@ class IcarusBackend:
             "artifacts": [],
         }
         try:
-            compiler, simulator = tool("iverilog"), tool("vvp")
+            compiler, simulator = selections["iverilog"], selections["vvp"]
             for name, path in (("compiler", compiler), ("simulator", simulator)):
                 code, stdout, stderr = processes.run([path, "-V"], output)
                 if code:
@@ -310,7 +350,8 @@ class IcarusBackend:
             if code:
                 return Result("invalid_input", evidence)
             code, stdout, stderr = processes.run(
-                [simulator, str(output / "simulation.vvp")], output
+                [simulator, "-i", str(output / "simulation.vvp")], output,
+                output_stage="simulation_output",
             )
             evidence.update(
                 stdout=stdout,
@@ -323,11 +364,10 @@ class IcarusBackend:
             )
             if len(matches) != 1 or code != 0:
                 return Result("invalid_output", evidence)
-            if (
-                sum(p.stat().st_size for p in output.iterdir() if p.is_file())
-                > request.limits.artifact_bytes
-            ):
-                raise RuntimeError("Aggregate artifact limit exceeded")
+            inspect_artifacts(output, request.limits.artifact_bytes)
+            for record in evidence["tools"].values():
+                if file_identity(record["identity"]["path"]) != record["identity"]:
+                    raise RuntimeError("Runtime executable changed during simulation")
             for path in output.glob("*.vcd"):
                 if (
                     path.is_symlink()

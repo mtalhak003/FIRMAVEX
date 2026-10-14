@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 import threading
 from .api import Limits, Request, profiles
-from .engine import execute, inspect_run
+from .engine import execute_trusted, inspect_run
 
 
 def main(argv=None):
@@ -17,10 +17,12 @@ def main(argv=None):
     build = sub.add_parser("prepare-example")
     build.add_argument("profile", choices=("riscv32-virt", "verilog-icarus"))
     build.add_argument("--output", required=True)
+    build.add_argument("--builtin", action="store_true", help="Use the verified compiler-free catalog")
     for name in ("export", "reproduce"):
         item = sub.add_parser(name)
         item.add_argument("run")
         item.add_argument("--output", required=True)
+        if name == "reproduce": item.add_argument("--trust", choices=("trusted_example","trusted_project","untrusted"), default="untrusted")
     inspect = sub.add_parser("inspect")
     inspect.add_argument("output")
     run = sub.add_parser("execute")
@@ -29,6 +31,7 @@ def main(argv=None):
     run.add_argument("--values", type=int, nargs="*", default=[])
     run.add_argument("--output", type=Path, required=True)
     run.add_argument("--timeout", type=float, default=10)
+    run.add_argument("--trust", choices=("trusted_example","trusted_project","untrusted"), default="untrusted")
     args = parser.parse_args(argv)
     try:
         if args.command == "profiles":
@@ -40,21 +43,28 @@ def main(argv=None):
         elif args.command == "prepare-example":
             from .examples import prepare
 
-            result = prepare(args.profile, args.output)
+            import sys
+            if args.builtin or getattr(sys,"frozen",False):
+                from firmavex.product.backend_services import prepare as prepare_builtin
+                result = prepare_builtin(args.profile,args.output)
+            else:
+                result = prepare(args.profile, args.output)
         elif args.command in {"export", "reproduce"}:
             from .report import export, reproduce
 
-            result = (export if args.command == "export" else reproduce)(
-                args.run, args.output
-            )
+            if args.command == "reproduce":
+                from firmavex.product.backend_services import reproduce as trusted_reproduce
+                result = trusted_reproduce(args.run,args.output,trust=args.trust)
+            else:
+                result = export(args.run,args.output)
         elif args.command == "inspect":
             result = inspect_run(args.output)
         else:
-            result = execute(
+            result = execute_trusted(
                 Request(
                     args.profile, args.source, tuple(args.values), Limits(args.timeout)
                 ),
-                args.output,
+                args.output, trust=args.trust,
             )
         print(json.dumps(result, sort_keys=True, indent=2))
         if result.get("status") == "cancelled":

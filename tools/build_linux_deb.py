@@ -1,4 +1,4 @@
-"""Ubuntu/Debian application package, depending on vendor-managed QEMU/GDB."""
+"""Ubuntu/Debian desktop package with vendor-managed QEMU/GDB/Icarus."""
 import argparse
 from pathlib import Path
 import shutil
@@ -15,7 +15,7 @@ def build(application, output):
         root = Path(temporary)
         shutil.copytree(application, root / 'opt/firmavex', symlinks=True)
         (root / 'DEBIAN').mkdir()
-        (root / 'DEBIAN/control').write_text('Package: firmavex-desktop\nVersion: 0.3.0~dev1\nArchitecture: amd64\nMaintainer: mtalhak003 <mtalhak003@gmail.com>\nDepends: libegl1, libgl1, libopengl0, libxkbcommon-x11-0, libxcb-cursor0, qemu-system-arm, gdb-multiarch\nSection: devel\nPriority: optional\nDescription: Configured Cortex-M3 firmware testing in QEMU\n Symbolized compatible ELF only. No arbitrary board or hardware support.\n')
+        (root / 'DEBIAN/control').write_text('Package: firmavex-desktop\nVersion: 0.3.0~dev1\nArchitecture: amd64\nMaintainer: mtalhak003 <mtalhak003@gmail.com>\nDepends: libegl1, libgl1, libopengl0, libxkbcommon-x11-0, libxcb-cursor0, qemu-system-arm, qemu-system-misc, gdb-multiarch, iverilog\nSection: devel\nPriority: optional\nDescription: Configured embedded firmware and HDL testing\n Trusted compatible Cortex-M3 and RV32 ELF, and self-contained Verilog testbenches.\n No arbitrary board, BIN, hardware testing or verified hostile-workload sandbox.\n')
         menu = root / 'usr/share/applications'; menu.mkdir(parents=True)
         shutil.copyfile('packaging/FIRMAVEX.desktop', menu / 'FIRMAVEX.desktop')
         notices = root / 'usr/share/doc/firmavex-desktop'; notices.mkdir(parents=True)
