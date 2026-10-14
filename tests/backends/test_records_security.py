@@ -533,3 +533,23 @@ def test_actual_arm_export_retains_authoritative_receipts_readonly(tmp_path):
     after = {str(path.relative_to(output)): hashlib.sha256(path.read_bytes()).hexdigest()
              for path in output.rglob("*") if path.is_file()}
     assert after == before
+
+
+def test_same_size_rewrite_with_deferred_metadata_fails_closed(tmp_path, monkeypatch):
+    """Model NTFS metadata deferral, rather than relying on timestamp granularity."""
+    path = tmp_path / "input"
+    path.write_bytes(b"first")
+    state = security.path_state(path)
+    calls = 0
+
+    def capture(fd):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            path.write_bytes(b"other")
+        return state
+
+    monkeypatch.setattr(security, "path_state", lambda *args: state)
+    monkeypatch.setattr(security, "handle_state", capture)
+    with pytest.raises(ValueError, match="changed during capture"):
+        security.read_bytes(path, 1024)

@@ -34,6 +34,23 @@ def validate(record):
     return args, limits
 
 
+def darwin_memory_diagnostic():
+    """Read-only kernel diagnostic; never a substitute for resource admission."""
+    import ctypes
+    # PROC_PIDTASKINFO starts with virtual and resident uint64 sizes. The API
+    # returns the complete 96-byte proc_taskinfo record or fails closed.
+    lib = ctypes.CDLL("/usr/lib/libproc.dylib", use_errno=True)
+    lib.proc_pidinfo.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_uint64,
+                                ctypes.c_void_p, ctypes.c_int]
+    lib.proc_pidinfo.restype = ctypes.c_int
+    buffer = ctypes.create_string_buffer(96)
+    size = lib.proc_pidinfo(os.getpid(), 4, 0, buffer, len(buffer))
+    if size != len(buffer):
+        raise OSError(ctypes.get_errno(), "proc_pidinfo task information unavailable")
+    values = (ctypes.c_uint64 * 2).from_buffer(buffer)
+    return {"virtual_bytes": values[0], "resident_bytes": values[1]}
+
+
 def apply_posix_limits(limits):
     import resource
     requested = ((resource.RLIMIT_AS, limits.memory_bytes),
@@ -48,7 +65,14 @@ def apply_posix_limits(limits):
         try:
             resource.setrlimit(kind, (effective,effective))
         except (OSError,ValueError) as exc:
-            raise RuntimeError(f'Resource limit {kind} failed: requested={value}, inherited={(inherited_soft,inherited_hard)}, effective={effective}: {exc}') from exc
+            diagnostic = ""
+            if sys.platform == "darwin" and kind == resource.RLIMIT_AS:
+                try:
+                    diagnostic = f"; Darwin launcher memory={darwin_memory_diagnostic()}"
+                except Exception as info_error:
+                    diagnostic = f"; Darwin memory diagnostic failed: {info_error}"
+                diagnostic += "; memory admission was NOT bypassed; native backend remains blocked"
+            raise RuntimeError(f'Resource limit {kind} failed: requested={value}, inherited={(inherited_soft,inherited_hard)}, effective={effective}: {exc}{diagnostic}') from exc
 
 
 def main():

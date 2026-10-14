@@ -114,8 +114,10 @@ def inspect_artifacts(cwd, maximum):
                 count += 1
                 if count > 10000:
                     raise RuntimeError("Artifact count limit exceeded")
-                metadata = entry.stat(follow_symlinks=False)
-                if stat.S_ISLNK(metadata.st_mode):
+                # DirEntry.stat() on Windows can omit the link count (zero).
+                # Query the actual path rather than accepting an unknown count.
+                metadata = os.stat(entry.path, follow_symlinks=False)
+                if stat.S_ISLNK(metadata.st_mode) or getattr(metadata, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400):
                     raise RuntimeError("Symlink artifact rejected")
                 if stat.S_ISDIR(metadata.st_mode):
                     pending.append(Path(entry.path))

@@ -136,3 +136,35 @@ The Ubuntu x64 job in [run 38546993532](https://github.com/mtalhak003/FIRMAVEX/a
 The same workflow did **not** qualify native Windows or macOS multi-backend execution. Windows publisher package installation failed before execution. Darwin rejected RLIMIT_AS admission even when requested limits were below inherited caps; this remains a fail-closed limitation, not permission to omit memory controls. Older ARM-only macOS execution evidence does not qualify the new adapters. The Windows native compatibility catalog intentionally contains no approved entries until complete native evidence exists. Candidate qualification requires explicit administrator opt-in and conveys no support guarantee.
 
 Installers remain unsigned/unnotarized unless a particular artifact supplies independently verifiable signing evidence. CI failures and partial results must be reviewed before beta distribution.
+
+### Native regression repair and reproducible Darwin blocker
+
+Failed run [38548476770](https://github.com/mtalhak003/FIRMAVEX/actions/runs/38548476770)
+exposed two Windows filesystem assumptions. `DirEntry.stat()` can provide a zero
+link count on Windows: artifact inventory now requests uncached, no-follow path
+metadata and still rejects hardlinks, special files and reparse points. Windows
+may defer file timestamp updates while handles remain open: bounded capture now
+also rereads unbuffered bytes and rejects inconsistent content even if metadata
+appears unchanged. Two matching reads are not an atomic snapshot or protection
+against an adversarial writer. Original capture-race and artifact-limit tests
+remain enabled; new regressions model the observed metadata behavior.
+
+On Darwin the failure is **not** raising an inherited hard limit. XNU's
+`RLIMIT_AS` admission returns `EINVAL` if the process's current virtual mapping
+already exceeds the requested cap. The Python launcher can have a very large
+virtual mapping on Apple Silicon. See Apple's `bsd/kern/kern_resource.c`,
+`case RLIMIT_AS` and `vm_map_set_size_limit`. The launcher now records kernel
+virtual/resident bytes on this failure; no fallback removes or enlarges the cap.
+A smaller/native launcher or an independently qualified alternative memory
+boundary needs separate implementation and native validation before support.
+
+Reproduce the exact native regression step from an installed development checkout:
+
+```sh
+python tools/product_ci_tests.py -q tests/backends/test_records_security.py tests/backends/test_process_security.py tests/product/test_backend_services.py
+```
+
+The native workflow retains `native-security-regressions.log` even on failure.
+Its pipeline propagates the test exit status; downstream qualification does not
+run after failed admission checks. A failed macOS job remains failed, rather than
+being converted into a skip or a support claim.

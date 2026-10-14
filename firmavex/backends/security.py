@@ -55,7 +55,7 @@ def read_bytes(path, maximum):
     flags = (os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
              | getattr(os, "O_BINARY", 0) | getattr(os, "O_NONBLOCK", 0))
     fd = os.open(path, flags)
-    with os.fdopen(fd, "rb") as stream:
+    with os.fdopen(fd, "rb", buffering=0) as stream:
         if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
             raise ValueError("Expected a regular file")
         opened = handle_state(stream.fileno())
@@ -65,6 +65,18 @@ def read_bytes(path, maximum):
             if len(data) > maximum:
                 raise ValueError("File exceeds byte limit")
         finished = handle_state(stream.fileno())
+        # Windows can defer write/change timestamps while handles remain open.
+        # Verify the actual bounded bytes too, including same-size rewrites.
+        stream.seek(0)
+        offset = 0
+        while chunk := stream.read(min(1024 * 1024, maximum + 1 - offset)):
+            if chunk != data[offset:offset + len(chunk)]:
+                raise ValueError("File changed during capture")
+            offset += len(chunk)
+            if offset > maximum:
+                raise ValueError("File exceeds byte limit")
+        if offset != len(data) or handle_state(stream.fileno()) != finished:
+            raise ValueError("File changed during capture")
     if not (before == opened == finished == path_state(checked_path(path))):
         raise ValueError("File changed during capture")
     return bytes(data)

@@ -60,7 +60,9 @@ jobs:
           FIRMAVEX_PYTHON: ${{ steps.python.outputs.python-path }}
         run: echo "FIRMAVEX_PYTHON=$FIRMAVEX_PYTHON" >> "$GITHUB_ENV"
       - name: Native ownership, path and resource regression tests
-        run: '"$FIRMAVEX_PYTHON" tools/product_ci_tests.py -q tests/backends/test_records_security.py tests/backends/test_process_security.py tests/product/test_backend_services.py'
+        run: |
+          set -o pipefail
+          "$FIRMAVEX_PYTHON" tools/product_ci_tests.py -q tests/backends/test_records_security.py tests/backends/test_process_security.py tests/product/test_backend_services.py 2>&1 | tee "$RUNNER_TEMP/native-security-regressions.log"
       - name: Real source backend execution, reproduction, cancellation, export
         run: '"$FIRMAVEX_PYTHON" -m tools.universal_desktop_ci --output "${{ runner.temp }}/unified-source"'
       - name: Real source unified GUI workflows
@@ -147,6 +149,7 @@ jobs:
         with:
           name: FIRMAVEX-${{ matrix.os }}-unified-native-evidence
           path: |
+            ${{ runner.temp }}/native-security-regressions.log
             ${{ runner.temp }}/unified-source
             ${{ runner.temp }}/unified-frozen
             ${{ runner.temp }}/unified-installed

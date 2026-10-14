@@ -213,3 +213,43 @@ def test_posix_limits_never_raise_inherited_caps(monkeypatch):
     apply_posix_limits(Limits())
     assert applied and all(pair[0]<=1 and pair[1]<=2 for _,pair in applied)
     assert dict(applied)[resource.RLIMIT_CORE]==(0,0)
+
+
+def test_artifact_inventory_does_not_trust_cached_direntry_link_count(tmp_path, monkeypatch):
+    """Windows DirEntry metadata can have st_nlink=0 for an ordinary file."""
+    from types import SimpleNamespace
+    from firmavex.backends import process
+    source = tmp_path / 'ordinary'
+    source.write_bytes(b'actual file')
+    class Entries:
+        def __enter__(self):
+            return iter([SimpleNamespace(path=str(source), stat=lambda **kwargs: pytest.fail('Cached metadata used'))])
+        def __exit__(self, *args):
+            pass
+    monkeypatch.setattr(process.os, 'scandir', lambda path: Entries())
+    assert inspect_artifacts(tmp_path, 100) == len(b'actual file')
+
+
+def test_actual_hardlink_artifact_still_rejected(tmp_path):
+    original = tmp_path / 'original'
+    original.write_bytes(b'x')
+    os.link(original, tmp_path / 'alias')
+    with pytest.raises(RuntimeError, match='Nonregular or hardlinked'):
+        inspect_artifacts(tmp_path, 4096)
+
+
+@pytest.mark.skipif(os.name != 'posix', reason='POSIX resource APIs')
+def test_darwin_memory_admission_failure_is_not_bypassed(monkeypatch):
+    import resource
+    from firmavex.backends import launcher
+    monkeypatch.setattr(launcher.sys, 'platform', 'darwin')
+    monkeypatch.setattr(resource, 'getrlimit', lambda kind: (resource.RLIM_INFINITY, resource.RLIM_INFINITY))
+    attempts = []
+    def reject(kind, pair):
+        attempts.append((kind, pair))
+        raise ValueError('current limit exceeds maximum limit')
+    monkeypatch.setattr(resource, 'setrlimit', reject)
+    monkeypatch.setattr(launcher, 'darwin_memory_diagnostic', lambda: {'virtual_bytes': 400_000_000_000, 'resident_bytes': 20_000_000})
+    with pytest.raises(RuntimeError, match='400000000000.*NOT bypassed'):
+        launcher.apply_posix_limits(Limits())
+    assert attempts == [(resource.RLIMIT_AS, (Limits().memory_bytes, Limits().memory_bytes))]
