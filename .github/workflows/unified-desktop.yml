@@ -13,6 +13,9 @@ jobs:
         os: [ubuntu-24.04, windows-latest, macos-14]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
     env:
       QT_QPA_PLATFORM: offscreen
       FIRMAVEX_REQUIRE_RUNTIME: "1"
@@ -22,6 +25,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
+        id: python
         with:
           python-version: "3.12"
       - uses: msys2/setup-msys2@v2
@@ -47,15 +51,22 @@ jobs:
       - name: Apple Silicon native runtime candidates
         if: runner.os == 'macOS'
         run: brew install qemu gdb icarus-verilog
-      - run: python -m pip install ".[dev,desktop,gui-test]" "pyinstaller==6.16.0"
+      - name: Install with the selected CPython, not the runtime vendor Python
+        env:
+          FIRMAVEX_PYTHON: ${{ steps.python.outputs.python-path }}
+        run: '"$FIRMAVEX_PYTHON" -m pip install ".[dev,desktop,gui-test]" "pyinstaller==6.16.0"'
+      - name: Record selected application Python
+        env:
+          FIRMAVEX_PYTHON: ${{ steps.python.outputs.python-path }}
+        run: echo "FIRMAVEX_PYTHON=$FIRMAVEX_PYTHON" >> "$GITHUB_ENV"
       - name: Native ownership, path and resource regression tests
-        run: python tools/product_ci_tests.py -q tests/backends/test_records_security.py tests/backends/test_process_security.py tests/product/test_backend_services.py
+        run: '"$FIRMAVEX_PYTHON" tools/product_ci_tests.py -q tests/backends/test_records_security.py tests/backends/test_process_security.py tests/product/test_backend_services.py'
       - name: Real source backend execution, reproduction, cancellation, export
-        run: python -m tools.universal_desktop_ci --output "${{ runner.temp }}/unified-source"
+        run: '"$FIRMAVEX_PYTHON" -m tools.universal_desktop_ci --output "${{ runner.temp }}/unified-source"'
       - name: Real source unified GUI workflows
-        run: python tools/product_ci_tests.py -q tests/desktop/test_real_universal.py
+        run: '"$FIRMAVEX_PYTHON" tools/product_ci_tests.py -q tests/desktop/test_real_universal.py'
       - name: Freeze application, console worker, backend launchers and assets
-        run: python -m PyInstaller --clean --noconfirm packaging/desktop.spec
+        run: '"$FIRMAVEX_PYTHON" -m PyInstaller --clean --noconfirm packaging/desktop.spec'
       - name: Real frozen backends without a child Python installation
         shell: bash
         run: |
@@ -69,7 +80,7 @@ jobs:
             desktop=dist/FIRMAVEX.app/Contents/MacOS/FIRMAVEX-Desktop
           fi
           "$desktop" --smoke-test
-          python -m tools.universal_desktop_ci --output "$RUNNER_TEMP/unified-frozen" --engine "$app"
+          "$FIRMAVEX_PYTHON" -m tools.universal_desktop_ci --output "$RUNNER_TEMP/unified-frozen" --engine "$app"
       - name: Windows installed backends, upgrade, uninstall and retained results
         if: runner.os == 'Windows'
         shell: pwsh
@@ -86,7 +97,7 @@ jobs:
             $gui = Start-Process (Join-Path $destination 'FIRMAVEX-Desktop.exe') -ArgumentList '--smoke-test' -Wait -PassThru
             if ($gui.ExitCode -ne 0) { throw 'Installed unified GUI startup failed' }
             if ($iteration -eq 1) {
-              python -m tools.universal_desktop_ci --output $archive --engine (Join-Path $destination 'FIRMAVEX.exe')
+              & $env:FIRMAVEX_PYTHON -m tools.universal_desktop_ci --output $archive --engine (Join-Path $destination 'FIRMAVEX.exe')
               if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
               $identity = (Get-FileHash (Join-Path $archive 'qualification.json') -Algorithm SHA256).Hash
             } elseif ((Get-FileHash (Join-Path $archive 'qualification.json') -Algorithm SHA256).Hash -ne $identity) {
@@ -100,10 +111,10 @@ jobs:
       - name: Ubuntu installed backends, upgrade, removal and retained results
         if: runner.os == 'Linux'
         run: |
-          python -m tools.build_linux_deb dist/FIRMAVEX dist/FIRMAVEX-Linux-amd64.deb
+          "$FIRMAVEX_PYTHON" -m tools.build_linux_deb dist/FIRMAVEX dist/FIRMAVEX-Linux-amd64.deb
           sudo apt-get install -y ./dist/FIRMAVEX-Linux-amd64.deb
           /opt/firmavex/FIRMAVEX-Desktop --smoke-test
-          python -m tools.universal_desktop_ci --output "$RUNNER_TEMP/unified-installed" --engine /opt/firmavex/FIRMAVEX
+          "$FIRMAVEX_PYTHON" -m tools.universal_desktop_ci --output "$RUNNER_TEMP/unified-installed" --engine /opt/firmavex/FIRMAVEX
           identity=$(sha256sum "$RUNNER_TEMP/unified-installed/qualification.json")
           sudo dpkg -i dist/FIRMAVEX-Linux-amd64.deb
           /opt/firmavex/FIRMAVEX-Desktop --smoke-test
@@ -122,7 +133,7 @@ jobs:
           trap 'hdiutil detach "$mount"' EXIT
           ditto "$mount/FIRMAVEX.app" "$destination"
           "$destination/Contents/MacOS/FIRMAVEX-Desktop" --smoke-test
-          python -m tools.universal_desktop_ci --output "$RUNNER_TEMP/unified-installed" --engine "$destination/Contents/MacOS/FIRMAVEX"
+          "$FIRMAVEX_PYTHON" -m tools.universal_desktop_ci --output "$RUNNER_TEMP/unified-installed" --engine "$destination/Contents/MacOS/FIRMAVEX"
           identity=$(shasum -a 256 "$RUNNER_TEMP/unified-installed/qualification.json")
           ditto "$mount/FIRMAVEX.app" "$destination"
           "$destination/Contents/MacOS/FIRMAVEX-Desktop" --smoke-test

@@ -36,11 +36,19 @@ def validate(record):
 
 def apply_posix_limits(limits):
     import resource
-    resource.setrlimit(resource.RLIMIT_AS, (limits.memory_bytes, limits.memory_bytes))
-    resource.setrlimit(resource.RLIMIT_FSIZE, (limits.artifact_bytes, limits.artifact_bytes))
-    cpu = math.ceil(limits.timeout_seconds) + 1
-    resource.setrlimit(resource.RLIMIT_CPU, (cpu, cpu))
-    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+    requested = ((resource.RLIMIT_AS, limits.memory_bytes),
+                 (resource.RLIMIT_FSIZE, limits.artifact_bytes),
+                 (resource.RLIMIT_CPU, math.ceil(limits.timeout_seconds)+1),
+                 (resource.RLIMIT_CORE, 0))
+    for kind, value in requested:
+        inherited_soft, inherited_hard = resource.getrlimit(kind)
+        # Never raise an inherited hard limit (notably on Darwin runners).
+        finite = [cap for cap in (value,inherited_soft,inherited_hard) if cap != resource.RLIM_INFINITY]
+        effective = min(finite)
+        try:
+            resource.setrlimit(kind, (effective,effective))
+        except (OSError,ValueError) as exc:
+            raise RuntimeError(f'Resource limit {kind} failed: requested={value}, inherited={(inherited_soft,inherited_hard)}, effective={effective}: {exc}') from exc
 
 
 def main():

@@ -508,7 +508,9 @@ def test_arm_authoritative_logs_export_without_changing_classification(tmp_path,
 
 def test_actual_arm_export_retains_authoritative_receipts_readonly(tmp_path):
     import shutil
-    missing = [name for name in ("qemu-system-arm", "arm-none-eabi-gdb") if not shutil.which(name)]
+    missing = [name for name in ("qemu-system-arm",) if not shutil.which(name)]
+    if not any(shutil.which(name) for name in ("arm-none-eabi-gdb","gdb-multiarch","gdb")):
+        missing.append("ARM-capable GDB")
     if missing:
         if os.environ.get("FIRMAVEX_REQUIRE_BACKENDS") == "1":
             pytest.fail("Missing actual ARM tools: " + str(missing))

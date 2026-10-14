@@ -202,3 +202,14 @@ def test_child_launcher_bad_admission_fails_closed(tmp_path):
                             input=b'{"schema_version":1}\n', capture_output=True)
     assert result.returncode == 125
     assert b"admission failed" in result.stderr
+
+def test_posix_limits_never_raise_inherited_caps(monkeypatch):
+    if os.name!='posix':pytest.skip('POSIX APIs')
+    import resource
+    from firmavex.backends.launcher import apply_posix_limits
+    applied=[]
+    monkeypatch.setattr(resource,'getrlimit',lambda kind:(1,2))
+    monkeypatch.setattr(resource,'setrlimit',lambda kind,pair:applied.append((kind,pair)))
+    apply_posix_limits(Limits())
+    assert applied and all(pair[0]<=1 and pair[1]<=2 for _,pair in applied)
+    assert dict(applied)[resource.RLIMIT_CORE]==(0,0)
