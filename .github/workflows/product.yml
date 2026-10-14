@@ -22,7 +22,7 @@ jobs:
     env:
       QT_QPA_PLATFORM: offscreen
       PYTEST_QT_API: pyside6
-      FIRMAVEX_CI_DIAGNOSTICS: ${{ github.workspace }}/../firmavex-ci-diagnostics
+      FIRMAVEX_CI_DIAGNOSTICS: ${{ github.workspace }}/firmavex-ci-diagnostics
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -74,7 +74,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: product-diagnostics-${{ matrix.os }}-py${{ matrix.python }}
-          path: ${{ github.workspace }}/../firmavex-ci-diagnostics
+          path: ${{ github.workspace }}/firmavex-ci-diagnostics
           if-no-files-found: warn
           retention-days: 14
 
@@ -85,7 +85,7 @@ jobs:
     env:
       QT_QPA_PLATFORM: offscreen
       PYTEST_QT_API: pyside6
-      FIRMAVEX_CI_DIAGNOSTICS: ${{ github.workspace }}/../firmavex-ci-diagnostics
+      FIRMAVEX_CI_DIAGNOSTICS: ${{ github.workspace }}/firmavex-ci-diagnostics
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -126,6 +126,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: product-diagnostics-linux-real
-          path: ${{ github.workspace }}/../firmavex-ci-diagnostics
+          path: ${{ github.workspace }}/firmavex-ci-diagnostics
           if-no-files-found: warn
           retention-days: 14
