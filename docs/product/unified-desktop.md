@@ -183,3 +183,9 @@ The macOS diagnostic in job 115920023461 measured launcher virtual mappings of
 admission test. These are virtual address mappings versus resident RAM, not a
 claim that the process consumed 420 GB of physical memory. The kernel rejected
 the requested cap before target dispatch. All failing checks remain enabled.
+
+Windows publisher acquisition can fail before regression tests run. Native CI
+keeps the complete `native-runtime-install.log` and makes at most three package
+installation attempts with `--needed`; it never retries a firmware experiment.
+Publisher signature, checksum and TLS checks remain enabled. Failure of all
+three attempts fails the job and cannot establish runtime qualification.

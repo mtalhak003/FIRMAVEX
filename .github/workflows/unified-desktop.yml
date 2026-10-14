@@ -37,7 +37,19 @@ jobs:
       - name: Windows publisher-signed runtime packages
         if: runner.os == 'Windows'
         shell: msys2 {0}
-        run: pacman -S --needed --noconfirm mingw-w64-ucrt-x86_64-qemu mingw-w64-ucrt-x86_64-gdb-multiarch mingw-w64-ucrt-x86_64-iverilog
+        run: |
+          set -o pipefail
+          log="$(cygpath -u "$RUNNER_TEMP")/native-runtime-install.log"
+          # Only dependency acquisition is retried, never firmware experiments.
+          # TLS, publisher signatures and package checksums remain mandatory.
+          for attempt in 1 2 3; do
+            echo "Signed runtime installation attempt $attempt/3" | tee -a "$log"
+            if pacman -S --needed --noconfirm --disable-download-timeout mingw-w64-ucrt-x86_64-qemu mingw-w64-ucrt-x86_64-gdb-multiarch mingw-w64-ucrt-x86_64-iverilog 2>&1 | tee -a "$log"; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then sleep 5; fi
+          done
+          exit 1
       - name: Expose native Windows runtimes to CPython
         if: runner.os == 'Windows'
         shell: pwsh
@@ -149,6 +161,7 @@ jobs:
         with:
           name: FIRMAVEX-${{ matrix.os }}-unified-native-evidence
           path: |
+            ${{ runner.temp }}/native-runtime-install.log
             ${{ runner.temp }}/native-security-regressions.log
             ${{ runner.temp }}/unified-source
             ${{ runner.temp }}/unified-frozen
