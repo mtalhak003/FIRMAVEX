@@ -71,6 +71,9 @@ jobs:
         env:
           FIRMAVEX_PYTHON: ${{ steps.python.outputs.python-path }}
         run: echo "FIRMAVEX_PYTHON=$FIRMAVEX_PYTHON" >> "$GITHUB_ENV"
+      - name: Investigate native Darwin memory admission without changing production limits
+        if: runner.os == 'macOS'
+        run: '"$FIRMAVEX_PYTHON" -m tools.darwin_memory_probe --output "$RUNNER_TEMP/darwin-memory-investigation"'
       - name: Native ownership, path and resource regression tests
         run: |
           set -o pipefail
@@ -161,6 +164,7 @@ jobs:
         with:
           name: FIRMAVEX-${{ matrix.os }}-unified-native-evidence
           path: |
+            ${{ runner.temp }}/darwin-memory-investigation
             ${{ runner.temp }}/native-runtime-install.log
             ${{ runner.temp }}/native-security-regressions.log
             ${{ runner.temp }}/unified-source

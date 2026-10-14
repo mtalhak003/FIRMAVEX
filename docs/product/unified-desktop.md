@@ -189,3 +189,6 @@ keeps the complete `native-runtime-install.log` and makes at most three package
 installation attempts with `--needed`; it never retries a firmware experiment.
 Publisher signature, checksum and TLS checks remain enabled. Failure of all
 three attempts fails the job and cannot establish runtime qualification.
+
+See [macOS memory-admission investigation](macos-memory-admission.md) for the
+bounded native probe, evaluated alternatives and interim support-policy recommendation.
