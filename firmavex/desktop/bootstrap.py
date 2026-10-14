@@ -4,6 +4,12 @@ import sys
 
 def main(argv=None):
     args = list(sys.argv[1:] if argv is None else argv)
+    if args and args[0] == "--firmavex-release":
+        from firmavex.product.release import main as release
+        return release(args[1:])
+    if args == ["--firmavex-local"]:
+        from firmavex.product.local_stdio import main as local
+        return local()
     if args == ["--backend-child"]:
         from firmavex.backends.launcher import main as child
         return child()

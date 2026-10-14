@@ -26,6 +26,8 @@ desktop = ["PySide6==6.11.1"]
 gui-test = ["PySide6==6.11.1", "pytest-qt>=4.4,<5"]
 
 [project.scripts]
+firmavex-release = "firmavex.product.release:main"
+firmavex-local = "firmavex.product.local_stdio:main"
 firmavex = "firmavex.product.cli:main"
 firmavex-backend = "firmavex.backends.cli:main"
 firmavex-desktop = "firmavex.desktop.app:main"

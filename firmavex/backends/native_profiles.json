@@ -1,4 +1,51 @@
 {
   "schema_version": 1,
-  "profiles": []
+  "profiles": [
+    {
+      "system": "Windows",
+      "architecture": "x86_64",
+      "profile": "riscv32-virt",
+      "tools": {
+        "qemu-system-riscv32": {
+          "sha256": "3678c23f484abec06f1eb61be33751b7af661f14ae918a5361e036532795372f",
+          "version": "QEMU 11.1.2"
+        },
+        "gdb-multiarch": {
+          "sha256": "f867205234b5c61ad53bbb70db25462566b1742b409eb345f7f0178fd388f236",
+          "version": "GDB 18.1"
+        }
+      },
+      "evidence": "https://github.com/mtalhak003/FIRMAVEX/actions/runs/38590752705/job/115944662408",
+      "revision": "0d3011abbe2f6b9b1b758d067ad7bb566f81ac66",
+      "qualified_paths": [
+        "source",
+        "frozen",
+        "installed"
+      ],
+      "scope": "declared examples, reproduction, cancellation, cleanup and export; not arbitrary firmware, hostile isolation or every Windows installation"
+    },
+    {
+      "system": "Windows",
+      "architecture": "x86_64",
+      "profile": "verilog-icarus",
+      "tools": {
+        "iverilog": {
+          "sha256": "25e1ba02e72f58d9d484bc5457d69a6b179d22d86bdf5ba5d6f9f0d4fe620bbf",
+          "version": "Icarus 13.0"
+        },
+        "vvp": {
+          "sha256": "f0775603e1f1bcf1b2dea16dff963a4b7d71b7b33d5bbe23d2b01ff5b2304e09",
+          "version": "Icarus runtime 13.0"
+        }
+      },
+      "evidence": "https://github.com/mtalhak003/FIRMAVEX/actions/runs/38590752705/job/115944662408",
+      "revision": "0d3011abbe2f6b9b1b758d067ad7bb566f81ac66",
+      "qualified_paths": [
+        "source",
+        "frozen",
+        "installed"
+      ],
+      "scope": "declared examples, reproduction, cancellation, cleanup and export; not arbitrary firmware, hostile isolation or every Windows installation"
+    }
+  ]
 }

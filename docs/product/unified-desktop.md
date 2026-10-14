@@ -51,8 +51,9 @@ and retains notices and inventories. It now retains RV32 QEMU and Icarus compone
 without changing the existing ARM runtime-pack schema. Ubuntu packages use OS
 runtime dependencies. macOS runtime instructions use Homebrew.
 
-Windows RV32/HDL candidate qualification remains gated until actual native CI
-has passed for the selected runtime. `FIRMAVEX_QUALIFY_BACKENDS=1` is an explicit
+Windows RV32/HDL execution uses an exact-hash catalog of tools backed by native
+source/frozen/installed qualification. Batch 7 records the passing Batch 6 tools;
+other runtime builds remain gated pending their own native evidence. `FIRMAVEX_QUALIFY_BACKENDS=1` is an explicit
 administrator qualification override, not proof of support or a trust bypass.
 The existing Windows ARM runtime gate remains unchanged.
 
@@ -133,7 +134,7 @@ qualification must succeed before claiming a platform/backend combination.
 
 The Ubuntu x64 job in [run 38546993532](https://github.com/mtalhak003/FIRMAVEX/actions/runs/38546993532) passed actual source, frozen and installed ARM/RV32/HDL execution, reproduction, cancellation, persistence and export, including package reinstall/removal with retained results. This is example-based qualification, not arbitrary-target support.
 
-The same workflow did **not** qualify native Windows or macOS multi-backend execution. Windows publisher package installation failed before execution. Darwin rejected RLIMIT_AS admission even when requested limits were below inherited caps; this remains a fail-closed limitation, not permission to omit memory controls. Older ARM-only macOS execution evidence does not qualify the new adapters. The Windows native compatibility catalog intentionally contains no approved entries until complete native evidence exists. Candidate qualification requires explicit administrator opt-in and conveys no support guarantee.
+The same workflow did **not** qualify native Windows or macOS multi-backend execution. Windows publisher package installation failed before execution. Darwin rejected RLIMIT_AS admission even when requested limits were below inherited caps; this remains a fail-closed limitation, not permission to omit memory controls. Older ARM-only macOS execution evidence does not qualify the new adapters. At that historical checkpoint, the Windows native catalog contained no approved entries. Batch 7 subsequently records the fully qualified Batch 6 tools, without changing the gate. Candidate qualification requires explicit administrator opt-in and conveys no support guarantee.
 
 Installers remain unsigned/unnotarized unless a particular artifact supplies independently verifiable signing evidence. CI failures and partial results must be reviewed before beta distribution.
 
@@ -192,3 +193,15 @@ three attempts fails the job and cannot establish runtime qualification.
 
 See [macOS memory-admission investigation](macos-memory-admission.md) for the
 bounded native probe, evaluated alternatives and interim support-policy recommendation.
+
+## Batch 7 stabilization
+
+The workspace adds a readable Summary tab while preserving raw JSON and exports.
+It explains configured outcomes, bounded non-discovery, charged evaluator attempts,
+measurement mode and cleanup separately. Target descriptions state actual ELF and
+HDL contracts. Reopening remains read-only; starting/opening another run clears
+stale summaries. Errors include next-step guidance. The macOS preview restriction
+is visible independently of tool availability.
+
+See [local worker interface](local-worker-interface.md) and
+[preview release policy](release-policy.md). No public remote endpoint is added.

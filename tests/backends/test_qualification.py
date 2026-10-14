@@ -12,7 +12,9 @@ def windows(monkeypatch):
     monkeypatch.setattr(qualification.platform, "machine", lambda: "AMD64")
 
 
-def test_empty_catalog_cannot_enable_native_windows(windows):
+def test_empty_catalog_cannot_enable_native_windows(windows, monkeypatch):
+    resource = SimpleNamespace(joinpath=lambda name: SimpleNamespace(read_text=lambda **kwargs: json.dumps({'schema_version': 1, 'profiles': []})))
+    monkeypatch.setattr(qualification, 'files', lambda package: resource)
     with pytest.raises(RuntimeError, match="not passed"):
         qualification.require_windows_qualification("riscv32-virt")
 

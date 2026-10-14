@@ -320,3 +320,15 @@ def test_main_close_preserves_a_running_backend_until_cleanup(qtbot, tmp_path):
     assert main._closing and child._closing
     controller.finish({"status": "cancelled", "evidence": {"cleanup_verified": True}})
     qtbot.waitUntil(lambda: not main.isVisible() and not child.isVisible())
+
+
+def test_human_summary_preserves_raw_evidence_and_qualification_limits(view):
+    window, controller = view
+    window._job = 'backend_inspect'
+    record = {'schema_version':1, 'status':'infrastructure_failure',
+              'evidence':{'measurement_mode':'synthetic_test','cleanup_verified':False}}
+    window._result(record)
+    assert 'could not be completed reliably' in window.summary_view.toPlainText()
+    assert 'synthetic_test' in window.result_view.toPlainText()
+    assert window.record == record
+    assert not window.reproduce_button.isEnabled()

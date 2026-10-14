@@ -148,6 +148,9 @@ def export(output, destination):
         "This is a local tool observation, not hardware validation or a security guarantee.\n"
         "HDL results express the supplied testbench assertion, not proof of design correctness.\n"
     )
+    from firmavex.product.presentation import summary
+    text += "\n## Interpretation and troubleshooting\n\n" + "\n\n".join(
+        _safe_text(line) for line in summary(record).splitlines()) + "\n"
     payload["result.json"] = json.dumps(record, sort_keys=True, indent=2, allow_nan=False).encode("utf-8")
     payload["REPORT.md"] = text.encode("utf-8")
     hashes = {name: hashlib.sha256(data).hexdigest() for name, data in payload.items()}

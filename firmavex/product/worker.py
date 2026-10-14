@@ -12,7 +12,7 @@ from .errors import ProductError
 from .protocol import MAX_LINE_BYTES, decode_command, encode_event
 
 _FIELDS = {
-    "doctor": (set(), set()), "validate": ({"config"}, set()),
+    "capabilities": (set(), set()), "doctor": (set(), set()), "validate": ({"config"}, set()),
     "run": ({"config", "output_dir"}, set()),
     "reproduce": ({"run_dir", "output_dir"}, {"attempts"}),
     "inspect": ({"run_dir"}, set()), "export": ({"run_dir", "output_dir"}, set()),
@@ -30,6 +30,15 @@ _FIELDS = {
     "backend_export": ({"run_dir", "output_dir"}, set()),
     "cancel": (set(), {"job_request_id"}), "shutdown": (set(), set()),
 }
+
+def validate_payload(command, payload):
+    """Shared command-field validation; service-specific values stay in services."""
+    if command not in _FIELDS or type(payload) is not dict:
+        raise ProductError("protocol_error", "Invalid command payload fields.")
+    required, optional = _FIELDS[command]
+    if not required <= payload.keys() or not payload.keys() <= required | optional:
+        raise ProductError("protocol_error", "Invalid command payload fields.")
+
 DIAGNOSTIC_PREVIEW_BYTES = 4096
 
 
@@ -118,9 +127,10 @@ class Worker:
                 self.emit(request_id, "error", ProductError("protocol_error", "Request identifier has already been used.").to_dict())
                 return
             self._requests.add(request_id)
-            required, optional = _FIELDS[command]
-            if not required <= payload.keys() or not payload.keys() <= required | optional:
-                self.emit(request_id, "error", ProductError("protocol_error", "Invalid command payload fields.").to_dict())
+            try:
+                validate_payload(command, payload)
+            except ProductError as exc:
+                self.emit(request_id, "error", exc.to_dict())
                 return
             if self.stopping:
                 self.emit(request_id, "error", ProductError("worker_stopping", "Worker is shutting down.").to_dict())
@@ -150,7 +160,10 @@ class Worker:
         request_id, command, payload = message["request_id"], message["command"], message["payload"]
         try:
             callback = lambda data: self.emit(request_id, "progress", data)
-            if command.startswith("backend_"):
+            if command == "capabilities":
+                from .capabilities import describe
+                result = describe()
+            elif command.startswith("backend_"):
                 from . import backend_services as backend
                 if command == "backend_check":
                     result = backend.check(payload["profile"])

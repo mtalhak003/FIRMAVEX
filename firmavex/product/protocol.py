@@ -11,7 +11,7 @@ from .errors import ProductError
 
 SCHEMA_VERSION = 1
 MAX_LINE_BYTES = 1_048_576
-COMMANDS = frozenset({"doctor", "validate", "run", "reproduce", "inspect", "export", "recover", "restart", "cancel", "shutdown", "demo", "build_example", "prepare_example", "setup_runtime", "runtime_history", "rollback_runtime", "demo_builtin", "backend_check", "backend_prepare", "backend_execute", "backend_inspect", "backend_reproduce", "backend_export"})
+COMMANDS = frozenset({"capabilities", "doctor", "validate", "run", "reproduce", "inspect", "export", "recover", "restart", "cancel", "shutdown", "demo", "build_example", "prepare_example", "setup_runtime", "runtime_history", "rollback_runtime", "demo_builtin", "backend_check", "backend_prepare", "backend_execute", "backend_inspect", "backend_reproduce", "backend_export"})
 EVENT_KINDS = frozenset({"accepted", "progress", "result", "error", "cancelling", "shutdown"})
 _REQUEST_ID = re.compile(r"[A-Za-z0-9_.:-]{1,128}\Z")
 
@@ -115,3 +115,11 @@ def _encode(value: dict[str, Any], validate: Any) -> bytes:
         raise ProductError("protocol_error", "Cannot encode protocol message.") from exc
     validate(data)
     return data
+
+
+# Public bounded JSON framing shared by additive local interfaces. Existing
+# worker v1 envelope validation remains unchanged.
+decode_json_object = _decode
+
+def encode_json_object(value):
+    return _encode(value, decode_json_object)

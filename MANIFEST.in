@@ -38,3 +38,5 @@ include tools/universal_desktop_ci.py
 include firmavex/backends/native_profiles.json
 
 include tools/darwin_memory_probe.py tools/native/darwin_memory_probe.c
+
+include tools/local_interface_ci.py

@@ -1,7 +1,7 @@
 name: Desktop beta native setup qualification
 on:
   push:
-    branches: ["product/desktop-batch4", "product/desktop-batch5", "product/desktop-batch6"]
+    branches: ["product/desktop-batch4", "product/desktop-batch5", "product/desktop-batch6", "product/desktop-batch7"]
   workflow_dispatch:
 permissions:
   contents: read

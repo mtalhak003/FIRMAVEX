@@ -1,7 +1,7 @@
 name: Desktop distribution candidates
 on:
   push:
-    branches: ["product/desktop-batch3", "product/desktop-batch4", "product/desktop-batch5", "product/desktop-batch6"]
+    branches: ["product/desktop-batch3", "product/desktop-batch4", "product/desktop-batch5", "product/desktop-batch6", "product/desktop-batch7"]
   workflow_dispatch:
 permissions:
   contents: read
@@ -77,6 +77,22 @@ jobs:
           files = sorted(p for p in root.iterdir() if p.is_file() and p.suffix in {'.exe', '.dmg', '.gz', '.deb'})
           (root/'SHA256SUMS').write_text(''.join(hashlib.sha256(p.read_bytes()).hexdigest()+'  '+p.name+'\n' for p in files))
           PY
+      - name: Preview release identity and independent verification
+        shell: bash
+        run: |
+          python - <<'PYCODE'
+          import os
+          from pathlib import Path
+          from firmavex.product.release import main
+          artifacts = sorted(p for p in Path('dist').iterdir() if p.is_file() and p.suffix in {'.exe', '.dmg', '.gz', '.deb'})
+          output = Path(os.environ['RUNNER_TEMP']) / 'release-sidecars'
+          arguments = ['create', '--repo', str(Path.cwd()), '--output', str(output)]
+          for artifact in artifacts:
+              arguments += ['--artifact', str(artifact)]
+          if main(arguments): raise SystemExit(1)
+          if main(['verify', '--manifest', str(output/'release-manifest.json'), '--artifact-dir', 'dist']): raise SystemExit(1)
+          (Path('dist')/'release-manifest.json').write_bytes((output/'release-manifest.json').read_bytes())
+          PYCODE
       - uses: actions/upload-artifact@v4
         with:
           name: FIRMAVEX-${{ matrix.os }}-unsigned-candidate
@@ -86,6 +102,7 @@ jobs:
             dist/*.tar.gz
             dist/*.deb
             dist/SHA256SUMS
+            dist/release-manifest.json
           if-no-files-found: error
   macos-firmware-qualification:
     name: macOS ARM firmware qualification candidate

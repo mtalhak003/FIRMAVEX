@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 
 from firmavex.backends.api import Limits, Request, profiles, request_to_dict
 from firmavex.product.errors import ProductError
+from firmavex.product.presentation import summary, guidance
 from .controller import DesktopController
 from .projects import _safe_root, application_data_directory
 
@@ -93,6 +94,11 @@ class UniversalWindow(QMainWindow):
         )
         self.notice.setWordWrap(True)
         layout.addWidget(self.notice)
+        from firmavex.product.capabilities import describe
+        policy = describe()['support']
+        self.platform_notice = QLabel('macOS desktop preview only — native unified execution is unsupported.' if policy['native_unified_execution'] == 'unsupported' else 'Qualified baseline examples: Windows x64 / Ubuntu x64. Selected tools require separate readiness and qualification checks.')
+        self.platform_notice.setWordWrap(True)
+        layout.addWidget(self.platform_notice)
         form = QFormLayout()
         self.profile_combo = QComboBox()
         self.profile_combo.setAccessibleName("Backend and target")
@@ -176,6 +182,10 @@ class UniversalWindow(QMainWindow):
         self.log_view.setReadOnly(True)
         self.log_view.setMaximumBlockCount(1000)
         self.log_view.setAccessibleName("Live worker progress and diagnostics")
+        self.summary_view = QPlainTextEdit()
+        self.summary_view.setReadOnly(True)
+        self.summary_view.setAccessibleName("Readable result explanation and limitations")
+        self.tabs.addTab(self.summary_view, "Summary")
         self.tabs.addTab(self.result_view, "Result / evidence")
         self.tabs.addTab(self.log_view, "Progress / logs")
         split.addWidget(self.tabs)
@@ -202,7 +212,10 @@ class UniversalWindow(QMainWindow):
             f"{profile.architecture}; method: {', '.join(profile.capabilities.methods)}; "
             f"input: {profile.capabilities.input_kind}; "
             f"waveforms: {'yes' if profile.capabilities.waveforms else 'no'}. "
-            "Runtime availability is checked separately from native qualification."
+            "Runtime availability is checked separately from native qualification. "
+            + ({"cortex-m3-mps2": "QEMU mps2-an385; symbolized Cortex-M3 ELF and ready/completion bindings required.",
+                "riscv32-virt": "QEMU virt; RV32IM ELF with the documented two-input symbol contract required.",
+                "verilog-icarus": "One self-contained ASCII testbench; no synthesis, VHDL or physical FPGA support."}[self.profile])
         )
         self.source_label.setText({"cortex-m3-mps2": "Existing ARM project JSON", "riscv32-virt": "Compatible RV32 ELF", "verilog-icarus": "Self-contained Verilog testbench"}[self.profile])
         self.values_edit.setVisible(self.profile == "riscv32-virt")
@@ -229,6 +242,9 @@ class UniversalWindow(QMainWindow):
         if self.busy or self._closing:
             return False
         self._job, self._output = command, output
+        if command in {'backend_execute', 'backend_reproduce', 'backend_inspect'}:
+            self.summary_view.clear()
+            self.result_view.clear()
         if command in {"backend_execute", "backend_reproduce"}:
             self.active_run, self.record = output, None
             self.result_view.clear()
@@ -399,20 +415,22 @@ class UniversalWindow(QMainWindow):
             status = self.record.get("status", "unknown")
             prefix = "Saved record" if command == "backend_inspect" else "Observed outcome"
             self.status_label.setText(f"{prefix}: {status}. Review completion, evidence and cleanup fields; receipt arrival alone is not success.")
-            self.tabs.setCurrentWidget(self.result_view)
+            self.summary_view.setPlainText(summary(self.record))
+            self.tabs.setCurrentWidget(self.summary_view)
         elif command == "backend_export":
             self.status_label.setText("Export complete: " + str(record.get("destination", self._output)))
         self._refresh()
 
     def _local_error(self, exc):
         category = exc.category if isinstance(exc, ProductError) else "invalid_input"
-        self.status_label.setText(category + ": " + str(exc))
+        self.status_label.setText(category + ": " + str(exc) + " " + guidance(category))
         self._refresh()
 
     @Slot(dict)
     def _error(self, record):
         self._job = None
         self.result_view.setPlainText(_preview(record))
+        self.summary_view.setPlainText(str(record.get("message", "Worker failure")) + "\n" + guidance(record.get("category")))
         self.status_label.setText(str(record.get("category", "worker_error")) + ": " + str(record.get("message", "Inspect saved results.")))
         self._refresh()
 
