@@ -10,7 +10,6 @@ import os
 import subprocess
 import sys
 import tempfile
-import threading
 import signal
 import faulthandler
 from contextlib import nullcontext, contextmanager
@@ -24,72 +23,54 @@ def pytest_command(args, report, *, bounded):
                *args, '--junitxml='+str(report)]
 
 def run_tests(args, report, *, bounded=False):
-    """Stream bounded diagnostic history; own pytest descendants on every exit."""
+    """Retain output independently of console consumers and inherited pipe EOF."""
     def phase(name):
         report.with_name('launcher-state.log').write_text(name + '\n', encoding='utf-8')
     phase('import Windows ownership API')
     from firmavex.product.windows_job import WindowsJob
     command = pytest_command(args, report, bounded=bounded)
     kwargs = {'start_new_session': True} if os.name == 'posix' else {}
-    phase('create admitted pytest child')
-    process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                               **kwargs)
-    owner = None
-    transcript = report.with_suffix('.log').open('wb')
-    history = bytearray()
-    lock = threading.Lock()
-    def stream():
-        while True:
-            data = os.read(process.stdout.fileno(), 4096)
-            if not data:
-                break
-            transcript.write(data)
-            transcript.flush()
-            with lock:
-                history.extend(data)
-                del history[:-65536]
-            # Binary writes retain traceback text even with a non-UTF8 console.
-            sys.stdout.buffer.write(data)
-            sys.stdout.buffer.flush()
-    try:
-        if os.name == 'nt':
-            phase('assign Windows Job Object')
-            owner = WindowsJob()
-            owner.assign(int(process._handle))
-        phase('release admitted child')
-        process.stdin.write(b'1')
-        process.stdin.close()
-        reader = threading.Thread(target=stream, daemon=True)
-        reader.start()
+    log = report.with_suffix('.log')
+    # Direct file output needs neither an always-draining console-forwarder
+    # thread nor EOF from every descendant before the test status is available.
+    with log.open('wb', buffering=0) as transcript:
+        phase('create admitted pytest child')
+        process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=transcript,
+                                   stderr=subprocess.STDOUT, **kwargs)
+        owner = None
         try:
-            phase('wait for pytest completion')
-            process.wait(timeout=540 if bounded else 900)
-        except subprocess.TimeoutExpired:
-            print(f'::error::Pytest selection exceeded {540 if bounded else 900}s; terminating owned test tree.', flush=True)
-            raise
-    finally:
-        if owner is not None:
-            phase('close Windows Job Object')
-            owner.close()
-        if os.name == 'posix':
+            if os.name == 'nt':
+                phase('assign Windows Job Object')
+                owner = WindowsJob()
+                owner.assign(int(process._handle))
+            phase('release admitted child')
+            process.stdin.write(b'1')
+            process.stdin.close()
             try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-        elif process.poll() is None:
-            process.kill()
-        phase('reap pytest')
-        process.wait(timeout=10)
-        phase('join transcript reader')
-        if 'reader' in locals():
-            reader.join(timeout=10)
-            if reader.is_alive():
-                raise RuntimeError('CI output reader did not finish after owned tree cleanup')
-        phase('close transcript pipes')
-        process.stdout.close()
-        transcript.close()
-    with lock:
-        output = bytes(history).decode('utf-8', errors='replace')
+                phase('wait for pytest completion')
+                process.wait(timeout=540 if bounded else 900)
+            except subprocess.TimeoutExpired:
+                # The launcher native watchdog and retained phase/file remain
+                # independent even if the CI console itself stops accepting IO.
+                phase('selection timeout; terminate owned test tree')
+                raise
+        finally:
+            if owner is not None:
+                phase('close Windows Job Object')
+                owner.close()
+            if os.name == 'posix':
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            elif process.poll() is None:
+                process.kill()
+            phase('reap pytest')
+            process.wait(timeout=10)
+            process.stdin.close()
+    with log.open('rb') as transcript:
+        transcript.seek(max(0, log.stat().st_size-65536))
+        output = transcript.read(65536).decode('utf-8', errors='replace')
     phase('completed: pytest status=' + str(process.returncode))
     return subprocess.CompletedProcess(command, process.returncode, stdout=output)
 
@@ -151,6 +132,9 @@ def main(arguments=None):
 def complete_selection(args, report, *, bounded):
     print('::notice title=FIRMAVEX CI launcher::entered supervised test selection', flush=True)
     process = run_tests(args, report, bounded=bounded)
+    # Publish a bounded tail only after execution and ownership cleanup finish.
+    # The full, continuously written transcript remains in the retained archive.
+    print(process.stdout, end='', flush=True)
     if process.returncode:
         diagnostic = ('pytest exited ' + str(process.returncode) + '; actual final process output: ' + process.stdout[-7000:])
         escaped = diagnostic.replace('%','%25').replace('\r','%0D').replace('\n','%0A')

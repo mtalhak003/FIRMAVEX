@@ -1,7 +1,9 @@
 # Product regression diagnostics
 
 `tools/product_ci_tests.py` runs the complete supplied selection without retries
-or deselection. It streams output immediately. The explicit `--ci-watchdog`
+or deselection. It writes complete output directly to a retained file and publishes a bounded
+64-KiB tail after process cleanup. Test liveness does not require a console
+forwarding thread or inherited-pipe EOF. The explicit `--ci-watchdog`
 mode used by the platform-neutral product step loads the CI-only
 `tools.product_ci_diagnostics` pytest plugin. Each test prints its node ID before
 setup and its elapsed wall time after teardown. The default 120-second per-test

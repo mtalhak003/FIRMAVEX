@@ -184,3 +184,33 @@ def test_missing_admission_never_starts_pytest_or_creates_report(tmp_path):
                             capture_output=True, text=True, timeout=15)
     assert result.returncode == 123
     assert not marker.exists() and not report.exists()
+
+
+def test_test_liveness_does_not_depend_on_ci_console_drain(tmp_path, monkeypatch):
+    import io
+    from tools import product_ci_tests as ci
+    source = tmp_path/'test_output_probe.py'
+    source.write_text("def test_output():\n print('x' * 1048576)\n")
+    report = tmp_path/'pytest.xml'
+    original_popen = ci.subprocess.Popen
+    def bounded_process(*args, **kwargs):
+        process = original_popen(*args, **kwargs)
+        original_wait = process.wait
+        process.wait = lambda timeout=None: original_wait(timeout=min(timeout or 10, 10))
+        return process
+    class UnavailableConsole(io.StringIO):
+        @property
+        def buffer(self):
+            return self
+        def write(self, value):
+            if isinstance(value, bytes):
+                raise OSError('synthetic unavailable CI console')
+            return super().write(value)
+    with monkeypatch.context() as patch:
+        patch.setenv('PYTEST_DISABLE_PLUGIN_AUTOLOAD', '1')
+        patch.setattr(ci.subprocess, 'Popen', bounded_process)
+        patch.setattr(ci.sys, 'stdout', UnavailableConsole())
+        result = ci.run_tests(['-q', '-s', str(source)], report, bounded=True)
+    assert result.returncode == 0
+    assert len(result.stdout.encode()) <= 65536
+    assert report.with_suffix('.log').stat().st_size > 1048576
