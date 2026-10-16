@@ -44,6 +44,7 @@ def test_stalled(fixture):
     result = run_selection(tmp_path, source, '--firmavex-test-timeout=2')
     assert result.returncode == 124, result.stdout + result.stderr
     assert 'Per-test timeout' in result.stdout
+    assert any(line.startswith('::error title=CI lifecycle timeout::') for line in result.stdout.splitlines())
     assert 'test_stalled' in result.stdout
     assert 'Thread' in result.stdout
     assert 'Timeout' in result.stdout or 'time.sleep' in result.stdout

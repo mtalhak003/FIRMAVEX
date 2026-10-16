@@ -37,7 +37,7 @@ def _watch(label, limit):
             stacks = '\n'.join(f'Thread {identifier}:\n' + ''.join(traceback.format_stack(frame))
                                for identifier, frame in sys._current_frames().items())
             detail = stacks[-16000:].replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
-            print(f'::error title=CI lifecycle timeout::{label} exceeded {limit:g}s; {detail}',
+            print(f'\n::error title=CI lifecycle timeout::{label} exceeded {limit:g}s; {detail}',
                   file=_DIAGNOSTICS, flush=True)
             faulthandler.dump_traceback(file=_DIAGNOSTICS, all_threads=True)
             os._exit(124)
@@ -54,19 +54,19 @@ def _stop(watch):
 def pytest_sessionstart(session):
     session.config._firmavex_collection_watch = _watch(
         'test collection', session.config.getoption('--firmavex-test-timeout'))
-    print('::notice title=FIRMAVEX pytest lifecycle::collection started', file=_DIAGNOSTICS, flush=True)
+    print('\n::notice title=FIRMAVEX pytest lifecycle::collection started', file=_DIAGNOSTICS, flush=True)
 
 
 def pytest_collection_finish(session):
     _stop(session.config._firmavex_collection_watch)
-    print(f'::notice title=FIRMAVEX pytest lifecycle::collection finished; {len(session.items)} tests',
+    print(f'\n::notice title=FIRMAVEX pytest lifecycle::collection finished; {len(session.items)} tests',
           file=_DIAGNOSTICS, flush=True)
 
 
 @pytest.hookimpl(hookwrapper=True, tryfirst=True)
 def pytest_sessionfinish(session, exitstatus):
     _stop(session.config._firmavex_collection_watch)
-    print(f'::notice title=FIRMAVEX pytest lifecycle::session finishing; pytest status={int(exitstatus)}',
+    print(f'\n::notice title=FIRMAVEX pytest lifecycle::session finishing; pytest status={int(exitstatus)}',
           file=_DIAGNOSTICS, flush=True)
     # This daemon remains armed: leaked non-daemon threads can otherwise hang
     # interpreter shutdown after pytest prints an apparently passing summary.
