@@ -15,7 +15,7 @@ def run_selection(tmp_path, source, *options):
     test.write_text(source, encoding='utf-8')
     env = dict(os.environ, PYTEST_DISABLE_PLUGIN_AUTOLOAD='1')
     return subprocess.run([sys.executable, str(REPO/'tools/product_ci_tests.py'),
-                           '-q', str(test), *options], cwd=REPO, env=env,
+                           '--ci-watchdog', '-q', str(test), *options], cwd=REPO, env=env,
                           capture_output=True, text=True, timeout=25)
 
 
@@ -41,7 +41,7 @@ def fixture():
 def test_stalled(fixture):
  {call}
 '''
-    result = run_selection(tmp_path, source, '--firmavex-test-timeout=0.5')
+    result = run_selection(tmp_path, source, '--firmavex-test-timeout=2')
     assert result.returncode == 124, result.stdout + result.stderr
     assert 'Per-test timeout' in result.stdout
     assert 'test_stalled' in result.stdout
@@ -66,7 +66,7 @@ def test_stalled():
  Path({str(pid_file)!r}).write_text(str(child.pid))
  time.sleep(10)
 '''
-    result = run_selection(tmp_path, source, '--firmavex-test-timeout=1')
+    result = run_selection(tmp_path, source, '--firmavex-test-timeout=2')
     assert result.returncode == 124, result.stdout + result.stderr
     pid = int(pid_file.read_text())
     if os.name == 'nt':
@@ -101,3 +101,85 @@ def test_stalled():
                 break
             assert time.monotonic() < deadline, 'Owned descendant still running'
             time.sleep(0.01)
+
+
+@pytest.mark.parametrize('phase', ['collection', 'shutdown'])
+def test_ci_bounds_collection_and_leaked_thread_shutdown(tmp_path, phase):
+    source = ('import time; time.sleep(10)\ndef test_probe(): pass\n'
+              if phase == 'collection' else
+              'import threading,time\ndef test_probe():\n threading.Thread(target=time.sleep,args=(10,)).start()\n')
+    result = run_selection(tmp_path, source, '--firmavex-test-timeout=2')
+    assert result.returncode == 124, result.stdout + result.stderr
+    assert 'CI lifecycle timeout' in result.stdout
+    assert ('test collection' if phase == 'collection' else 'interpreter shutdown') in result.stdout
+    assert 'Thread' in result.stdout
+
+
+def test_native_launcher_watchdog_retains_stacks_during_parent_stall(tmp_path):
+    # Exercise the actual CPython watchdog with a synthetic blocked launcher,
+    # not Windows firmware or mocked execution evidence.
+    archive = tmp_path / 'diagnostics'
+    script = '''import os,time,types
+from tools import product_ci_tests as ci
+original=ci.faulthandler.dump_traceback_later
+ci.faulthandler.dump_traceback_later=lambda seconds,**kw: original(.5,**kw)
+ci.os=types.SimpleNamespace(name='nt',environ=os.environ)
+ci.run_tests=lambda *args,**kwargs: time.sleep(10)
+ci.main(['--ci-watchdog'])
+'''
+    result = subprocess.run([sys.executable, '-c', script], cwd=REPO,
+                            env=dict(os.environ, FIRMAVEX_CI_DIAGNOSTICS=str(archive)),
+                            capture_output=True, text=True, timeout=15)
+    assert result.returncode != 0
+    stacks = list(archive.glob('firmavex-ci-*/launcher-stacks.log'))
+    assert len(stacks) == 1
+    assert 'Timeout' in stacks[0].read_text()
+    reported = subprocess.run([sys.executable, str(REPO/'tools/product_ci_tests.py'),
+                               '--report-diagnostics'], cwd=REPO,
+                              env=dict(os.environ, FIRMAVEX_CI_DIAGNOSTICS=str(archive)),
+                              capture_output=True, text=True, timeout=15)
+    assert reported.returncode == 0
+    assert 'Native CI launcher timeout' in reported.stdout
+    assert 'Timeout' in reported.stdout
+
+
+def test_native_timeout_report_is_bounded_and_has_phase_and_output(tmp_path):
+    root = tmp_path/'diagnostics'/'firmavex-ci-probe'
+    root.mkdir(parents=True)
+    (root/'launcher-stacks.log').write_text('do not report this prefix' + 'x'*100000)
+    (root/'launcher-state.log').write_text('test phase')
+    (root/'pytest.log').write_text('last child output')
+    result = subprocess.run([sys.executable, str(REPO/'tools/product_ci_tests.py'),
+                             '--report-diagnostics'], cwd=REPO,
+                            env=dict(os.environ, FIRMAVEX_CI_DIAGNOSTICS=str(root.parent)),
+                            capture_output=True, text=True, timeout=15)
+    assert result.returncode == 0
+    assert len(result.stdout) < 16000
+    assert 'do not report this prefix' not in result.stdout
+    assert 'test phase' in result.stdout and 'last child output' in result.stdout
+
+
+def test_watchdog_is_opt_in_and_preserves_native_test_timeout_policy(tmp_path):
+    source = tmp_path/'test_plain_probe.py'
+    source.write_text('def test_probe(): pass\n')
+    result = subprocess.run([sys.executable, str(REPO/'tools/product_ci_tests.py'),
+                             '-q', str(source)], cwd=REPO,
+                            env=dict(os.environ, PYTEST_DISABLE_PLUGIN_AUTOLOAD='1'),
+                            capture_output=True, text=True, timeout=15)
+    assert result.returncode == 0
+    assert '1 passed' in result.stdout
+    assert 'FIRMAVEX TEST START' not in result.stdout
+    assert 'FIRMAVEX pytest lifecycle' not in result.stdout
+
+
+def test_missing_admission_never_starts_pytest_or_creates_report(tmp_path):
+    from tools.product_ci_tests import pytest_command
+    source = tmp_path/'test_never.py'
+    marker = tmp_path/'dispatched'
+    source.write_text(f'from pathlib import Path\nPath({str(marker)!r}).write_text("dispatched")\ndef test_never(): pass\n')
+    report = tmp_path/'never.xml'
+    result = subprocess.run(pytest_command(['-q',str(source)], report, bounded=True),
+                            cwd=REPO, stdin=subprocess.DEVNULL,
+                            capture_output=True, text=True, timeout=15)
+    assert result.returncode == 123
+    assert not marker.exists() and not report.exists()
