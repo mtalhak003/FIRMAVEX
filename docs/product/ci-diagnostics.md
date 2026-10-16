@@ -14,7 +14,7 @@ assertion failures preserve pytest's exit status and JUnit diagnostics. Collecti
 and interpreter shutdown also have 120-second guards; public lifecycle notices
 distinguish these from individual-test execution.
 
-In this opt-in mode the launcher limits each selection wait to 540 seconds, independently of the
+In this opt-in mode the launcher limits each selection wait to 240 seconds, independently of the
 unchanged 20-minute product matrix job limit. Its test child waits for admission
 before importing pytest: Windows Job Object ownership is established first;
 POSIX uses an owned process group. The tree is terminated on completion or
@@ -37,7 +37,8 @@ gh workflow run product.yml --repo mtalhak003/FIRMAVEX --ref product/desktop-bat
 gh run list --repo mtalhak003/FIRMAVEX --workflow product.yml --branch product/desktop-batch7
 # Substitute the returned run ID:
 gh run watch RUN_ID --repo mtalhak003/FIRMAVEX --exit-status
-gh run download RUN_ID --repo mtalhak003/FIRMAVEX --pattern 'product-diagnostics-*'
+gh run download RUN_ID --repo mtalhak003/FIRMAVEX --pattern 'platform-neutral-diagnostics-*'
+# Completed jobs also retain product-diagnostics-* with later regression logs.
 ```
 
 A Git push to the product branch also starts the complete workflow. A green
@@ -46,7 +47,7 @@ backend qualification is a separate workflow. macOS remains preview-only and
 its native resource-admission failure must not be bypassed.
 
 On Windows the launcher also arms CPython's native faulthandler watchdog for
-600 seconds before child startup and keeps it armed through cleanup. It writes
+300 seconds before child startup and keeps it armed through cleanup. It writes
 thread stacks directly to `launcher-stacks.log`, independently of the stdout
 streaming lock, then exits unsuccessfully. The admitted pytest process tree is
 owned by the kill-on-close Windows Job Object. Loss of admission is rejected
@@ -64,3 +65,10 @@ Without `--ci-watchdog`, the shared wrapper does not install the per-test,
 collection, shutdown, or native launcher watchdogs. Native firmware and GUI
 qualification retain their own existing test deadlines and the existing
 900-second selection wait. No application execution/resource limit is changed.
+
+The platform-neutral Actions step has an independent six-minute step deadline;
+the existing twenty-minute job deadline is unchanged. Diagnostics are published
+and uploaded immediately after that step with `always()`, before later checks.
+This prevents a later job cancellation from discarding an already captured
+platform-neutral record. Step timeouts remain failures. Launcher state notices
+are administrative phase information, not a substitute for JUnit/test outcomes.

@@ -10,10 +10,18 @@ import pytest
 REPO = Path(__file__).resolve().parents[2]
 
 
+def probe_environment(**overrides):
+    # Expected-negative synthetic probes must not populate the outer CI archive.
+    environment = dict(os.environ)
+    environment.pop('FIRMAVEX_CI_DIAGNOSTICS', None)
+    environment.update(overrides)
+    return environment
+
+
 def run_selection(tmp_path, source, *options):
     test = tmp_path / 'test_ci_probe.py'
     test.write_text(source, encoding='utf-8')
-    env = dict(os.environ, PYTEST_DISABLE_PLUGIN_AUTOLOAD='1')
+    env = probe_environment(PYTEST_DISABLE_PLUGIN_AUTOLOAD='1')
     return subprocess.run([sys.executable, str(REPO/'tools/product_ci_tests.py'),
                            '--ci-watchdog', '-q', str(test), *options], cwd=REPO, env=env,
                           capture_output=True, text=True, timeout=25)
@@ -165,7 +173,7 @@ def test_watchdog_is_opt_in_and_preserves_native_test_timeout_policy(tmp_path):
     source.write_text('def test_probe(): pass\n')
     result = subprocess.run([sys.executable, str(REPO/'tools/product_ci_tests.py'),
                              '-q', str(source)], cwd=REPO,
-                            env=dict(os.environ, PYTEST_DISABLE_PLUGIN_AUTOLOAD='1'),
+                            env=probe_environment(PYTEST_DISABLE_PLUGIN_AUTOLOAD='1'),
                             capture_output=True, text=True, timeout=15)
     assert result.returncode == 0
     assert '1 passed' in result.stdout
@@ -214,3 +222,29 @@ def test_test_liveness_does_not_depend_on_ci_console_drain(tmp_path, monkeypatch
     assert result.returncode == 0
     assert len(result.stdout.encode()) <= 65536
     assert report.with_suffix('.log').stat().st_size > 1048576
+
+
+def test_completed_launcher_phase_is_reported_as_administrative_notice(tmp_path):
+    root = tmp_path/'diagnostics'/'firmavex-ci-probe'
+    root.mkdir(parents=True)
+    (root/'launcher-stacks.log').write_bytes(b'')
+    (root/'launcher-state.log').write_text('completed: pytest status=1')
+    result = subprocess.run([sys.executable, str(REPO/'tools/product_ci_tests.py'),
+                             '--report-diagnostics'], cwd=REPO,
+                            env=dict(os.environ, FIRMAVEX_CI_DIAGNOSTICS=str(root.parent)),
+                            capture_output=True, text=True, timeout=15)
+    assert result.returncode == 0
+    assert '::notice title=Retained CI launcher state::completed: pytest status=1' in result.stdout
+    assert '::error' not in result.stdout
+    assert 'passed' not in result.stdout
+
+
+def test_expected_negative_probes_do_not_pollute_outer_ci_archive(tmp_path, monkeypatch):
+    archive = tmp_path/'outer-archive'
+    archive.mkdir()
+    (archive/'sentinel').write_text('retain')
+    monkeypatch.setenv('FIRMAVEX_CI_DIAGNOSTICS', str(archive))
+    result = run_selection(tmp_path, 'def test_negative(): assert False\n')
+    assert result.returncode == 1
+    assert [path.name for path in archive.iterdir()] == ['sentinel']
+    assert (archive/'sentinel').read_text() == 'retain'

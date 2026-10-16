@@ -48,7 +48,7 @@ def run_tests(args, report, *, bounded=False):
             process.stdin.close()
             try:
                 phase('wait for pytest completion')
-                process.wait(timeout=540 if bounded else 900)
+                process.wait(timeout=240 if bounded else 900)
             except subprocess.TimeoutExpired:
                 # The launcher native watchdog and retained phase/file remain
                 # independent even if the CI console itself stops accepting IO.
@@ -80,16 +80,19 @@ def report_diagnostics():
     destination = os.environ.get('FIRMAVEX_CI_DIAGNOSTICS')
     if not destination:
         return 0
+    # Seek from EOF to bound memory even for unexpectedly large files.
+    def tail(path, limit):
+        if not path.exists():
+            return '(not present)'
+        with path.open('rb') as handle:
+            handle.seek(max(0, path.stat().st_size-limit))
+            return handle.read(limit).decode('utf-8', errors='replace')
     for stack in sorted(Path(destination).glob('firmavex-ci-*/launcher-stacks.log')):
         if not stack.stat().st_size:
+            state = tail(stack.with_name('launcher-state.log'), 1024)
+            state = state.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+            print('::notice title=Retained CI launcher state::'+state, flush=True)
             continue
-        # Seek from EOF to bound memory even for unexpectedly large files.
-        def tail(path, limit):
-            if not path.exists():
-                return '(not present)'
-            with path.open('rb') as handle:
-                handle.seek(max(0, path.stat().st_size-limit))
-                return handle.read(limit).decode('utf-8', errors='replace')
         detail = (tail(stack.with_name('launcher-state.log'), 1024) + '\n'
                   + tail(stack, 10000) + '\n' + tail(stack.with_name('pytest.log'), 4000))
         escaped = detail.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
@@ -102,7 +105,7 @@ def launcher_deadline(report, *, enabled):
     # Native watchdog remains active through startup, cleanup and reporting.
     with report.with_name('launcher-stacks.log').open('wb') as stack_file:
         if enabled and os.name == 'nt':
-            faulthandler.dump_traceback_later(600, file=stack_file, exit=True)
+            faulthandler.dump_traceback_later(300, file=stack_file, exit=True)
         try:
             yield
         finally:

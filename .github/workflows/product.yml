@@ -34,6 +34,7 @@ jobs:
       - name: Install product, desktop, and test dependencies
         run: python -m pip install ".[dev,desktop,gui-test]"
       - name: Exercise platform-neutral product behavior
+        timeout-minutes: 6
         # These selected modules use synthetic observations and ordinary host
         # subprocesses. They do not establish native firmware support.
         run: >-
@@ -57,6 +58,17 @@ jobs:
           tests/product/test_file_state.py
           tests/product/test_services.py
           tests/product/test_windows_job.py
+      - name: Publish platform-neutral timeout diagnostics
+        if: always()
+        run: python tools/product_ci_tests.py --report-diagnostics
+      - name: Retain platform-neutral diagnostics immediately
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: platform-neutral-diagnostics-${{ matrix.os }}-py${{ matrix.python }}
+          path: ${{ github.workspace }}/firmavex-ci-diagnostics
+          if-no-files-found: warn
+          retention-days: 14
       - name: Exercise debugger parsing and host cleanup without firmware
         # Actual ARM tests are intentionally reserved for the Ubuntu tool job.
         run: python tools/product_ci_tests.py -q tests/product/test_runtime.py -k "not actual_"
