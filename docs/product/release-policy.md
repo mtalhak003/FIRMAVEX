@@ -83,3 +83,7 @@ Batch 9's immutable build inputs, collected-native-file inventory scope and
 remaining public-beta gates are documented in
 [public beta hardening](batch9-public-beta-hardening.md). A successful packaging
 job does not resolve the explicitly unverified component/license findings.
+
+Batch 10 ownership evidence, distinct-version installer qualification and blocked
+approval gates are described in [release blockers](batch10-release-blockers.md).
+Physical acceptance uses the separate [human checklist](consumer-acceptance.md).

@@ -17,6 +17,10 @@
     "msys2/setup-msys2": {
       "upstream_tag": "v2",
       "commit": "ec48f7c5447b3140e2b088413ae3a55687bccb6e"
+    },
+    "actions/download-artifact": {
+      "upstream_tag": "v5",
+      "commit": "634f93cb2916e3fdff6788551b99b062d0335ce0"
     }
   }
 }

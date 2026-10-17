@@ -1,7 +1,7 @@
 name: Unified desktop native backend qualification
 on:
   push:
-    branches: ["product/desktop-batch6", "product/desktop-batch7", "product/desktop-batch8", "product/desktop-batch9"]
+    branches: ["product/desktop-batch6", "product/desktop-batch7", "product/desktop-batch8", "product/desktop-batch9", "product/desktop-batch10"]
   workflow_dispatch:
 permissions:
   contents: read

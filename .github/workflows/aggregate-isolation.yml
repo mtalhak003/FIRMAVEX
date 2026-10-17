@@ -1,0 +1,32 @@
+name: Independent aggregate isolation feasibility
+on:
+  push:
+    branches: ["product/desktop-batch10"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  fixed-probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - run: sudo apt-get update && sudo apt-get install -y bubblewrap
+      - name: Install the fixed probe's own package using locked dependencies
+        shell: bash
+        run: |
+          python -m pip install --only-binary=:all: --require-hashes -r packaging/build-requirements.lock
+          python -m pip install --no-deps --no-build-isolation .
+          python -m tools.check_build_inputs
+      - name: Fixed root-supervised quotas and namespace negative tests
+        run: sudo "$(command -v python)" -m tools.aggregate_isolation_probe --source "$GITHUB_WORKSPACE" --python "$(command -v python)" --user "$(id -un)" --output "$RUNNER_TEMP/aggregate-isolation"
+      - name: Preserve actual failure or enforcement evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: FIRMAVEX-ubuntu-aggregate-isolation-assessment
+          path: ${{ runner.temp }}/aggregate-isolation/
+          if-no-files-found: error

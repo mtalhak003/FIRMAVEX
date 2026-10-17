@@ -49,3 +49,19 @@ def test_platform_markers_and_empty_lock(tmp_path,monkeypatch):
     lock=tmp_path/'lock'
     lock.write_text('missing==1 ; python_version < "1" --hash=sha256:'+'a'*64+'\n')
     with pytest.raises(ValueError,match='Empty'):check_build_inputs.check(lock)
+
+
+def test_product_version_is_consistent():
+    import tomllib
+    from firmavex import __version__
+    project=tomllib.loads((ROOT/'pyproject.toml').read_text())
+    assert project['project']['version']==__version__=='0.3.0.dev2'
+    assert 'AppVersion='+__version__.replace('.dev','-dev') in (ROOT/'packaging/windows.iss').read_text()
+
+
+def test_cli_reports_actual_product_version(capsys):
+    import pytest
+    from firmavex.product.cli import parser
+    with pytest.raises(SystemExit) as stopped:parser().parse_args(['--version'])
+    assert stopped.value.code==0
+    assert capsys.readouterr().out.strip()=='FIRMAVEX 0.3.0.dev2'

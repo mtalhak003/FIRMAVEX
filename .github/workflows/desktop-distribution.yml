@@ -1,7 +1,7 @@
 name: Desktop distribution candidates
 on:
   push:
-    branches: ["product/desktop-batch3", "product/desktop-batch4", "product/desktop-batch5", "product/desktop-batch6", "product/desktop-batch7", "product/desktop-batch8", "product/desktop-batch9"]
+    branches: ["product/desktop-batch3", "product/desktop-batch4", "product/desktop-batch5", "product/desktop-batch6", "product/desktop-batch7", "product/desktop-batch8", "product/desktop-batch9", "product/desktop-batch10"]
   workflow_dispatch:
 permissions:
   contents: read
@@ -114,6 +114,24 @@ jobs:
       - name: Linux installed OS package identities
         if: runner.os == 'Linux'
         run: dpkg-query -W > dist/os-packages.txt
+      - name: Evidence-backed native ownership and payload audit
+        shell: bash
+        run: |
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            app=dist/FIRMAVEX.app
+          else
+            app=dist/FIRMAVEX
+          fi
+          python - "$app" <<'PYCODE'
+          import sys
+          from pathlib import Path
+          from firmavex.product.component_inventory import main
+          args=[sys.argv[1], '--toc', 'build/desktop/COLLECT-00.toc', '--repo', '.', '--output', 'dist/component-sbom.json']
+          for path in sorted(Path('dist').iterdir()):
+              if path.is_file() and path.suffix in {'.exe','.deb','.gz','.dmg'}:
+                  args += ['--archive',str(path)]
+          raise SystemExit(main(args))
+          PYCODE
       - name: Checksums
         shell: bash
         run: |
@@ -131,7 +149,7 @@ jobs:
           from pathlib import Path
           from firmavex.product.release import main
           artifacts = sorted(p for p in Path('dist').iterdir() if p.is_file() and p.suffix in {'.exe', '.dmg', '.gz', '.deb'})
-          artifacts += [Path('dist')/name for name in ('collected-files.json', 'python-environment.json', 'python-environment.txt', 'os-packages.txt') if (Path('dist')/name).is_file()]
+          artifacts += [Path('dist')/name for name in ('collected-files.json', 'component-sbom.json', 'python-environment.json', 'python-environment.txt', 'os-packages.txt') if (Path('dist')/name).is_file()]
           output = Path(os.environ['RUNNER_TEMP']) / 'release-sidecars'
           arguments = ['bundle-create', '--repo', str(Path.cwd()), '--output', str(output)]
           for artifact in artifacts:
@@ -154,6 +172,7 @@ jobs:
             dist/release-manifest.json
             dist/release-sidecars/
             dist/collected-files.json
+            dist/component-sbom.json
             dist/python-environment.json
             dist/python-environment.txt
             dist/os-packages.txt
@@ -296,3 +315,33 @@ jobs:
           name: Windows-frozen-firmware-evidence
           path: ${{ runner.temp }}/windows-frozen-demo
           if-no-files-found: warn
+
+  release-approval:
+    name: Mandatory release gate (${{ matrix.target }})
+    needs: package
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [ubuntu-24.04, windows-latest]
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: FIRMAVEX-${{ matrix.target }}-unsigned-candidate
+          path: downloaded
+      - name: Fail closed on unresolved mandatory release evidence
+        run: python -m firmavex.product.release_approval --sbom downloaded/component-sbom.json --bundle downloaded/release-sidecars --artifact-dir downloaded --output release-approval.json --require-approved
+      - name: Preserve blocked approval evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: FIRMAVEX-${{ matrix.target }}-release-approval
+          path: release-approval.json
+          if-no-files-found: error

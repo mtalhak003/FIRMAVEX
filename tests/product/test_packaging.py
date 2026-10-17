@@ -122,7 +122,7 @@ assert (pathlib.Path(firmavex.__file__).parent / 'product/resources/example/main
 print(json.dumps({'version': firmavex.__version__, 'module': api.__name__}))
 """
     checked = _run([sys.executable, "-I", "-B", "-c", script, str(installed)], cwd=working)
-    assert json.loads(checked.stdout) == {"version": "0.3.0.dev1", "module": "src.firmavex.evaluation.api"}
+    assert json.loads(checked.stdout) == {"version": "0.3.0.dev2", "module": "src.firmavex.evaluation.api"}
     help_script = "import runpy,sys; sys.path.insert(0,sys.argv.pop(1)); runpy.run_module('firmavex',run_name='__main__')"
     help_result = _run([sys.executable, "-I", "-B", "-c", help_script, str(installed), "--help"], cwd=working)
     for command in ("doctor", "validate", "run", "reproduce", "export", "desktop"):

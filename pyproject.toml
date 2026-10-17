@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "firmavex-desktop"
-version = "0.3.0.dev1"
+version = "0.3.0.dev2"
 description = "Desktop firmware testing using QEMU and an ARM-capable GDB"
 readme = "README.md"
 requires-python = ">=3.11"

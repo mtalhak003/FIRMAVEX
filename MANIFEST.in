@@ -47,3 +47,6 @@ recursive-include docs/security *.md
 
 include packaging/action-pins.json packaging/build-requirements.lock
 include tools/check_build_inputs.py
+
+include tools/build_versioned_candidates.py tools/versioned_install_ci.py
+include tools/aggregate_isolation_probe.py

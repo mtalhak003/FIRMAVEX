@@ -1,0 +1,76 @@
+name: Distinct-version installer qualification
+on:
+  push:
+    branches: ["product/desktop-batch10"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  lifecycle:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 55
+    defaults:
+      run:
+        shell: bash
+        working-directory: candidate
+    env:
+      QT_QPA_PLATFORM: offscreen
+      FIRMAVEX_VENDOR_PACKAGES_FILE: ${{ runner.temp }}/versioned-vendor-packages.txt
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          path: candidate
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: 19cd45736337243c64a2298285781a27499981fa
+          path: baseline
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2
+        if: runner.os == 'Windows'
+        id: msys2
+        with:
+          msystem: UCRT64
+          update: true
+      - name: Install signed Windows runtime packages without ARM compiler
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: |
+          pacman -S --needed --noconfirm mingw-w64-ucrt-x86_64-qemu mingw-w64-ucrt-x86_64-gdb-multiarch
+          pacman -Q > "$(cygpath -u "$FIRMAVEX_VENDOR_PACKAGES_FILE")"
+      - name: Ubuntu runtime and Qt host libraries
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y qemu-system-arm qemu-system-misc gdb-multiarch iverilog libegl1 libgl1 libopengl0 libxkbcommon-x11-0 libxcb-cursor0
+      - name: Install locked build and test dependencies
+        run: |
+          python -m pip install --only-binary=:all: --require-hashes -r packaging/build-requirements.lock
+          python -m pip install --no-deps --no-build-isolation .
+          python -m tools.check_build_inputs
+      - name: Build actual baseline and candidate revisions
+        run: python -m tools.build_versioned_candidates --baseline ../baseline --candidate . --output "$RUNNER_TEMP/versioned-build-evidence"
+      - name: Actual installation interruption recovery upgrade rollback and data preservation
+        env:
+          MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
+        run: python -m tools.versioned_install_ci --baseline ../baseline --candidate . --output "$RUNNER_TEMP/versioned-lifecycle"
+      - name: Retain real lifecycle diagnostics on success or failure
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: FIRMAVEX-${{ matrix.os }}-versioned-installer-evidence
+          path: |
+            ${{ runner.temp }}/versioned-build-evidence/
+            ${{ runner.temp }}/versioned-lifecycle/versioned-lifecycle.json
+            ${{ runner.temp }}/versioned-lifecycle/logs/
+            ${{ runner.temp }}/versioned-lifecycle/saved-baseline-demo/
+            ${{ runner.temp }}/versioned-lifecycle/offline-demo/
+            ${{ runner.temp }}/versioned-vendor-packages.txt
+            candidate/dist/*.exe
+            candidate/dist/*.deb
+            baseline/dist/*.exe
+            baseline/dist/*.deb
+          if-no-files-found: error

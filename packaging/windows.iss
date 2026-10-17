@@ -2,7 +2,7 @@
 [Setup]
 AppId={{7CBBAED2-EF1B-48DD-A2B0-2C7E260B6B88}
 AppName=FIRMAVEX Desktop
-AppVersion=0.3.0-dev1
+AppVersion=0.3.0-dev2
 DefaultDirName={localappdata}\Programs\FIRMAVEX
 DefaultGroupName=FIRMAVEX
 PrivilegesRequired=lowest

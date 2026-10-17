@@ -12,6 +12,8 @@ from .errors import ProductError
 
 def parser() -> argparse.ArgumentParser:
     root = argparse.ArgumentParser(prog="firmavex", description="Firmware testing foundation for symbolized Cortex-M3 ELF on QEMU mps2-an385.")
+    from firmavex import __version__
+    root.add_argument("--version", action="version", version="FIRMAVEX " + __version__)
     commands = root.add_subparsers(dest="command", required=True)
     desktop = commands.add_parser("desktop", help="Launch the optional PySide6 desktop application.")
     desktop.add_argument("--project")

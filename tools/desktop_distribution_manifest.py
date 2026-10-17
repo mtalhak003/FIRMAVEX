@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import platform
 import subprocess
+from firmavex import __version__
 
 
 def capture(directory):
@@ -20,6 +21,7 @@ def capture(directory):
         elif path.is_file() and path.name != 'distribution-manifest.json':
             files[path.relative_to(directory).as_posix()] = {'sha256': hashlib.sha256(path.read_bytes()).hexdigest(), 'size_bytes': path.stat().st_size}
     return {'schema_version': 1, 'kind': 'firmavex_application_distribution',
+            'application_version': __version__,
             'git_revision': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
             'dirty': bool(subprocess.check_output(['git', 'status', '--porcelain'], text=True)),
             'host': {'os': platform.system(), 'architecture': platform.machine(), 'python': platform.python_version()},

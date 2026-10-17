@@ -45,7 +45,7 @@
       "review": "not bundled; obtain through signed distribution packages; independently audit before any future worker redistribution"
     }
   ],
-  "sbom_scope": "visible Python build-environment distributions, not a complete native binary dependency SBOM",
+  "sbom_scope": "Python environment SPDX plus byte-verified registered build-input lineage and bounded supported payload inventory; full upstream composition and legal review remain incomplete",
   "signing": "credentials_not_configured",
   "notarization": "credentials_not_configured"
 }
