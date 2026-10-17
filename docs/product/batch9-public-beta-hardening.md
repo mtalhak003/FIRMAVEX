@@ -116,7 +116,7 @@ PyInstaller application passed real ARM/RV32/HDL execution, reproduction, export
 all three in-flight cancellation/cleanup cases, and frozen GUI startup with
 `PATH=/nonexistent`. These are bounded example checks, not hostile-workload or
 hardware qualification. New inventory/build-input tests and existing release /
-packaging checks pass (40 focused tests). All four Linux-host native-Windows-only
+packaging checks pass (44 focused tests). All four Linux-host native-Windows-only
 skips are reported separately in complete-suite output. GitHub results must be
 checked against the pushed commit; local success cannot substitute for them.
 The lock was additionally installed into a new virtual environment from the
@@ -124,3 +124,12 @@ hash-verified wheel directory with network indexes disabled; dependency and
 version checks passed. A wheel built and installed without build isolation or
 additional dependency resolution imported the new inventory module successfully
 outside the source checkout.
+
+Windows qualification exposed two portability defects during this batch. The
+inventory test's external-link fixture now uses native path separators; invalid
+and cyclic links remain structured failures, and directory reparse points are
+rejected before traversal. No link check was skipped or relaxed. Build metadata
+capture uses explicit UTF-8 subprocess output: `pip inspect` under CP1252 was
+independently reproduced exiting 2 on Unicode package metadata, whereas UTF-8
+capture parsed successfully. Failure diagnostics are bounded in CI annotations;
+raw authenticated GitHub logs were unavailable in the cloud Git proxy context.

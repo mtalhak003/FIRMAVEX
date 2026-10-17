@@ -55,7 +55,7 @@ def test_links(tmp_path):
     try: (app / 'alias').symlink_to('file')
     except OSError: pytest.skip('Host does not admit test symlinks')
     assert inventory.capture(app)['files'][0] == {'path': 'alias', 'type': 'symlink', 'target': 'file'}
-    (app / 'alias').unlink(); (app / 'alias').symlink_to('../outside')
+    (app / 'alias').unlink(); (app / 'alias').symlink_to(Path('..') / 'outside')
     (tmp_path / 'outside').write_bytes(b'x')
     with pytest.raises(ValueError, match='External'): inventory.capture(app)
 
@@ -90,3 +90,34 @@ def test_limits_fail_closed(tmp_path,monkeypatch):
     monkeypatch.setattr(inventory,'MAX_FILES',10)
     monkeypatch.setattr(inventory,'MAX_TOTAL',1)
     with pytest.raises(ValueError,match='total limit'):inventory.capture(tmp_path)
+
+
+def test_broken_link_is_structured_failure(tmp_path):
+    try: (tmp_path/'alias').symlink_to('missing')
+    except OSError: pytest.skip('Host does not admit test symlinks')
+    with pytest.raises(ValueError,match='broken or invalid'):
+        inventory.capture(tmp_path)
+
+
+def test_cyclic_link_is_structured_failure(tmp_path):
+    try: (tmp_path/'alias').symlink_to('alias')
+    except OSError: pytest.skip('Host does not admit test symlinks')
+    with pytest.raises(ValueError,match='broken or invalid'):
+        inventory.capture(tmp_path)
+
+
+@pytest.mark.parametrize('at_root', [False, True])
+def test_non_symlink_reparse_directories_rejected(tmp_path, monkeypatch, at_root):
+    from types import SimpleNamespace
+    app=tmp_path/'app'; app.mkdir()
+    child=app/'junction'; child.mkdir()
+    target=app if at_root else child
+    original=Path.lstat
+    def marked(path, *args, **kwargs):
+        info=original(path, *args, **kwargs)
+        if path==target:
+            return SimpleNamespace(st_mode=info.st_mode, st_file_attributes=0x400)
+        return info
+    monkeypatch.setattr(Path,'lstat',marked)
+    with pytest.raises(ValueError,match='real application|reparse point'):
+        inventory.capture(app)

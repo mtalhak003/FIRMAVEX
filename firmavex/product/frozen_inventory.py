@@ -26,9 +26,15 @@ def _entries(root):
             info = path.lstat()
             if stat.S_ISLNK(info.st_mode):
                 target = os.readlink(path)
-                if Path(target).is_absolute() or not path.resolve(strict=True).is_relative_to(root):
+                try:
+                    resolved = path.resolve(strict=True)
+                except (OSError, RuntimeError) as exc:
+                    raise ValueError('External, broken or invalid application link: ' + relative) from exc
+                if Path(target).is_absolute() or not resolved.is_relative_to(root):
                     raise ValueError('External or broken application link: ' + relative)
                 entries[relative] = ('link', target)
+            elif getattr(info, 'st_file_attributes', 0) & getattr(stat, 'FILE_ATTRIBUTE_REPARSE_POINT', 0x400):
+                raise ValueError('Unsupported application reparse point: ' + relative)
             elif stat.S_ISREG(info.st_mode):
                 entries[relative] = ('file',)
             elif not stat.S_ISDIR(info.st_mode):
@@ -60,7 +66,8 @@ def _hint(name):
 
 def capture(directory, installers=()):
     supplied = Path(directory)
-    if supplied.is_symlink() or not supplied.is_dir():
+    if (supplied.is_symlink() or not supplied.is_dir()
+            or getattr(supplied.lstat(), 'st_file_attributes', 0) & getattr(stat, 'FILE_ATTRIBUTE_REPARSE_POINT', 0x400)):
         raise ValueError('Select a real application directory')
     root = supplied.resolve(strict=True)
     before = _entries(root)

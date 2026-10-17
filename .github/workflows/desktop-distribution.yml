@@ -82,6 +82,7 @@ jobs:
           fi
           python - "$app" <<'PYCODE'
           import sys, contextlib, io
+          sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
           from pathlib import Path
           from firmavex.product.frozen_inventory import main
           args = [sys.argv[1], '--output', 'dist/collected-files.json']
