@@ -7,6 +7,7 @@ summaries aid external verification without calling authenticated APIs.
 """
 from pathlib import Path
 import os
+import hashlib
 import subprocess
 import sys
 import tempfile
@@ -132,6 +133,15 @@ def main(arguments=None):
             return complete_selection(args, report, bounded=bounded)
 
 
+def case_label(case):
+    """Bound published labels; retain full identities in the JUnit artifact."""
+    label = case.get("classname", "") + "." + case.get("name", "")
+    if len(label) > 512:
+        digest = hashlib.sha256(label.encode("utf-8")).hexdigest()
+        return label[:512] + " [sha256=" + digest + "]"
+    return label
+
+
 def complete_selection(args, report, *, bounded):
     print('::notice title=FIRMAVEX CI launcher::entered supervised test selection', flush=True)
     process = run_tests(args, report, bounded=bounded)
@@ -148,7 +158,7 @@ def complete_selection(args, report, *, bounded):
             problem = case.find('failure')
             if problem is None: problem = case.find('error')
             if problem is not None:
-                diagnostic = case.get('classname','') + '.' + case.get('name','') + ': ' + (problem.text or problem.get('message',''))[-3000:]
+                diagnostic = case_label(case) + ': ' + (problem.text or problem.get('message',''))[-3000:]
                 # Public Actions annotations remain visible when access to
                 # raw logs/job summaries requires authentication.
                 escaped = diagnostic.replace('%','%25').replace('\r','%0D').replace('\n','%0A')
@@ -167,8 +177,8 @@ def complete_selection(args, report, *, bounded):
             for case in failed[:20]:
                 problem=case.find('failure')
                 if problem is None: problem=case.find('error')
-                text=(problem.text or problem.get('message',''))[:4000].replace('```','~~~')
-                lines.extend(['', '### '+case.get('classname','')+'.'+case.get('name',''), '```text', text, '```'])
+                text=(problem.text or problem.get('message',''))[-4000:].replace('```','~~~')
+                lines.extend(['', '### '+case_label(case), '```text', text, '```'])
         else:
             lines.extend(['No JUnit record was produced; collection or startup may have failed.',
                           '```text',process.stdout[-8000:].replace('```','~~~'),'```'])

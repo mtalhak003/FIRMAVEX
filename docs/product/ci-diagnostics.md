@@ -72,3 +72,17 @@ and uploaded immediately after that step with `always()`, before later checks.
 This prevents a later job cancellation from discarding an already captured
 platform-neutral record. Step timeouts remain failures. Launcher state notices
 are administrative phase information, not a substitute for JUnit/test outcomes.
+
+The malformed-frame regression keeps its full 1,048,577-byte input but uses
+explicit short parameter IDs. Previously pytest generated a 1,048,659-character
+node ID and copied it into `PYTEST_CURRENT_TEST`, exceeding Windows environment
+variable limits. The failed CI annotation identified this oversized-frame case;
+GitHub also rejected the resulting 1,069 KiB step summary. Collection regression
+tests now enforce bounded IDs for all six malformed-frame cases. Published JUnit
+failure labels are capped at 512 characters plus a SHA-256 identity suffix;
+complete labels remain in the retained JUnit artifact. No payload, assertion,
+application resource control, or test deadline was relaxed.
+CPython's Windows `win32_putenv` rejects strings exceeding `_MAX_ENV` before
+calling the CRT; see [CPython 3.12 `posixmodule.c`](https://github.com/python/cpython/blob/3.12/Modules/posixmodule.c).
+The original raw Windows exception is not recoverable from the truncated public
+annotation, so native CI is required to verify the repair end to end.

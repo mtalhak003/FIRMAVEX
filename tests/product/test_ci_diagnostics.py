@@ -248,3 +248,42 @@ def test_expected_negative_probes_do_not_pollute_outer_ci_archive(tmp_path, monk
     assert result.returncode == 1
     assert [path.name for path in archive.iterdir()] == ['sentinel']
     assert (archive/'sentinel').read_text() == 'retain'
+
+
+def test_gateway_collection_has_bounded_ids_and_retains_all_malformed_cases():
+    result = subprocess.run(
+        [sys.executable, '-m', 'pytest', '--collect-only', '-q',
+         'tests/product/test_local_interface.py', '-k', 'malformed_gateway_frames'],
+        cwd=REPO, env=probe_environment(PYTEST_DISABLE_PLUGIN_AUTOLOAD='1'),
+        capture_output=True, text=True, timeout=15)
+    assert result.returncode == 0
+    nodes = [line for line in result.stdout.splitlines() if '::test_' in line]
+    assert len(nodes) == 6
+    assert max(map(len, nodes)) < 512
+    assert any('[oversized_frame]' in node for node in nodes)
+
+
+def test_long_failure_identity_is_bounded_in_annotations_and_summary(tmp_path, monkeypatch):
+    import hashlib
+    import xml.etree.ElementTree as ET
+    from tools import product_ci_tests as ci
+    summary = tmp_path/'summary.md'
+    monkeypatch.setenv('GITHUB_STEP_SUMMARY', str(summary))
+    source = ('import pytest\n@pytest.mark.parametrize("value", [1], ids=['
+              + repr('z' * 12000) + '])\ndef test_long(value): assert False, "actual failure"\n')
+    result = run_selection(tmp_path, source)
+    assert result.returncode == 1
+    errors = [line for line in result.stdout.splitlines()
+              if line.startswith('::error title=FIRMAVEX regression failure::')]
+    assert errors and all(len(line) < 4096 for line in errors)
+    assert '[sha256=' in errors[0] and 'actual failure' in errors[0]
+    text = summary.read_text()
+    assert len(text.encode()) < 10000
+    assert '[sha256=' in text and 'actual failure' in text
+    # The same helper handles even megabyte labels without losing identity.
+    case = ET.Element('testcase', classname='module', name='x' * 1048577)
+    label = ci.case_label(case)
+    assert len(label) < 600
+    full = 'module.' + 'x' * 1048577
+    assert hashlib.sha256(full.encode()).hexdigest() in label
+    assert len(case.get('name')) == 1048577

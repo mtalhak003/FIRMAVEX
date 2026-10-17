@@ -167,6 +167,8 @@ def test_gateway_negotiation_and_duplicate_request_fail_closed():
         b"{bad}\n",
         b"x" * 1048577,
     ],
+    ids=["boolean_version", "unsupported_version", "duplicate_request_id",
+         "array", "malformed_json", "oversized_frame"],
 )
 def test_malformed_gateway_frames_fail_closed(raw):
     out = io.BytesIO()
