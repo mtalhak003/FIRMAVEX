@@ -81,17 +81,35 @@ jobs:
             app=dist/FIRMAVEX
           fi
           python - "$app" <<'PYCODE'
-          import sys
+          import sys, contextlib, io
           from pathlib import Path
           from firmavex.product.frozen_inventory import main
           args = [sys.argv[1], '--output', 'dist/collected-files.json']
           for p in sorted(Path('dist').iterdir()):
               if p.is_file() and p.suffix in {'.exe', '.dmg', '.gz', '.deb'}:
                   args += ['--installer', str(p)]
-          raise SystemExit(main(args))
+          diagnostics = io.StringIO()
+          try:
+              with contextlib.redirect_stderr(diagnostics):
+                  code = main(args)
+          except BaseException:
+              message = diagnostics.getvalue()[-3000:].replace('%', '%25').replace('\n', '%0A').replace('\r', '%0D')
+              print('::error title=Collected-file inventory::' + message, flush=True)
+              raise
+          if code:
+              message = diagnostics.getvalue()[-3000:].replace('%', '%25').replace('\n', '%0A').replace('\r', '%0D')
+              print('::error title=Collected-file inventory::' + message, flush=True)
+              raise SystemExit(code)
+          import subprocess, os
+          for command, output in ((['inspect'], 'python-environment.json'), (['freeze', '--all'], 'python-environment.txt')):
+              with (Path('dist') / output).open('xb') as stream:
+                  result = subprocess.run([sys.executable, '-m', 'pip', *command], stdout=stream,
+                      stderr=subprocess.PIPE, env={**os.environ, 'PYTHONIOENCODING': 'utf-8'}, timeout=60)
+              if result.returncode:
+                  message = result.stderr.decode('utf-8', errors='replace')[-3000:].replace('%', '%25').replace('\n', '%0A').replace('\r', '%0D')
+                  print('::error title=Build environment capture ' + command[0] + '::' + message, flush=True)
+                  raise SystemExit(result.returncode)
           PYCODE
-          python -m pip inspect > dist/python-environment.json
-          python -m pip freeze --all > dist/python-environment.txt
       - name: Linux installed OS package identities
         if: runner.os == 'Linux'
         run: dpkg-query -W > dist/os-packages.txt
