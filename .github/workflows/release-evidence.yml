@@ -1,0 +1,44 @@
+name: Native release evidence investigation
+on:
+  push:
+    branches: ["product/desktop-batch11"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  components:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest, macos-14]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libopengl0 libxkbcommon-x11-0 libxcb-cursor0
+      - shell: bash
+        run: |
+          python -m pip install --only-binary=:all: --require-hashes -r packaging/build-requirements.lock
+          python -m pip install --no-deps --no-build-isolation .
+          python -m tools.check_build_inputs
+          python -m PyInstaller --clean --noconfirm packaging/desktop.spec
+      - name: Investigate every unresolved native file
+        shell: bash
+        run: |
+          app=dist/FIRMAVEX
+          if [ "${{ runner.os }}" = macOS ]; then app=dist/FIRMAVEX.app; fi
+          python -m tools.native_component_diagnostics "$app" --output "$RUNNER_TEMP/native-evidence"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: FIRMAVEX-${{ matrix.os }}-component-investigation
+          path: |
+            ${{ runner.temp }}/native-evidence/
+            build/desktop/*.toc
+          if-no-files-found: error
