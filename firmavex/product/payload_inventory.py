@@ -135,6 +135,11 @@ def _inspect_bytes(data, name, depth=0):
         while position<end:
             if position+46>end or data[position:position+4]!=b'PK\x01\x02':raise ValueError('Invalid ZIP directory entry')
             length,extra,comment_length=struct.unpack_from('<HHH',data,position+28)
+            flags=struct.unpack_from('<H',data,position+8)[0]
+            # ZipInfo normalizes OS separators on Windows. Validate the original
+            # directory spelling before the standard library can change it.
+            raw_name=data[position+46:position+46+length]
+            safe_name(raw_name.decode('utf-8' if flags & 0x800 else 'cp437'))
             position+=46+length+extra+comment_length;actual+=1
             if position>end or actual>MAX_FILES or actual>n:raise ValueError('ZIP directory count/size mismatch')
         if actual!=n:raise ValueError('ZIP directory count mismatch')
@@ -171,6 +176,9 @@ def inspect(path):
     from .release import _identity
     path=Path(path);before=_identity(path)
     if before['size_bytes']>MAX_TOTAL:raise ValueError('Archive input size limit exceeded')
-    result=inspect_bytes(path.read_bytes(),path.name)
+    # A file may grow after identity capture; bound the actual read as well.
+    with path.open('rb') as stream:data=stream.read(MAX_TOTAL+1)
+    if len(data)>MAX_TOTAL:raise ValueError('Archive input size limit exceeded')
+    result=inspect_bytes(data,path.name)
     if _identity(path)!=before:raise ValueError('Archive changed during inspection')
     return {'archive':path.name,'identity':before,**result,'executed_members':False}

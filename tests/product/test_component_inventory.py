@@ -114,3 +114,16 @@ def test_git_changes_during_initial_file_capture_are_rejected(tmp_path,monkeypat
     monkeypatch.setattr(c,'capture',changing)
     monkeypatch.setattr(c,'python_owners',lambda:{})
     with pytest.raises(ValueError,match='provenance changed'):c.audit(app,toc=toc,repo=source)
+
+
+def test_windows_toc_destinations_match_posix_inventory_paths(tmp_path,monkeypatch):
+    source=repo(tmp_path/'repo')
+    app=tmp_path/'app';(app/'_internal'/'notices').mkdir(parents=True)
+    (app/'_internal'/'notices'/'asset').write_bytes(b'known bytes')
+    toc=tmp_path/'toc';toc.write_text(repr(([('notices\\asset',str(source/'asset'),'DATA')],)))
+    monkeypatch.setattr(c,'python_owners',lambda:{})
+    monkeypatch.setattr(c,'_os_owner',lambda source:None)
+    result=c.audit(app,toc=toc,repo=source)
+    assert result['counts']=={'regular_files':1,'verified_ownership':1,'unverified_ownership':0}
+    assert result['files'][0]['path']=='_internal/notices/asset'
+    assert result['files'][0]['evidence']['method']=='git_blob_and_packaged_bytes'

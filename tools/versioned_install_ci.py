@@ -50,6 +50,16 @@ def preserving_cleanup(callback):
             primary.add_note('Qualification resource cleanup failed: '+repr(failure))
 
 
+def absolute_command(args, env):
+    command=list(map(str,args))
+    if not command:raise ValueError('Missing installer command')
+    if not Path(command[0]).is_absolute():
+        executable=shutil.which(command[0],path=env.get('PATH',os.defpath))
+        if not executable:raise ValueError('Required installer tool unavailable: '+command[0])
+        command[0]=str(Path(executable).resolve(strict=True))
+    return command
+
+
 class Qualification:
     def __init__(self,baseline,candidate,output):
         if os.environ.get('GITHUB_ACTIONS')!='true':raise ValueError('Disposable GitHub runner required; this tool installs/uninstalls system packages')
@@ -62,6 +72,7 @@ class Qualification:
         if actual!=BASELINE or actual==self.revision:raise ValueError('Expected two distinct pinned Git revisions')
 
     def run(self,label,args,*,env=None,expect=0,cancel=None):
+        args=absolute_command(args,env or os.environ)
         self.counter+=1
         owner=Processes(cancel or threading.Event(),Limits(timeout_seconds=300,artifact_bytes=64*1024**2,log_bytes=8*1024**2))
         primary=None

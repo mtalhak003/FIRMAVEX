@@ -140,6 +140,14 @@ the supervisor. A positive result is fixed-mechanism feasibility, not independen
 sandbox validation. Unsupported admission or failed checks return nonzero and
 retain evidence; no arbitrary guest command interface is added.
 
+Hosted assessment [39049249940](https://github.com/mtalhak003/FIRMAVEX/actions/runs/39049249940)
+observed CPU throttling, process-count denial and a kernel memory OOM kill with
+read-back cgroup limits. The combined namespace probe was blocked at Bubblewrap
+loopback setup (`Failed RTM_NEWADDR: Operation not permitted`). All preceding
+units and the failed namespace unit were cleaned up. This is partial positive
+quota evidence and a retained boundary failure, not a passing sandbox assessment.
+The exact host-policy cause of that netlink denial has not been established.
+
 The local namespace probe alone does not establish those aggregate controls. This
 cloud host has no writable delegated cgroup hierarchy or `/dev/kvm`. Aggregate
 CPU/memory/process quotas remain unqualified; untrusted firmware/HDL and public

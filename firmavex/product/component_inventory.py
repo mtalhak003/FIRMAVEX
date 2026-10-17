@@ -38,7 +38,8 @@ def toc_rows(path):
         if depth>24:raise ValueError('Build TOC nesting exceeds limit')
         if isinstance(value,(tuple,list)):
             if len(value)==3 and all(type(v) is str for v in value) and value[2] in {'DATA','BINARY','EXTENSION','EXECUTABLE'}:
-                rows.append(tuple(value));return
+                # TOCs use host separators; collected inventory paths are POSIX.
+                rows.append((value[0].replace('\\','/'),value[1],value[2]));return
             for member in value:visit(member,depth+1)
     visit(value)
     if not rows:raise ValueError('No supported build TOC entries')

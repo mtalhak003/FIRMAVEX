@@ -49,3 +49,14 @@ def test_cleanup_failure_preserves_original_cancellation():
     assert 'cleanup denied' in ' '.join(found.value.__notes__)
     with pytest.raises(OSError,match='cleanup denied'):
         with v.preserving_cleanup(failed):pass
+
+
+def test_installer_commands_resolve_before_strict_process_admission(monkeypatch,tmp_path):
+    tool=tmp_path/'native-tool';tool.write_bytes(b'fixture')
+    observed=[]
+    def which(name, *, path):
+        observed.append((name,path));return str(tool) if name=='native-tool' else None
+    monkeypatch.setattr(v.shutil,'which',which)
+    assert v.absolute_command(['native-tool','literal argument'],{'PATH':'selected-path'})==[str(tool.resolve()),'literal argument']
+    assert observed==[('native-tool','selected-path')]
+    with pytest.raises(ValueError,match='unavailable'):v.absolute_command(['missing-tool'],{'PATH':'selected-path'})

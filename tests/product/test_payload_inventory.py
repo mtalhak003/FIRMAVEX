@@ -9,7 +9,11 @@ from firmavex.product import payload_inventory as p
 def zipped(names):
     out=io.BytesIO()
     with zipfile.ZipFile(out,'w') as archive:
-        for name,data in names:archive.writestr(name,data)
+        for name,data in names:
+            # Preserve intentionally unsafe names even on Windows, where the
+            # ZipInfo constructor otherwise normalizes backslashes to '/'.
+            info=zipfile.ZipInfo(name);info.filename=name;info.orig_filename=name
+            archive.writestr(info,data)
     return out.getvalue()
 
 
@@ -100,3 +104,16 @@ def test_directory_count_preflight_precedes_zip_index_allocation(monkeypatch):
 
 def test_directory_file_collision_is_rejected():
     with pytest.raises(ValueError,match='colliding'):p.inspect_bytes(zipped([('same/',b''),('same',b'file')]),'a.zip')
+
+
+def test_archive_growth_after_identity_cannot_cause_unbounded_read(tmp_path, monkeypatch):
+    from firmavex.product import release
+    archive=tmp_path/'growing.zip';archive.write_bytes(b'old')
+    identity=release._identity(archive)
+    monkeypatch.setattr(p,'MAX_TOTAL',64)
+    def changed_input(path):
+        archive.write_bytes(b'x'*128)
+        return identity
+    monkeypatch.setattr(release,'_identity',changed_input)
+    with pytest.raises(ValueError,match='Archive input size limit exceeded'):
+        p.inspect(archive)
