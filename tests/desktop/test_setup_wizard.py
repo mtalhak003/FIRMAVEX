@@ -108,3 +108,22 @@ def test_preferences_write_error_leaves_wizard_open(setup, monkeypatch):
     assert wizard.isVisible()
     assert 'Cannot save' in wizard.runtime.status.text()
     assert controller.calls == []
+
+
+def test_guidance_is_offline_and_does_not_claim_arbitrary_support(setup):
+    window, wizard, controller = setup
+    text = wizard.runtime.guidance.text()
+    assert 'no account or internet' in text
+    assert 'outside the application/runtime' in text
+    assert wizard.runtime.guidance.accessibleName()
+    assert controller.calls == []
+
+
+@pytest.mark.parametrize('system,arch,expected', [
+    ('windows', 'x86_64', 'Never disable signature checks'),
+    ('linux', 'x86_64', 'portable archive does not install runtimes'),
+    ('macos', 'arm64', 'Unified native execution is unsupported'),
+    ('windows', 'arm64', 'no native qualification')])
+def test_platform_setup_guidance_is_honest(system, arch, expected):
+    from firmavex.product.setup_guidance import instructions
+    assert expected in instructions({'os': system, 'arch': arch})

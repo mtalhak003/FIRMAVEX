@@ -4,8 +4,9 @@ import json
 
 from PySide6.QtCore import Qt, Slot
 from PySide6.QtWidgets import (QWizard, QWizardPage, QVBoxLayout, QLabel,
-                              QPushButton, QCheckBox, QComboBox)
+                              QPushButton, QCheckBox, QComboBox, QScrollArea, QWidget)
 
+from firmavex.product.setup_guidance import instructions
 from firmavex.product.runtime_pack import host
 
 
@@ -14,11 +15,23 @@ class RuntimePage(QWizardPage):
         super().__init__()
         self._setup = wizard
         self.setTitle('2. Check or install the execution runtime')
-        layout = QVBoxLayout(self)
+        outer = QVBoxLayout(self)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        content = QWidget()
+        scroll.setWidget(content)
+        outer.addWidget(scroll)
+        layout = QVBoxLayout(content)
         self.status = QLabel('Check ARM QEMU/GDB readiness here; check RV32 and Icarus separately in the Backends workspace. Setup checks do not execute targets.')
         self.status.setWordWrap(True)
         self.status.setAccessibleName('Runtime readiness and setup progress')
+        self.status.setTextInteractionFlags(Qt.TextSelectableByMouse)
         layout.addWidget(self.status)
+        self.guidance = QLabel(instructions(host()))
+        self.guidance.setWordWrap(True)
+        self.guidance.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.guidance.setAccessibleName('Platform setup, repair and offline guidance')
+        layout.addWidget(self.guidance)
         self.check = QPushButton('Check existing runtime')
         self.check.clicked.connect(wizard.check)
         layout.addWidget(self.check)
@@ -61,12 +74,12 @@ class SetupWizard(QWizard):
         self.pending_check = False
         self.pending_reject = False
         self.setWindowTitle('FIRMAVEX first-launch setup')
-        self.setMinimumSize(680, 520)
+        self.setMinimumSize(720, 650)
         self.setOption(QWizard.NoBackButtonOnStartPage)
         intro = QWizardPage()
         intro.setTitle('1. Understand firmware compatibility')
         layout = QVBoxLayout(intro)
-        text = QLabel('FIRMAVEX tests compatible symbolized Cortex-M3 ELF firmware on QEMU mps2-an385.\n\nRaw BIN, arbitrary boards/peripherals and physical hardware are not supported.\n\nThe built-in example requires no compiler or Python commands. Setup does not run guest firmware; you explicitly start testing after creating a project.\n\nCurrent installers are unsigned/unnotarized development candidates.')
+        text = QLabel('This wizard prepares the compiler-free Cortex-M3 ELF example on QEMU mps2-an385. The Backends workspace also offers qualified RV32 ELF and self-contained Verilog/Icarus projects; HDL simulation is a separate testing method.\n\nRaw BIN, arbitrary boards/peripherals and physical hardware are not supported.\n\nThe built-in example requires no compiler or Python commands. Setup does not run guest firmware; you explicitly start testing after creating a project.\n\nCurrent installers are unsigned/unnotarized development candidates.')
         text.setWordWrap(True)
         text.setTextInteractionFlags(Qt.TextSelectableByMouse)
         layout.addWidget(text)

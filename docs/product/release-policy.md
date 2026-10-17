@@ -71,3 +71,10 @@ the need for an administrator candidate override for **those matching tools**.
 Different versions remain gated pending native evidence. Batch 7's local-interface
 source/frozen qualification explicitly unsets the candidate override to exercise
 that public path; the gate itself is unchanged. No macOS entry is added.
+
+Batch 8 adds opt-in hash-bound release bundles and an SPDX build-environment
+inventory, without changing the original preview manifest schema. See
+[Batch 8 release readiness](batch8-release-readiness.md) for commands, SBOM scope,
+installer evidence and outstanding approval gates, and the
+[execution threat model](../security/execution-threat-model.md) for the fixed Linux
+namespace diagnostic and explicit limits on isolation claims.

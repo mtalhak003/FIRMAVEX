@@ -1,7 +1,7 @@
 name: Desktop beta native setup qualification
 on:
   push:
-    branches: ["product/desktop-batch4", "product/desktop-batch5", "product/desktop-batch6", "product/desktop-batch7"]
+    branches: ["product/desktop-batch4", "product/desktop-batch5", "product/desktop-batch6", "product/desktop-batch7", "product/desktop-batch8"]
   workflow_dispatch:
 permissions:
   contents: read
@@ -64,6 +64,7 @@ jobs:
             ${{ runner.temp }}/windows-builtin-demo
             ${{ runner.temp }}/windows-frozen-builtin
             ${{ runner.temp }}/windows-installed-builtin
+            ${{ runner.temp }}/installer-lifecycle.json
           if-no-files-found: warn
   compiler-free:
     strategy:
@@ -105,10 +106,14 @@ jobs:
           mkdir -p "$HOME/.local/share/FIRMAVEX/install-preservation"
           printf 'preserve user-owned results\n' > "$HOME/.local/share/FIRMAVEX/install-preservation/sentinel"
           sudo apt-get install -y ./dist/FIRMAVEX-Linux-amd64.deb
-          /opt/firmavex/FIRMAVEX-Desktop --smoke-test
+          env PATH=/nonexistent /opt/firmavex/FIRMAVEX-Desktop --smoke-test
+          sha256sum "$RUNNER_TEMP/beta-frozen-demo/search/result.json" "$RUNNER_TEMP/beta-frozen-demo/search/run.sqlite3" > "$RUNNER_TEMP/saved-result.sha256"
           sudo dpkg -i dist/FIRMAVEX-Linux-amd64.deb
-          /opt/firmavex/FIRMAVEX-Desktop --smoke-test
+          env PATH=/nonexistent /opt/firmavex/FIRMAVEX-Desktop --smoke-test
+          /opt/firmavex/FIRMAVEX --firmavex-cli inspect "$RUNNER_TEMP/beta-frozen-demo/search"
+          sha256sum -c "$RUNNER_TEMP/saved-result.sha256"
           sudo apt-get remove -y firmavex-desktop
+          sha256sum -c "$RUNNER_TEMP/saved-result.sha256"
           test -f "$HOME/.local/share/FIRMAVEX/install-preservation/sentinel"
           test ! -e /opt/firmavex/FIRMAVEX-Desktop
       - uses: actions/upload-artifact@v4

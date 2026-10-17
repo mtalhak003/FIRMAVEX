@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "kind": "firmavex_dependency_review",
+  "public_redistribution_approved": false,
+  "status": "incomplete_component_and_corresponding_source_audit",
+  "application": {
+    "license": "MIT",
+    "notice": "LICENSE"
+  },
+  "components": [
+    {
+      "name": "Python",
+      "basis": "PSF license",
+      "notice": "packaging/licenses/Python-LICENSE.txt",
+      "review": "verify exact frozen interpreter and native dependencies"
+    },
+    {
+      "name": "PyInstaller",
+      "basis": "GPL with bootloader exception",
+      "notice": "packaging/licenses/pyinstaller-COPYING.txt",
+      "review": "retain exception and exact build-source revision"
+    },
+    {
+      "name": "PySide6 / Shiboken / Qt",
+      "basis": "LGPL/GPL/commercial alternatives depend on components",
+      "notice": "packaging/THIRD_PARTY_NOTICES.md",
+      "review": "audit collected modules, plugins, native libraries, notices, replacement rights and corresponding source"
+    },
+    {
+      "name": "pyelftools",
+      "basis": "public domain / BSD portions",
+      "notice": "packaging/licenses/pyelftools-LICENSE",
+      "review": "retain exact package notices"
+    },
+    {
+      "name": "QEMU / GDB / Icarus",
+      "basis": "not bundled; publisher-installed runtimes with separate license obligations",
+      "notice": "vendor runtime inventory",
+      "review": "direct downloads are not clearance to redistribute; archive exact licenses and source before any hosted runtime distribution"
+    },
+    {
+      "name": "Bubblewrap (optional Linux feasibility diagnostic)",
+      "basis": "upstream LGPL-2.1-or-later; Debian packaging has separate LGPL notices",
+      "notice": "host package copyright; https://github.com/containers/bubblewrap",
+      "review": "not bundled; obtain through signed distribution packages; independently audit before any future worker redistribution"
+    }
+  ],
+  "sbom_scope": "visible Python build-environment distributions, not a complete native binary dependency SBOM",
+  "signing": "credentials_not_configured",
+  "notarization": "credentials_not_configured"
+}

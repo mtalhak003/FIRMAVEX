@@ -30,7 +30,7 @@ jobs:
           python-version: ${{ matrix.python }}
       - name: Install Linux Qt host libraries
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y libegl1 libgl1 libopengl0 libxkbcommon-x11-0 libxcb-cursor0
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y libegl1 libgl1 libopengl0 libxkbcommon-x11-0 libxcb-cursor0 bubblewrap
       - name: Install product, desktop, and test dependencies
         run: python -m pip install ".[dev,desktop,gui-test]"
       - name: Exercise platform-neutral product behavior
@@ -43,6 +43,7 @@ jobs:
           tests/product/test_local_interface.py
           tests/product/test_ci_diagnostics.py
           tests/product/test_release.py
+          tests/product/test_release_bundle.py
           tests/product/test_config.py
           tests/product/test_protocol.py
           tests/product/test_worker.py
@@ -58,6 +59,16 @@ jobs:
           tests/product/test_file_state.py
           tests/product/test_services.py
           tests/product/test_windows_job.py
+      - name: Assess Linux isolation feasibility without admitting workloads
+        if: runner.os == 'Linux'
+        run: python -m tools.isolation_feasibility --output isolation-feasibility.json
+      - name: Retain isolation assessment including blockers
+        if: always() && runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: isolation-feasibility-py${{ matrix.python }}
+          path: isolation-feasibility.json
+          if-no-files-found: error
       - name: Publish platform-neutral timeout diagnostics
         if: always()
         run: python tools/product_ci_tests.py --report-diagnostics
@@ -109,7 +120,7 @@ jobs:
       - name: Install actual ARM runtime tools
         run: |
           sudo apt-get update
-          sudo apt-get install --no-install-recommends -y gcc gcc-arm-none-eabi qemu-system-arm gdb-multiarch libegl1 libgl1 libopengl0 libxkbcommon-x11-0 libxcb-cursor0
+          sudo apt-get install --no-install-recommends -y gcc gcc-arm-none-eabi qemu-system-arm gdb-multiarch libegl1 libgl1 libopengl0 libxkbcommon-x11-0 libxcb-cursor0 bubblewrap
       - name: Create isolated environment and install
         run: |
           python -m venv "$RUNNER_TEMP/firmavex-venv"

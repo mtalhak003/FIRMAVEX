@@ -40,3 +40,7 @@ include firmavex/backends/native_profiles.json
 include tools/darwin_memory_probe.py tools/native/darwin_memory_probe.c
 
 include tools/local_interface_ci.py
+
+include tools/isolation_feasibility.py tools/product_ci_diagnostics.py
+include packaging/dependency-review.json
+recursive-include docs/security *.md

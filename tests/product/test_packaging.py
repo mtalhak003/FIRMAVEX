@@ -34,7 +34,7 @@ def distributions(tmp_path_factory):
     source.mkdir()
     for name in ("pyproject.toml", "MANIFEST.in", "README.md", "LICENSE"):
         shutil.copy2(REPOSITORY / name, source / name)
-    for name in ("firmavex", "src", "firmware", "docs", "tests"):
+    for name in ("firmavex", "src", "firmware", "docs", "tests", "tools", "packaging"):
         shutil.copytree(
             REPOSITORY / name, source / name,
             ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.elf", "*.bin", "*.exe"),
@@ -55,6 +55,8 @@ def test_wheel_contains_product_and_single_legacy_namespace(distributions):
         names = set(archive.namelist())
     assert "firmavex/__init__.py" in names
     assert "firmavex/product/cli.py" in names
+    assert "firmavex/product/release_bundle.py" in names
+    assert "firmavex/product/setup_guidance.py" in names
     assert "firmavex/desktop/app.py" in names
     assert "firmavex/desktop/window.py" in names
     assert "firmavex/product/windows_job.py" in names
@@ -80,6 +82,9 @@ def test_sdist_contains_build_inputs_and_product_tests(distributions):
         names = {"/".join(Path(name).parts[1:]) for name in archive.getnames()}
     assert "pyproject.toml" in names
     assert "docs/product/install.md" in names
+    assert "docs/security/execution-threat-model.md" in names
+    assert "tools/isolation_feasibility.py" in names
+    assert "packaging/dependency-review.json" in names
     assert "tests/product/test_packaging.py" in names
     assert "firmavex/product/resources/example/image.json" in names
     assert "firmavex/product/resources/example/main.c" in names

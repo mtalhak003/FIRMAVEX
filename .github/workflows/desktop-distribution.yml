@@ -1,7 +1,7 @@
 name: Desktop distribution candidates
 on:
   push:
-    branches: ["product/desktop-batch3", "product/desktop-batch4", "product/desktop-batch5", "product/desktop-batch6", "product/desktop-batch7"]
+    branches: ["product/desktop-batch3", "product/desktop-batch4", "product/desktop-batch5", "product/desktop-batch6", "product/desktop-batch7", "product/desktop-batch8"]
   workflow_dispatch:
 permissions:
   contents: read
@@ -86,11 +86,13 @@ jobs:
           from firmavex.product.release import main
           artifacts = sorted(p for p in Path('dist').iterdir() if p.is_file() and p.suffix in {'.exe', '.dmg', '.gz', '.deb'})
           output = Path(os.environ['RUNNER_TEMP']) / 'release-sidecars'
-          arguments = ['create', '--repo', str(Path.cwd()), '--output', str(output)]
+          arguments = ['bundle-create', '--repo', str(Path.cwd()), '--output', str(output)]
           for artifact in artifacts:
               arguments += ['--artifact', str(artifact)]
           if main(arguments): raise SystemExit(1)
-          if main(['verify', '--manifest', str(output/'release-manifest.json'), '--artifact-dir', 'dist']): raise SystemExit(1)
+          if main(['bundle-verify', '--bundle', str(output), '--artifact-dir', 'dist']): raise SystemExit(1)
+          import shutil
+          shutil.copytree(output, Path('dist')/'release-sidecars')
           (Path('dist')/'release-manifest.json').write_bytes((output/'release-manifest.json').read_bytes())
           PYCODE
       - uses: actions/upload-artifact@v4
@@ -103,6 +105,7 @@ jobs:
             dist/*.deb
             dist/SHA256SUMS
             dist/release-manifest.json
+            dist/release-sidecars/
           if-no-files-found: error
   macos-firmware-qualification:
     name: macOS ARM firmware qualification candidate

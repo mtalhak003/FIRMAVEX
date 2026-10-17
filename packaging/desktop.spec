@@ -10,7 +10,7 @@ data = collect_data_files('firmavex.product') + collect_data_files('firmware.ben
 # Include HDL sources, RV32 build inputs, and the verified compiler-free image
 # catalog. These are application assets; no QEMU/GDB/Icarus runtime is bundled.
 data += collect_data_files('firmavex.backends')
-data += [(str(root / 'LICENSE'), 'notices'), (str(root / 'packaging' / 'THIRD_PARTY_NOTICES.md'), 'notices')]
+data += [(str(root / 'LICENSE'), 'notices'), (str(root / 'packaging' / 'THIRD_PARTY_NOTICES.md'), 'notices'), (str(root / 'packaging' / 'dependency-review.json'), 'notices')]
 data += [(str(path), 'notices') for path in (root / 'packaging' / 'licenses').glob('*')]
 a = Analysis([str(root / 'packaging' / 'desktop_entry.py'), str(root / 'packaging' / 'desktop_gui_entry.py')], pathex=[str(root)],
              binaries=[], datas=data, hiddenimports=hidden, excludes=['PySide6.QtWebEngineCore', 'PySide6.QtWebEngineWidgets'])

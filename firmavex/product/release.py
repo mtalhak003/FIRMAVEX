@@ -253,9 +253,22 @@ def main(argv=None):
     check = sub.add_parser("verify")
     check.add_argument("--manifest", type=Path, required=True)
     check.add_argument("--artifact-dir", type=Path, required=True)
+    bundle = sub.add_parser("bundle-create", help="Create preview manifest, SBOM and review sidecars")
+    bundle.add_argument("--artifact", type=Path, action="append", required=True)
+    bundle.add_argument("--repo", type=Path, required=True)
+    bundle.add_argument("--output", type=Path, required=True)
+    bundle_check = sub.add_parser("bundle-verify", help="Verify preview bundle and named artifacts")
+    bundle_check.add_argument("--bundle", type=Path, required=True)
+    bundle_check.add_argument("--artifact-dir", type=Path, required=True)
     args = parser.parse_args(argv)
     try:
-        if args.command == "verify":
+        if args.command in {"bundle-create", "bundle-verify"}:
+            from . import release_bundle
+            if args.command == "bundle-create":
+                result = release_bundle.create(args.artifact, repo=args.repo, output=args.output)
+            else:
+                result = release_bundle.verify(args.bundle, args.artifact_dir)
+        elif args.command == "verify":
             result = verify(args.manifest, args.artifact_dir)
         else:
             result = capture(args.artifact, repo=args.repo)
