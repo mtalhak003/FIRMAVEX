@@ -24,15 +24,19 @@ jobs:
       PYTEST_QT_API: pyside6
       FIRMAVEX_CI_DIAGNOSTICS: ${{ github.workspace }}/firmavex-ci-diagnostics
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: ${{ matrix.python }}
       - name: Install Linux Qt host libraries
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install --no-install-recommends -y libegl1 libgl1 libopengl0 libxkbcommon-x11-0 libxcb-cursor0 bubblewrap
       - name: Install product, desktop, and test dependencies
-        run: python -m pip install ".[dev,desktop,gui-test]"
+        shell: bash
+        run: |
+          python -m pip install --only-binary=:all: --require-hashes -r packaging/build-requirements.lock
+          python -m pip install --no-deps --no-build-isolation .
+          python -m tools.check_build_inputs
       - name: Exercise platform-neutral product behavior
         timeout-minutes: 6
         # These selected modules use synthetic observations and ordinary host
@@ -43,7 +47,7 @@ jobs:
           tests/product/test_local_interface.py
           tests/product/test_ci_diagnostics.py
           tests/product/test_release.py
-          tests/product/test_release_bundle.py
+          tests/product/test_release_bundle.py tests/product/test_frozen_inventory.py tests/product/test_build_inputs.py
           tests/product/test_config.py
           tests/product/test_protocol.py
           tests/product/test_worker.py
@@ -64,7 +68,7 @@ jobs:
         run: python -m tools.isolation_feasibility --output isolation-feasibility.json
       - name: Retain isolation assessment including blockers
         if: always() && runner.os == 'Linux'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: isolation-feasibility-py${{ matrix.python }}
           path: isolation-feasibility.json
@@ -74,7 +78,7 @@ jobs:
         run: python tools/product_ci_tests.py --report-diagnostics
       - name: Retain platform-neutral diagnostics immediately
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: platform-neutral-diagnostics-${{ matrix.os }}-py${{ matrix.python }}
           path: ${{ github.workspace }}/firmavex-ci-diagnostics
@@ -97,7 +101,7 @@ jobs:
         run: python tools/product_ci_tests.py --report-diagnostics
       - name: Retain regression diagnostics even after failure
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: product-diagnostics-${{ matrix.os }}-py${{ matrix.python }}
           path: ${{ github.workspace }}/firmavex-ci-diagnostics
@@ -113,8 +117,8 @@ jobs:
       PYTEST_QT_API: pyside6
       FIRMAVEX_CI_DIAGNOSTICS: ${{ github.workspace }}/firmavex-ci-diagnostics
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
       - name: Install actual ARM runtime tools
@@ -122,9 +126,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install --no-install-recommends -y gcc gcc-arm-none-eabi qemu-system-arm gdb-multiarch libegl1 libgl1 libopengl0 libxkbcommon-x11-0 libxcb-cursor0 bubblewrap
       - name: Create isolated environment and install
+        shell: bash
         run: |
           python -m venv "$RUNNER_TEMP/firmavex-venv"
-          "$RUNNER_TEMP/firmavex-venv/bin/python" -m pip install ".[dev,desktop,gui-test]"
+          "$RUNNER_TEMP/firmavex-venv/bin/python" -m pip install --only-binary=:all: --require-hashes -r packaging/build-requirements.lock
+          "$RUNNER_TEMP/firmavex-venv/bin/python" -m pip install --no-deps --no-build-isolation .
+          "$RUNNER_TEMP/firmavex-venv/bin/python" -m tools.check_build_inputs
           # Existing research tests still resolve this executable name.
           ln -s "$(command -v gdb-multiarch)" "$RUNNER_TEMP/firmavex-venv/bin/arm-none-eabi-gdb"
       - name: Probe selected runtime capabilities
@@ -152,7 +159,7 @@ jobs:
         run: python tools/product_ci_tests.py --report-diagnostics
       - name: Retain real regression diagnostics
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: product-diagnostics-linux-real
           path: ${{ github.workspace }}/firmavex-ci-diagnostics

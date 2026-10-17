@@ -1,7 +1,7 @@
 name: Desktop beta native setup qualification
 on:
   push:
-    branches: ["product/desktop-batch4", "product/desktop-batch5", "product/desktop-batch6", "product/desktop-batch7", "product/desktop-batch8"]
+    branches: ["product/desktop-batch4", "product/desktop-batch5", "product/desktop-batch6", "product/desktop-batch7", "product/desktop-batch8", "product/desktop-batch9"]
   workflow_dispatch:
 permissions:
   contents: read
@@ -14,11 +14,15 @@ jobs:
       FIRMAVEX_REQUIRE_RUNTIME: "1"
       FIRMAVEX_WORKER_DIAGNOSTICS: "1"
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
-      - run: python -m pip install ".[dev,desktop,gui-test]" "pyinstaller==6.16.0"
+      - shell: bash
+        run: |
+          python -m pip install --only-binary=:all: --require-hashes -r packaging/build-requirements.lock
+          python -m pip install --no-deps --no-build-isolation .
+          python -m tools.check_build_inputs
       - name: Install publisher runtime in private storage with spaces
         shell: pwsh
         run: |
@@ -56,7 +60,7 @@ jobs:
           ./packaging/test_windows_install.ps1 -FirmwareQualification
           firmavex runtime-history
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: Windows-beta-compiler-free-execution-evidence
@@ -78,8 +82,8 @@ jobs:
       FIRMAVEX_REQUIRE_RUNTIME: "1"
       FIRMAVEX_WORKER_DIAGNOSTICS: "1"
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
       - name: Linux distro runtime without ARM compiler
@@ -88,7 +92,11 @@ jobs:
       - name: Apple Silicon runtime without ARM compiler
         if: runner.os == 'macOS'
         run: brew install qemu gdb
-      - run: python -m pip install ".[dev,desktop,gui-test]" "pyinstaller==6.16.0"
+      - shell: bash
+        run: |
+          python -m pip install --only-binary=:all: --require-hashes -r packaging/build-requirements.lock
+          python -m pip install --no-deps --no-build-isolation .
+          python -m tools.check_build_inputs
       - name: Real compiler-free GUI execution reproduction cancellation and export
         run: python tools/product_ci_tests.py -q tests/desktop/test_real_builtin.py
       - run: python -m PyInstaller --clean --noconfirm packaging/desktop.spec
@@ -116,7 +124,7 @@ jobs:
           sha256sum -c "$RUNNER_TEMP/saved-result.sha256"
           test -f "$HOME/.local/share/FIRMAVEX/install-preservation/sentinel"
           test ! -e /opt/firmavex/FIRMAVEX-Desktop
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: ${{ matrix.os }}-beta-compiler-free-evidence

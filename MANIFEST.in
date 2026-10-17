@@ -44,3 +44,6 @@ include tools/local_interface_ci.py
 include tools/isolation_feasibility.py tools/product_ci_diagnostics.py
 include packaging/dependency-review.json
 recursive-include docs/security *.md
+
+include packaging/action-pins.json packaging/build-requirements.lock
+include tools/check_build_inputs.py

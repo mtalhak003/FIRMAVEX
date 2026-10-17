@@ -1,7 +1,7 @@
 name: Unified desktop native backend qualification
 on:
   push:
-    branches: ["product/desktop-batch6", "product/desktop-batch7", "product/desktop-batch8"]
+    branches: ["product/desktop-batch6", "product/desktop-batch7", "product/desktop-batch8", "product/desktop-batch9"]
   workflow_dispatch:
 permissions:
   contents: read
@@ -23,12 +23,12 @@ jobs:
       # Candidate opt-in is deliberately separate from public qualification.
       FIRMAVEX_QUALIFY_BACKENDS: "1"
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         id: python
         with:
           python-version: "3.12"
-      - uses: msys2/setup-msys2@v2
+      - uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2
         if: runner.os == 'Windows'
         id: msys2
         with:
@@ -66,7 +66,11 @@ jobs:
       - name: Install with the selected CPython, not the runtime vendor Python
         env:
           FIRMAVEX_PYTHON: ${{ steps.python.outputs.python-path }}
-        run: '"$FIRMAVEX_PYTHON" -m pip install ".[dev,desktop,gui-test]" "pyinstaller==6.16.0"'
+        shell: bash
+        run: |
+          "$FIRMAVEX_PYTHON" -m pip install --only-binary=:all: --require-hashes -r packaging/build-requirements.lock
+          "$FIRMAVEX_PYTHON" -m pip install --no-deps --no-build-isolation .
+          "$FIRMAVEX_PYTHON" -m tools.check_build_inputs
       - name: Record selected application Python
         env:
           FIRMAVEX_PYTHON: ${{ steps.python.outputs.python-path }}
@@ -172,7 +176,7 @@ jobs:
           test "$(shasum -a 256 "$RUNNER_TEMP/unified-installed/qualification.json")" = "$identity"
       - name: Preserve actual results, logs, waveforms, and failure evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: FIRMAVEX-${{ matrix.os }}-unified-native-evidence
           path: |

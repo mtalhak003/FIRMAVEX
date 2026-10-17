@@ -78,3 +78,8 @@ inventory, without changing the original preview manifest schema. See
 installer evidence and outstanding approval gates, and the
 [execution threat model](../security/execution-threat-model.md) for the fixed Linux
 namespace diagnostic and explicit limits on isolation claims.
+
+Batch 9's immutable build inputs, collected-native-file inventory scope and
+remaining public-beta gates are documented in
+[public beta hardening](batch9-public-beta-hardening.md). A successful packaging
+job does not resolve the explicitly unverified component/license findings.

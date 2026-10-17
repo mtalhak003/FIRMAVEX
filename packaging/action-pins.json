@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "basis": "Upstream tag resolution observed 2026-10-17; pinning is not a full source audit",
+  "actions": {
+    "actions/checkout": {
+      "upstream_tag": "v5",
+      "commit": "fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09"
+    },
+    "actions/setup-python": {
+      "upstream_tag": "v6",
+      "commit": "ece7cb06caefa5fff74198d8649806c4678c61a1"
+    },
+    "actions/upload-artifact": {
+      "upstream_tag": "v4",
+      "commit": "ea165f8d65b6e75b540449e92b4886f43607fa02"
+    },
+    "msys2/setup-msys2": {
+      "upstream_tag": "v2",
+      "commit": "ec48f7c5447b3140e2b088413ae3a55687bccb6e"
+    }
+  }
+}

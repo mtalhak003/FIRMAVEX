@@ -1,7 +1,7 @@
 name: Desktop distribution candidates
 on:
   push:
-    branches: ["product/desktop-batch3", "product/desktop-batch4", "product/desktop-batch5", "product/desktop-batch6", "product/desktop-batch7", "product/desktop-batch8"]
+    branches: ["product/desktop-batch3", "product/desktop-batch4", "product/desktop-batch5", "product/desktop-batch6", "product/desktop-batch7", "product/desktop-batch8", "product/desktop-batch9"]
   workflow_dispatch:
 permissions:
   contents: read
@@ -16,14 +16,18 @@ jobs:
     env:
       QT_QPA_PLATFORM: offscreen
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
       - name: Install Qt host libraries
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libopengl0 libxkbcommon-x11-0 libxcb-cursor0
-      - run: python -m pip install ".[desktop,dev]" "pyinstaller==6.16.0"
+      - shell: bash
+        run: |
+          python -m pip install --only-binary=:all: --require-hashes -r packaging/build-requirements.lock
+          python -m pip install --no-deps --no-build-isolation .
+          python -m tools.check_build_inputs
       - run: python -m PyInstaller --clean --noconfirm packaging/desktop.spec
       - name: Record actual application identities
         shell: bash
@@ -68,6 +72,29 @@ jobs:
       - name: Linux portable application
         if: runner.os == 'Linux'
         run: tar -C dist -czf dist/FIRMAVEX-Linux-portable.tar.gz FIRMAVEX
+      - name: Inventory actual collected native files and installer identities
+        shell: bash
+        run: |
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            app=dist/FIRMAVEX.app
+          else
+            app=dist/FIRMAVEX
+          fi
+          python - "$app" <<'PYCODE'
+          import sys
+          from pathlib import Path
+          from firmavex.product.frozen_inventory import main
+          args = [sys.argv[1], '--output', 'dist/collected-files.json']
+          for p in sorted(Path('dist').iterdir()):
+              if p.is_file() and p.suffix in {'.exe', '.dmg', '.gz', '.deb'}:
+                  args += ['--installer', str(p)]
+          raise SystemExit(main(args))
+          PYCODE
+          python -m pip inspect > dist/python-environment.json
+          python -m pip freeze --all > dist/python-environment.txt
+      - name: Linux installed OS package identities
+        if: runner.os == 'Linux'
+        run: dpkg-query -W > dist/os-packages.txt
       - name: Checksums
         shell: bash
         run: |
@@ -85,6 +112,7 @@ jobs:
           from pathlib import Path
           from firmavex.product.release import main
           artifacts = sorted(p for p in Path('dist').iterdir() if p.is_file() and p.suffix in {'.exe', '.dmg', '.gz', '.deb'})
+          artifacts += [Path('dist')/name for name in ('collected-files.json', 'python-environment.json', 'python-environment.txt', 'os-packages.txt') if (Path('dist')/name).is_file()]
           output = Path(os.environ['RUNNER_TEMP']) / 'release-sidecars'
           arguments = ['bundle-create', '--repo', str(Path.cwd()), '--output', str(output)]
           for artifact in artifacts:
@@ -95,7 +123,7 @@ jobs:
           shutil.copytree(output, Path('dist')/'release-sidecars')
           (Path('dist')/'release-manifest.json').write_bytes((output/'release-manifest.json').read_bytes())
           PYCODE
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: FIRMAVEX-${{ matrix.os }}-unsigned-candidate
           path: |
@@ -106,19 +134,27 @@ jobs:
             dist/SHA256SUMS
             dist/release-manifest.json
             dist/release-sidecars/
+            dist/collected-files.json
+            dist/python-environment.json
+            dist/python-environment.txt
+            dist/os-packages.txt
           if-no-files-found: error
   macos-firmware-qualification:
     name: macOS ARM firmware qualification candidate
     runs-on: macos-14
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
       - name: Install native runtime candidates
         run: brew install qemu gdb arm-none-eabi-gcc
-      - run: python -m pip install ".[dev,desktop]" "pyinstaller==6.16.0"
+      - shell: bash
+        run: |
+          python -m pip install --only-binary=:all: --require-hashes -r packaging/build-requirements.lock
+          python -m pip install --no-deps --no-build-isolation .
+          python -m tools.check_build_inputs
       - name: Probe native capabilities and execute actual firmware
         run: |
           mkdir -p "$RUNNER_TEMP/arm-gdb"
@@ -136,14 +172,14 @@ jobs:
           python -m tools.desktop_native_evidence "$RUNNER_TEMP/mac-frozen-demo"
       - name: Preserve frozen macOS execution records
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: macOS-frozen-firmware-evidence
           path: ${{ runner.temp }}/mac-frozen-demo
           if-no-files-found: warn
       - name: Preserve real execution records even on failure
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: macOS-native-ARM-qualification-evidence
           path: ${{ runner.temp }}/native-arm-demo
@@ -156,8 +192,8 @@ jobs:
       QT_QPA_PLATFORM: offscreen
       FIRMAVEX_REQUIRE_RUNTIME: "1"
     steps:
-      - uses: actions/checkout@v5
-      - uses: msys2/setup-msys2@v2
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2
         id: msys2
         with:
           msystem: UCRT64
@@ -173,10 +209,14 @@ jobs:
             done
             exit 1
           fi
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
-      - run: python -m pip install ".[dev,desktop,gui-test]" "pyinstaller==6.16.0"
+      - shell: bash
+        run: |
+          python -m pip install --only-binary=:all: --require-hashes -r packaging/build-requirements.lock
+          python -m pip install --no-deps --no-build-isolation .
+          python -m tools.check_build_inputs
       - name: Probe signed-feed native runtime candidates
         env:
           MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
@@ -205,7 +245,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Archive native Windows firmware evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: Windows-native-supervised-firmware-evidence
           path: ${{ runner.temp }}/windows-native-demo
@@ -232,7 +272,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Archive frozen Windows firmware evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: Windows-frozen-firmware-evidence
           path: ${{ runner.temp }}/windows-frozen-demo

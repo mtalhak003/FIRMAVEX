@@ -13,13 +13,17 @@ jobs:
     env:
       FIRMAVEX_REQUIRE_BACKENDS: "1"
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
       - run: sudo apt-get update && sudo apt-get install -y iverilog gcc-riscv64-unknown-elf qemu-system-misc qemu-system-arm gdb-multiarch
       - run: sudo ln -s /usr/bin/gdb-multiarch /usr/local/bin/arm-none-eabi-gdb
-      - run: python -m pip install ".[dev]"
+      - shell: bash
+        run: |
+          python -m pip install --only-binary=:all: --require-hashes -r packaging/build-requirements.lock
+          python -m pip install --no-deps --no-build-isolation .
+          python -m tools.check_build_inputs
       - run: python tools/product_ci_tests.py -q tests/backends
       - name: Independent real examples and reports
         run: |
@@ -29,7 +33,7 @@ jobs:
           python -m firmavex.backends.cli export "$RUNNER_TEMP/rv-run" --output "$RUNNER_TEMP/rv-report"
           python -m firmavex.backends.cli prepare-example verilog-icarus --output "$RUNNER_TEMP/hdl-build"
           python -m firmavex.backends.cli execute verilog-icarus "$RUNNER_TEMP/hdl-build/counter.v" --output "$RUNNER_TEMP/hdl-run"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: real-linux-backend-evidence
@@ -47,10 +51,14 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
-      - run: python -m pip install ".[dev]"
+      - shell: bash
+        run: |
+          python -m pip install --only-binary=:all: --require-hashes -r packaging/build-requirements.lock
+          python -m pip install --no-deps --no-build-isolation .
+          python -m tools.check_build_inputs
       # These are record/validation tests, not native firmware qualification.
       - run: python tools/product_ci_tests.py -q tests/backends -k "invalid_limit or invalid_vector or profiles_are_distinct or fresh_directory_only or missing_source or unknown_accounting or reject_non_riscv or reject_external_hdl or interruption_persisted or cleanup_error_does_not_replace or reject_unowned_artifacts or arm_adapter_preserves or cli_readiness or wire_roundtrip"
