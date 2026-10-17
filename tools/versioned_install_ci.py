@@ -83,7 +83,17 @@ class Qualification:
             (self.logs/f'{self.counter:02}-{label}.stdout').write_text(out,encoding='utf-8')
             (self.logs/f'{self.counter:02}-{label}.stderr').write_text(err,encoding='utf-8')
             row['exit_code']=code
-            if expect==0 and code!=0:raise RuntimeError(label+': '+err[-3000:]+out[-1000:])
+            if expect==0 and code!=0:
+                installer_tail=''
+                for arg in args:
+                    if str(arg).upper().startswith('/LOG='):
+                        log=Path(str(arg)[5:]).resolve()
+                        if log.is_relative_to(self.logs.resolve()) and log.is_file():
+                            with log.open('rb') as stream:
+                                stream.seek(max(0,log.stat().st_size-4096));raw=stream.read(4096)
+                            installer_tail=raw.decode('utf-16-le' if b'\x00' in raw else 'utf-8',errors='replace')
+                row['installer_log_tail']=installer_tail
+                raise RuntimeError(label+' exit_code='+str(code)+': '+err[-1500:]+out[-500:]+installer_tail[-1800:])
             if expect=='failure' and code==0:raise RuntimeError(label+' unexpectedly succeeded')
             return code,out,err
         except BaseException as exc:
@@ -166,11 +176,11 @@ class Qualification:
         self.rows.append(self.identity('candidate-identity',self.revision));self.gui('candidate-gui');self.inspect('upgraded-reopen')
         # Supported rollback is uninstall-new/install-old, never an unsupported
         # in-place downgrade or a schema migration claim.
-        self.run('uninstall-candidate',[destination/'unins000.exe','/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART']);self.unchanged()
+        self.run('uninstall-candidate',[destination/'unins000.exe','/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/LOG='+str(self.logs/'uninstall-candidate.log')]);self.unchanged()
         self.run('rollback-install-baseline',args(older,self.logs/'rollback.log'));self.rows.append(self.identity('rollback-identity',BASELINE));self.inspect('rollback-reopen')
-        self.run('uninstall-baseline',[destination/'unins000.exe','/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART']);self.unchanged()
+        self.run('uninstall-baseline',[destination/'unins000.exe','/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/LOG='+str(self.logs/'uninstall-baseline.log')]);self.unchanged()
         self.run('reinstall-candidate',args(newer,self.logs/'reinstall.log'));self.inspect('reinstall-reopen')
-        self.run('final-uninstall',[destination/'unins000.exe','/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART']);self.unchanged()
+        self.run('final-uninstall',[destination/'unins000.exe','/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/LOG='+str(self.logs/'final-uninstall.log')]);self.unchanged()
         return {'offline_network_enforced':False,'standard_user_token':'not_independently_qualified','low_disk_installer':'not_qualified'}
 
     def linux(self):
