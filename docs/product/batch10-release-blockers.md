@@ -69,6 +69,15 @@ tree; require that interruption to occur, rerun the candidate installer to repai
 then test uninstall-new/install-old rollback and candidate reinstall. A completed
 installer that escaped cancellation is a **failure**, not an interruption pass.
 This qualifies only the observed cancellation point, not arbitrary power loss.
+The driver waits for the entire owned installer descendant tree, not just its
+initial executable. Inno's uninstaller intentionally terminates its first phase
+before its second phase finishes deleting files; closing ownership at that point
+can interrupt removal. A fixed PowerShell `Start-Process -Wait` waiter stays inside
+the existing supervised Job, preserving timeout/cancellation and resource controls.
+Arguments are data, never interpolated into PowerShell source. Removal must also
+leave the installed console, GUI and uninstaller executables absent before the
+next transition is admitted. The first-phase exit code alone is insufficient.
+
 Runtime is a locally generated signed-vendor snapshot with original licenses;
 CI does not redistribute that runtime archive as an application artifact.
 Windows networking, restricted standard-user tokens and low-disk installer

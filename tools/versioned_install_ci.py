@@ -60,6 +60,24 @@ def absolute_command(args, env):
     return command
 
 
+INSTALLER_WAIT_SCRIPT = """$ErrorActionPreference='Stop'
+$invocation=ConvertFrom-Json $env:FIRMAVEX_INSTALLER_WAIT
+$process=Start-Process -FilePath $invocation.executable -ArgumentList $invocation.command_line -Wait -PassThru
+if ($null -eq $process.ExitCode) { throw 'Installer exit code unavailable' }
+exit $process.ExitCode
+"""
+
+def windows_installer_command(args, env):
+    # Inno's initial uninstaller exits BEFORE its second phase finishes deleting
+    # files. Start-Process -Wait waits the descendant tree, unlike Popen.wait.
+    # The outer Processes/Job still owns this waiter and every installer child.
+    shell=shutil.which('pwsh',path=env.get('PATH',os.defpath))
+    if not shell:raise ValueError('PowerShell 7 required for owned installer-tree waiting')
+    child_env={**env,'FIRMAVEX_INSTALLER_WAIT':json.dumps({
+        'executable':str(args[0]),'command_line':subprocess.list2cmdline(list(map(str,args[1:])))})}
+    return [str(Path(shell).resolve(strict=True)),'-NoLogo','-NoProfile','-NonInteractive','-Command',INSTALLER_WAIT_SCRIPT],child_env
+
+
 class Qualification:
     def __init__(self,baseline,candidate,output):
         if os.environ.get('GITHUB_ACTIONS')!='true':raise ValueError('Disposable GitHub runner required; this tool installs/uninstalls system packages')
@@ -72,20 +90,24 @@ class Qualification:
         if actual!=BASELINE or actual==self.revision:raise ValueError('Expected two distinct pinned Git revisions')
 
     def run(self,label,args,*,env=None,expect=0,cancel=None):
-        args=absolute_command(args,env or os.environ)
+        execution_env=dict(env or os.environ)
+        args=absolute_command(args,execution_env)
+        installer_args=args
+        if os.name=='nt' and Path(args[0]).name.lower() in {'firmavex-windows-unsigned.exe','unins000.exe'}:
+            args,execution_env=windows_installer_command(args,execution_env)
         self.counter+=1
         owner=Processes(cancel or threading.Event(),Limits(timeout_seconds=300,artifact_bytes=64*1024**2,log_bytes=8*1024**2))
         primary=None
         row={'phase':label,'exit_code':None,'cleanup':[]}
         self.rows.append(row)
         try:
-            with environment(env or os.environ.copy()):code,out,err=owner.run(list(map(str,args)),self.logs)
+            with environment(execution_env):code,out,err=owner.run(list(map(str,args)),self.logs)
             (self.logs/f'{self.counter:02}-{label}.stdout').write_text(out,encoding='utf-8')
             (self.logs/f'{self.counter:02}-{label}.stderr').write_text(err,encoding='utf-8')
             row['exit_code']=code
             if expect==0 and code!=0:
                 installer_tail=''
-                for arg in args:
+                for arg in installer_args:
                     if str(arg).upper().startswith('/LOG='):
                         log=Path(str(arg)[5:]).resolve()
                         if log.is_relative_to(self.logs.resolve()) and log.is_file():
@@ -130,6 +152,13 @@ class Qualification:
         elif expected!=BASELINE and record.get('application_version')!='0.3.0.dev2':
             raise RuntimeError('Wrong candidate version metadata')
         return {'phase':label,'git_revision':expected,'engine_sha256':actual,'application_version':record.get('application_version','0.3.0.dev1 (pinned baseline)')}
+
+    def uninstall_windows(self,label,destination):
+        self.run(label,[destination/'unins000.exe','/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/LOG='+str(self.logs/(label+'.log'))])
+        remaining=[name for name in ('FIRMAVEX.exe','FIRMAVEX-Desktop.exe','unins000.exe') if (destination/name).exists()]
+        if remaining:raise RuntimeError(label+' left installed executables: '+', '.join(remaining))
+        self.rows[-1]['installed_executables_absent']=True
+        self.unchanged()
 
     def windows(self):
         destination=self.root/'installed application';self.engine=destination/'FIRMAVEX.exe';self.gui_engine=destination/'FIRMAVEX-Desktop.exe'
@@ -176,11 +205,11 @@ class Qualification:
         self.rows.append(self.identity('candidate-identity',self.revision));self.gui('candidate-gui');self.inspect('upgraded-reopen')
         # Supported rollback is uninstall-new/install-old, never an unsupported
         # in-place downgrade or a schema migration claim.
-        self.run('uninstall-candidate',[destination/'unins000.exe','/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/LOG='+str(self.logs/'uninstall-candidate.log')]);self.unchanged()
+        self.uninstall_windows('uninstall-candidate',destination)
         self.run('rollback-install-baseline',args(older,self.logs/'rollback.log'));self.rows.append(self.identity('rollback-identity',BASELINE));self.inspect('rollback-reopen')
-        self.run('uninstall-baseline',[destination/'unins000.exe','/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/LOG='+str(self.logs/'uninstall-baseline.log')]);self.unchanged()
+        self.uninstall_windows('uninstall-baseline',destination)
         self.run('reinstall-candidate',args(newer,self.logs/'reinstall.log'));self.inspect('reinstall-reopen')
-        self.run('final-uninstall',[destination/'unins000.exe','/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/LOG='+str(self.logs/'final-uninstall.log')]);self.unchanged()
+        self.uninstall_windows('final-uninstall',destination)
         return {'offline_network_enforced':False,'standard_user_token':'not_independently_qualified','low_disk_installer':'not_qualified'}
 
     def linux(self):

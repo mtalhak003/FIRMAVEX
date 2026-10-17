@@ -60,3 +60,39 @@ def test_installer_commands_resolve_before_strict_process_admission(monkeypatch,
     assert v.absolute_command(['native-tool','literal argument'],{'PATH':'selected-path'})==[str(tool.resolve()),'literal argument']
     assert observed==[('native-tool','selected-path')]
     with pytest.raises(ValueError,match='unavailable'):v.absolute_command(['missing-tool'],{'PATH':'selected-path'})
+
+
+def test_native_installer_waiter_keeps_arguments_as_data_and_waits_descendants(tmp_path,monkeypatch):
+    shell=tmp_path/'pwsh';shell.write_bytes(b'not executed synthetic fixture')
+    monkeypatch.setattr(v.shutil,'which',lambda *args,**kwargs:str(shell))
+    args=[str(tmp_path/'installer with spaces.exe'),'/LOG='+str(tmp_path/'a;literal.log'),'/VERYSILENT']
+    command,env=v.windows_installer_command(args,{'PATH':'selected'})
+    assert command[0]==str(shell.resolve())
+    assert command[-1]==v.INSTALLER_WAIT_SCRIPT
+    assert '-Wait -PassThru' in command[-1]
+    assert args[0] not in command[-1]
+    value=json.loads(env['FIRMAVEX_INSTALLER_WAIT'])
+    assert value=={'executable':args[0],'command_line':v.subprocess.list2cmdline(args[1:])}
+    assert env['PATH']=='selected'
+
+
+@pytest.mark.parametrize('removed',[False,True])
+def test_uninstaller_parent_exit_alone_cannot_qualify_removal(tmp_path,removed):
+    qualification=object.__new__(v.Qualification)
+    qualification.logs=tmp_path;qualification.rows=[{}]
+    destination=tmp_path/'application';destination.mkdir()
+    engine=destination/'FIRMAVEX.exe';engine.write_bytes(b'synthetic fixture')
+    def run(*args):
+        if removed:engine.unlink()
+        return 0,'',''
+    qualification.run=run
+    checked=[];qualification.unchanged=lambda:checked.append(True)
+    if removed:
+        qualification.uninstall_windows('uninstall',destination)
+        assert checked==[True]
+        assert qualification.rows[-1]['installed_executables_absent'] is True
+    else:
+        with pytest.raises(RuntimeError,match='left installed executables'):
+            qualification.uninstall_windows('uninstall',destination)
+        assert not checked
+        assert 'installed_executables_absent' not in qualification.rows[-1]
