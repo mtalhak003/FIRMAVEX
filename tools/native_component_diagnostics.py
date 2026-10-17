@@ -1,5 +1,7 @@
 """Read-only native build evidence. No unknown file is promoted by this diagnostic."""
 import argparse
+import base64
+import zlib
 import hashlib
 import json
 from pathlib import Path
@@ -33,9 +35,11 @@ def main():
     # Public annotations are bounded so diagnostics remain accessible even when
     # authenticated artifact/log download is unavailable. No credentials recorded.
     print('::notice title=Baseline component counts::'+json.dumps(result['counts']))
-    for row in diagnostics:
-        message=json.dumps(row,sort_keys=True)
-        print('::notice title=Unresolved native file::'+message[:3500].replace('%','%25').replace('\n','%0A').replace('\r','%0D'))
+    raw=canonical(diagnostics);encoded=base64.b64encode(zlib.compress(raw,9)).decode('ascii')
+    chunks=[encoded[i:i+2800] for i in range(0,len(encoded),2800)]
+    if len(chunks)>8:raise ValueError('Diagnostic annotation size exceeded; artifact retained')
+    for index,chunk in enumerate(chunks):
+        print('::notice title=Compressed native diagnostic::'+json.dumps({'kind':'firmavex_native_diagnostic_zlib_base64','index':index,'count':len(chunks),'sha256':hashlib.sha256(raw).hexdigest(),'data':chunk}))
     print(json.dumps({'counts':result['counts'],'unresolved':len(diagnostics)}))
 
 if __name__=='__main__':main()

@@ -42,3 +42,17 @@ jobs:
             ${{ runner.temp }}/native-evidence/
             build/desktop/*.toc
           if-no-files-found: error
+  namespace:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - run: sudo apt-get update && sudo apt-get install -y bubblewrap iproute2
+      - shell: bash
+        run: sudo /usr/bin/python3 -m tools.namespace_diagnostics --user "$(id -un)" --output "$RUNNER_TEMP/namespace-diagnostics"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: FIRMAVEX-namespace-policy-diagnostics
+          path: ${{ runner.temp }}/namespace-diagnostics/
+          if-no-files-found: error
