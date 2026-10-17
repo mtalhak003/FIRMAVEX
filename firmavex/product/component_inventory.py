@@ -200,14 +200,16 @@ def audit(application, *, toc, repo, archives=()):
     for archive in archives:archive_records.append(inspect(archive))
     # All mappings are revalidated against actual application bytes. No review
     # conclusion can be promoted automatically by a successful hash match.
-    if capture(application)!=inventory:raise ValueError('Application changed during component audit')
-    if toc_rows(toc)[1]!=toc_hash or _git(repo)!=git_before:
-        raise ValueError('Build provenance changed during audit')
     if python_owners()!=python_index:raise ValueError('Registered Python ownership changed during audit')
     for source,(identity,component,method) in source_proofs.items():
         if source_identity(source)!=identity:raise ValueError('Build input changed during audit')
         if method=='dpkg_registration_and_packaged_bytes' and _os_owner(source)!=component:
             raise ValueError('Registered OS ownership changed during audit')
+    # Finish observable application/Git checks AFTER registered-owner and source
+    # revalidation; those operations are part of this capture interval too.
+    if capture(application)!=inventory:raise ValueError('Application changed during component audit')
+    if toc_rows(toc)[1]!=toc_hash or _git(repo)!=git_before:
+        raise ValueError('Build provenance changed during audit')
     by_hash={}
     for entry in files:
         if entry['component_id'] is not None:by_hash.setdefault(entry['sha256'],set()).add(entry['component_id'])

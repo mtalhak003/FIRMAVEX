@@ -127,3 +127,15 @@ def test_windows_toc_destinations_match_posix_inventory_paths(tmp_path,monkeypat
     assert result['counts']=={'regular_files':1,'verified_ownership':1,'unverified_ownership':0}
     assert result['files'][0]['path']=='_internal/notices/asset'
     assert result['files'][0]['evidence']['method']=='git_blob_and_packaged_bytes'
+
+
+def test_git_change_during_final_owner_revalidation_is_rejected(tmp_path,monkeypatch):
+    source=repo(tmp_path/'repo');app=tmp_path/'app';app.mkdir();(app/'asset').write_bytes(b'known bytes')
+    toc=tmp_path/'toc';toc.write_text(repr(([('asset',str(source/'asset'),'DATA')],)))
+    calls=[]
+    def owners():
+        calls.append(1)
+        if len(calls)==2:(source/'late-untracked').write_text('capture changed')
+        return {}
+    monkeypatch.setattr(c,'python_owners',owners)
+    with pytest.raises(ValueError,match='provenance changed'):c.audit(app,toc=toc,repo=source)
