@@ -192,7 +192,8 @@ def main(argv=None):
         record=assess(source=args.source.resolve(strict=True),python=args.python.resolve(strict=True),user=args.user,output=args.output)
         print(json.dumps(record,sort_keys=True))
         if record['status']!='fixed_checks_passed_not_qualified':
-            print('::error title=Aggregate isolation not qualified::'+str(record.get('diagnostic',record['checks']))[-3000:]);return 1
+            details=json.dumps({'diagnostic':record.get('diagnostic'),'checks':record['checks'],'last_unit':record['units'][-1] if record['units'] else None},sort_keys=True)
+            print('::error title=Aggregate isolation not qualified::'+details[-3500:].replace('%','%25').replace('\n','%0A').replace('\r','%0D'));return 1
         return 0
     except Exception as exc:
         print('::error title=Aggregate isolation failure::'+str(exc)[-3000:]);return 1
