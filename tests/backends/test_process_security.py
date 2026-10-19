@@ -98,7 +98,7 @@ def test_actual_memory_allocation_cannot_exceed_limit(tmp_path):
 def test_actual_file_resource_limit_and_cleanup(tmp_path):
     processes = Processes(threading.Event(), Limits(artifact_bytes=1024))
     try:
-        code, out, err = processes.run([sys.executable, "-c", "open('large','wb').write(b'x'*8192)"], tmp_path)
+        code, out, err = processes.run([sys.executable, "-c", "with open('large','wb') as stream:\n stream.write(b'x'*8192)"], tmp_path)
     finally:
         processes.close()
     assert code != 0

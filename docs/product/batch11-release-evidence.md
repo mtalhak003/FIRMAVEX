@@ -121,3 +121,26 @@ An additional focused run covering the final unresolved-input consistency and
 namespace-cleanup cases plus attestation checks passed **31 tests**. These runs
 exercise real OpenSSL signatures with disposable test keys. They do not replace
 Windows/macOS native CI or the locked Python 3.12 release build environment.
+
+## Hosted follow-up and Python 3.14 regression
+
+Implementation commit `7965ac72907054130ca0e31fa56fdcdf71819744` passed
+[all three native component captures and the namespace diagnostic](https://github.com/mtalhak003/FIRMAVEX/actions/runs/39303862810).
+The diagnostic retained AppArmor audit events showing `unprivileged_userns`
+capability denials for `setpcap` and `net_admin` during the fixed Bubblewrap
+reproducer. This is direct evidence of a host policy restriction. No host policy
+was weakened to obtain a passing isolation verdict.
+
+The [aggregate assessment](https://github.com/mtalhak003/FIRMAVEX/actions/runs/39303862786)
+again passed CPU throttling, process-count denial and kernel memory OOM checks,
+but failed at `bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted`.
+All recorded units reported verified cleanup. Aggregate sandbox qualification
+remains blocked. The macOS unified workflow still fails its documented native
+`RLIMIT_AS` admission; the limit is enforced without a bypass.
+
+The broader local backend/research regression run passed 1,558 tests and skipped
+27, exposing one file-size test issue on Python 3.14. Its bare buffered `write`
+could defer the file-size error to an ignored destructor exception and exit zero.
+The test now explicitly closes the stream through a context manager, preserving
+the actual file-size and process-reaping assertions. Production resource limits
+and frozen research data are unchanged.
