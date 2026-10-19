@@ -208,7 +208,8 @@ class Qualification:
         self.uninstall_windows('uninstall-candidate',destination)
         self.run('rollback-install-baseline',args(older,self.logs/'rollback.log'));self.rows.append(self.identity('rollback-identity',BASELINE));self.inspect('rollback-reopen')
         self.uninstall_windows('uninstall-baseline',destination)
-        self.run('reinstall-candidate',args(newer,self.logs/'reinstall.log'));self.inspect('reinstall-reopen')
+        self.run('reinstall-candidate',args(newer,self.logs/'reinstall.log'))
+        self.rows.append(self.identity('reinstall-identity',self.revision));self.gui('reinstall-gui');self.inspect('reinstall-reopen')
         self.uninstall_windows('final-uninstall',destination)
         return {'offline_network_enforced':False,'standard_user_token':'not_independently_qualified','low_disk_installer':'not_qualified'}
 

@@ -50,3 +50,5 @@ include tools/check_build_inputs.py
 
 include tools/build_versioned_candidates.py tools/versioned_install_ci.py
 include tools/aggregate_isolation_probe.py
+
+include tools/native_component_diagnostics.py tools/namespace_diagnostics.py

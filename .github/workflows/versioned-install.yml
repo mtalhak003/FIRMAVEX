@@ -1,7 +1,7 @@
 name: Distinct-version installer qualification
 on:
   push:
-    branches: ["product/desktop-batch10"]
+    branches: ["product/desktop-batch10", "product/desktop-batch11"]
   workflow_dispatch:
 permissions:
   contents: read

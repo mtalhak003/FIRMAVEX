@@ -131,9 +131,10 @@ SBOM binding and ownership accounting. They deliberately return nonzero while
 ownership/composition, legal/source review, authentic signing, physical consumer
 acceptance or installer evidence are missing. They never publish a GitHub Release.
 Successful packaging/native jobs do not override a failed approval job.
-The assessment currently has no mechanism to accept external approval
-attestations; implementing and reviewing that authority boundary remains necessary
-before it can approve a release. This limitation is explicit, not a passed gate.
+Batch 11 adds scoped signed review attestations with independently provisioned
+key authority and exact-manifest binding; see [the Batch 11 evidence
+protocol](batch11-release-evidence.md). Missing authentic installer signatures and
+other unresolved gates still prevent approval.
 
 ## Isolation and platform limits
 

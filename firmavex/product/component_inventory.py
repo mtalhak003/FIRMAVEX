@@ -148,7 +148,7 @@ def audit(application, *, toc, repo, archives=()):
     libdir=Path(sysconfig.get_config_var('LIBDIR') or sys.base_prefix)
     library_names={str(sysconfig.get_config_var('LDLIBRARY') or ''),str(sysconfig.get_config_var('INSTSONAME') or ''), 'python'+str(sys.version_info.major)+str(sys.version_info.minor)+'.dll'}
     libraries={str((directory/name).resolve()) for directory in (libdir,Path(sys.base_prefix)/'lib',Path(sys.base_prefix)) for name in library_names if name}
-    components={};files=[];unresolved=[];archive_records=[];source_proofs={}
+    components={};files=[];unresolved=[];archive_records=[];source_proofs={};input_proofs={}
     def component_id(component):
         key=hashlib.sha256(canonical(component)).hexdigest()
         components[key]=component
@@ -157,12 +157,16 @@ def audit(application, *, toc, repo, archives=()):
         if record['type']!='file':continue
         name=record['path'];entry={**record,'ownership':'unverified','component_id':None,'evidence':None}
         candidates=[r for r in rows if name==r[0] or name=='_internal/'+r[0] or name.endswith('/Frameworks/'+r[0]) or name.endswith('/Resources/'+r[0])]
-        verified=[]
+        verified=[];matched_inputs=[]
         for dest,source,kind in candidates:
             source=Path(source).resolve(strict=True)
             if not source.is_file():continue
             identity=source_identity(source)
             if identity!={k:record[k] for k in ('sha256','size_bytes')}:continue
+            input_proofs[source]=identity
+            matched_inputs.append({'destination':dest,'kind':kind,'input_name':source.name,
+                                   'sha256':identity['sha256'],'size_bytes':identity['size_bytes'],
+                                   'toc_sha256':toc_hash})
             component=None;method=None
             registered=python_index.get(str(source.resolve()))
             encoded=base64.urlsafe_b64encode(bytes.fromhex(identity['sha256'])).decode().rstrip('=')
@@ -194,15 +198,19 @@ def audit(application, *, toc, repo, archives=()):
         if len(unique)==1:
             component,evidence=next(iter(unique.values()))
             entry.update(ownership='verified_build_input_lineage',component_id=component_id(component),evidence=evidence)
-        else:unresolved.append({'path':name,'reason':'ambiguous_owner' if unique else 'no_byte_verified_registered_owner'})
+        else:
+            unresolved.append({'path':name,'reason':'ambiguous_owner' if unique else 'no_byte_verified_registered_owner',
+                               'byte_verified_build_inputs':matched_inputs})
+        entry['byte_verified_build_inputs']=matched_inputs
         files.append(entry)
         if name.endswith('.zip'):archive_records.append(inspect(application/name))
     for archive in archives:archive_records.append(inspect(archive))
     # All mappings are revalidated against actual application bytes. No review
     # conclusion can be promoted automatically by a successful hash match.
     if python_owners()!=python_index:raise ValueError('Registered Python ownership changed during audit')
-    for source,(identity,component,method) in source_proofs.items():
+    for source,identity in input_proofs.items():
         if source_identity(source)!=identity:raise ValueError('Build input changed during audit')
+    for source,(identity,component,method) in source_proofs.items():
         if method=='dpkg_registration_and_packaged_bytes' and _os_owner(source)!=component:
             raise ValueError('Registered OS ownership changed during audit')
     # Finish observable application/Git checks AFTER registered-owner and source

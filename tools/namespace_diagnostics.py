@@ -6,7 +6,6 @@ import argparse
 import json
 import os
 from pathlib import Path
-import pwd
 import shutil
 import subprocess
 import sys
@@ -14,7 +13,15 @@ import time
 import uuid
 
 
+def cleanup_verified(stop_code, final_code, state):
+    fields=dict(line.split('=',1) for line in state.splitlines() if '=' in line)
+    return (final_code==0 and fields.get('ControlGroup')==''
+            and fields.get('ActiveState') in {'inactive','failed'}
+            and (stop_code==0 or fields.get('LoadState')=='not-found'))
+
+
 def capture(user,output):
+    import pwd
     if os.environ.get('GITHUB_ACTIONS')!='true' or sys.platform!='linux' or os.geteuid()!=0:raise ValueError('Disposable native Linux CI administrator required')
     account=pwd.getpwnam(user)
     if account.pw_uid==0:raise ValueError('Unprivileged reproducer account required')
@@ -41,9 +48,12 @@ def capture(user,output):
         finally:
             try:
                 stop=subprocess.run(['systemctl','stop',unit],capture_output=True,text=True,timeout=10)
-                final=subprocess.run(['systemctl','show',unit,'-p','ActiveState','-p','ControlGroup'],capture_output=True,text=True,timeout=10)
+                final=subprocess.run(['systemctl','show',unit,'-p','ActiveState','-p','ControlGroup','-p','LoadState'],capture_output=True,text=True,timeout=10)
                 row['final_supervisor_state']=final.stdout
-                row['cleanup_verified']=stop.returncode==0 and 'ControlGroup=\n' in final.stdout and ('ActiveState=inactive' in final.stdout or 'ActiveState=failed' in final.stdout)
+                row['stop_returncode']=stop.returncode
+                # Successful transient units may already have been unloaded.
+                # Read back the absence of an active unit and its control group.
+                row['cleanup_verified']=cleanup_verified(stop.returncode,final.returncode,final.stdout)
                 for channel,path in [('stdout',stdout),('stderr',stderr)]:row[channel]=path.read_text(errors='replace')[-8192:] if path.exists() else ''
                 subprocess.run(['systemctl','reset-failed',unit],capture_output=True,timeout=10)
             except BaseException as cleanup:

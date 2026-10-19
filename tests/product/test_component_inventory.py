@@ -139,3 +139,41 @@ def test_git_change_during_final_owner_revalidation_is_rejected(tmp_path,monkeyp
         return {}
     monkeypatch.setattr(c,'python_owners',owners)
     with pytest.raises(ValueError,match='provenance changed'):c.audit(app,toc=toc,repo=source)
+
+
+def test_release_gate_checks_license_bytes_and_missing_notices(tmp_path):
+    from firmavex.product.release_approval import license_evidence
+    notice=tmp_path/'LICENSE';notice.write_bytes(b'actual retained fixture notice')
+    evidence=c.license_notice(notice,'LICENSE')
+    assert license_evidence({'fixture':{'notices':[evidence]}})['retained_notices']==1
+    with pytest.raises(ValueError,match='identity mismatch'):
+        license_evidence({'fixture':{'notices':[{**evidence,'sha256':'0'*64}]}})
+    assert license_evidence({'unknown':{'notices':[]}})['components_without_notices']==['unknown']
+
+
+def test_unknown_generated_input_retains_byte_lineage_without_inventing_owner(tmp_path,monkeypatch):
+    source=repo(tmp_path/'repo');generated=tmp_path/'generated';generated.write_bytes(b'opaque executable')
+    app=tmp_path/'app';app.mkdir();(app/'engine').write_bytes(generated.read_bytes())
+    toc=tmp_path/'toc';toc.write_text(repr(([('engine',str(generated),'EXECUTABLE')],)))
+    monkeypatch.setattr(c,'python_owners',lambda:{})
+    monkeypatch.setattr(c,'_os_owner',lambda source:None)
+    result=c.audit(app,toc=toc,repo=source)
+    assert result['counts']['unverified_ownership']==1
+    file=result['files'][0]
+    assert file['component_id'] is None
+    assert file['byte_verified_build_inputs'][0]['sha256']==file['sha256']
+    assert result['unresolved_ownership'][0]['byte_verified_build_inputs']==file['byte_verified_build_inputs']
+
+
+def test_unresolved_input_change_during_owner_revalidation_is_rejected(tmp_path,monkeypatch):
+    source=repo(tmp_path/'repo');generated=tmp_path/'generated';generated.write_bytes(b'opaque executable')
+    app=tmp_path/'app';app.mkdir();(app/'engine').write_bytes(generated.read_bytes())
+    toc=tmp_path/'toc';toc.write_text(repr(([('engine',str(generated),'EXECUTABLE')],)))
+    calls=[]
+    def owners():
+        calls.append(1)
+        if len(calls)==2:generated.write_bytes(b'changed executable')
+        return {}
+    monkeypatch.setattr(c,'python_owners',owners)
+    monkeypatch.setattr(c,'_os_owner',lambda source:None)
+    with pytest.raises(ValueError,match='Build input changed'):c.audit(app,toc=toc,repo=source)

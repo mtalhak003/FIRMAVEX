@@ -49,7 +49,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
       - run: sudo apt-get update && sudo apt-get install -y bubblewrap iproute2
       - shell: bash
-        run: sudo /usr/bin/python3 -m tools.namespace_diagnostics --user "$(id -un)" --output "$RUNNER_TEMP/namespace-diagnostics"
+        run: sudo env GITHUB_ACTIONS=true /usr/bin/python3 -m tools.namespace_diagnostics --user "$(id -un)" --output "$RUNNER_TEMP/namespace-diagnostics"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:

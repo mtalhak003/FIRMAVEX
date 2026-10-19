@@ -37,7 +37,10 @@ def main():
     print('::notice title=Baseline component counts::'+json.dumps(result['counts']))
     raw=canonical(diagnostics);encoded=base64.b64encode(zlib.compress(raw,9)).decode('ascii')
     chunks=[encoded[i:i+2800] for i in range(0,len(encoded),2800)]
-    if len(chunks)>8:raise ValueError('Diagnostic annotation size exceeded; artifact retained')
+    # Keep full diagnostics in the artifact; annotation capacity is optional.
+    if len(chunks)>8:
+        print('::notice title=Native diagnostic artifact required::'+json.dumps({'chunks':len(chunks),'sha256':hashlib.sha256(raw).hexdigest(),'bytes':len(raw)}))
+        chunks=[]
     for index,chunk in enumerate(chunks):
         print('::notice title=Compressed native diagnostic::'+json.dumps({'kind':'firmavex_native_diagnostic_zlib_base64','index':index,'count':len(chunks),'sha256':hashlib.sha256(raw).hexdigest(),'data':chunk}))
     print(json.dumps({'counts':result['counts'],'unresolved':len(diagnostics)}))
