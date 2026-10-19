@@ -146,3 +146,139 @@ def test_private_cleanup_never_changes_file_outside_owned_tree(tmp_path, monkeyp
     monkeypatch.setattr(setup.shutil, 'rmtree', remove)
     with pytest.raises(PermissionError): setup._remove_private_tree(work)
     assert outside.read_bytes() == b'keep'
+
+
+@pytest.mark.parametrize('error,category', [
+    (setup.urllib.error.URLError('https://user:secret@proxy.invalid'), 'runtime_download_failed'),
+    (PermissionError(13, 'secret user path'), 'runtime_setup_io_failed'),
+    (RuntimeError('token=secret'), 'runtime_setup_failed'),
+])
+def test_setup_failure_has_safe_shareable_diagnostic(tmp_path, monkeypatch, error, category):
+    import json
+    monkeypatch.setattr(setup, 'host', lambda: {'os': 'windows', 'arch': 'x86_64'})
+    def failed(*args):
+        raise error
+    monkeypatch.setattr(setup, '_download', failed)
+    root = tmp_path / 'runtimes'
+    root.mkdir()
+    (root / 'active.json').write_text('previous')
+    with pytest.raises(ProductError) as caught:
+        setup.install_vendor_runtime(root=root)
+    assert caught.value.category == category
+    record = Path(caught.value.details['diagnostic_file'])
+    data = json.loads(record.read_text())
+    assert data['stage'] == 'download'
+    assert data['exception_type'] == type(error).__name__
+    assert data['traceback'][-1]['function'] == 'failed'
+    assert data['firmware_executed'] is False
+    assert 'secret' not in record.read_text() + str(caught.value.to_dict())
+    assert (root / 'active.json').read_text() == 'previous'
+    assert sorted(p.name for p in root.iterdir()) == ['active.json']
+
+
+def test_diagnostic_write_failure_preserves_classification(tmp_path, monkeypatch):
+    def failed(**kwargs):
+        raise setup.urllib.error.HTTPError('https://private.invalid', 403, 'secret', {}, None)
+    def denied(*args):
+        raise PermissionError('secret')
+    monkeypatch.setattr(setup, '_install_vendor_runtime', failed)
+    monkeypatch.setattr(setup, '_write_diagnostic', denied)
+    with pytest.raises(ProductError) as caught:
+        setup.install_vendor_runtime(root=tmp_path / 'runtimes')
+    assert caught.value.category == 'runtime_download_failed'
+    assert caught.value.details['diagnostic_write_failed'] is True
+    assert 'secret' not in str(caught.value.to_dict())
+
+
+def test_http_status_is_saved_without_url_or_headers(tmp_path, monkeypatch):
+    import json
+    def failed(**kwargs):
+        kwargs['event_callback']({'stage': 'download'})
+        raise setup.urllib.error.HTTPError('https://user:secret@example.invalid', 403,
+                                           'secret', {'Authorization': 'secret'}, None)
+    monkeypatch.setattr(setup, '_install_vendor_runtime', failed)
+    with pytest.raises(ProductError) as caught:
+        setup.install_vendor_runtime(root=tmp_path / 'runtimes')
+    text = Path(caught.value.details['diagnostic_file']).read_text()
+    assert json.loads(text)['http_status'] == 403
+    assert 'secret' not in text
+
+
+@pytest.mark.parametrize('linked_component', ['application', 'installation-diagnostics'])
+def test_diagnostic_rejects_linked_directory(tmp_path, linked_component):
+    outside = tmp_path / 'outside'; outside.mkdir()
+    application = tmp_path / 'application'
+    if linked_component == 'application':
+        link = application
+    else:
+        application.mkdir()
+        link = application / linked_component
+    try:
+        link.symlink_to(outside, target_is_directory=True)
+    except OSError:
+        pytest.skip('Creating symlinks is unavailable on this host')
+    with pytest.raises(OSError, match='Linked'):
+        setup._write_diagnostic(application / 'runtimes', {})
+    assert list(outside.iterdir()) == []
+
+
+def test_diagnostic_rejects_traversal(tmp_path):
+    with pytest.raises(OSError, match='Unsafe'):
+        setup._write_diagnostic(tmp_path / '..' / 'runtimes', {})
+
+
+def test_diagnostic_exclusive_creation_preserves_existing_file(tmp_path, monkeypatch):
+    directory = tmp_path / 'installation-diagnostics'; directory.mkdir()
+    existing = directory / 'runtime-setup-collision.json'
+    existing.write_text('keep')
+    # Exercise the writer with an existing candidate filename. The real mkstemp
+    # retries collisions; its exclusive flag must never be replaced by rename.
+    def collide(**kwargs):
+        descriptor = __import__('os').open(existing, __import__('os').O_CREAT |
+                                          __import__('os').O_EXCL | __import__('os').O_WRONLY, 0o600)
+        return descriptor, str(existing)
+    monkeypatch.setattr(setup.tempfile, 'mkstemp', collide)
+    with pytest.raises(FileExistsError):
+        setup._write_diagnostic(tmp_path / 'runtimes', {})
+    assert existing.read_text() == 'keep'
+
+
+def test_early_storage_failure_still_saves_diagnostic(tmp_path, monkeypatch):
+    import json
+    root = tmp_path / 'runtimes'
+    root.write_text('not a directory')
+    monkeypatch.setattr(setup, 'host', lambda: {'os': 'windows', 'arch': 'x86_64'})
+    with pytest.raises(ProductError) as caught:
+        setup.install_vendor_runtime(root=root)
+    record = json.loads(Path(caught.value.details['diagnostic_file']).read_text())
+    assert record['stage'] == 'initialization'
+    assert record['category'] == 'runtime_setup_io_failed'
+    assert root.read_text() == 'not a directory'
+
+
+def test_cleanup_progress_does_not_mask_failure_stage(tmp_path, monkeypatch):
+    def failed(**kwargs):
+        callback = kwargs['event_callback']
+        callback({'stage': 'signed runtime package installation'})
+        callback({'stage': 'private vendor agent cleanup'})
+        raise ProductError('runtime_vendor_install_failed', 'Package installation failed.', {'return_code': 7})
+    monkeypatch.setattr(setup, '_install_vendor_runtime', failed)
+    with pytest.raises(ProductError) as caught:
+        setup.install_vendor_runtime(root=tmp_path / 'runtimes')
+    assert caught.value.details['stage'] == 'signed runtime package installation'
+
+
+def test_diagnostic_rejects_windows_reparse_attribute(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    application = tmp_path / 'application'; application.mkdir()
+    original = Path.lstat
+    def metadata(path, *args, **kwargs):
+        result = original(path, *args, **kwargs)
+        if path == application:
+            return SimpleNamespace(st_mode=result.st_mode,
+                                   st_file_attributes=setup.stat.FILE_ATTRIBUTE_REPARSE_POINT)
+        return result
+    monkeypatch.setattr(Path, 'lstat', metadata)
+    with pytest.raises(OSError, match='Linked'):
+        setup._write_diagnostic(application / 'runtimes', {})
+    assert not (application / 'installation-diagnostics').exists()

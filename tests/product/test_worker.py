@@ -240,3 +240,19 @@ def test_oversized_error_payload_has_a_bounded_truthful_fallback():
     assert record["sequence"] == 1
     assert record["payload"]["category"] == "protocol_error"
     assert record["payload"]["details"]["run_directory"] == "archive"
+
+
+def test_runtime_setup_failure_transports_diagnostic_without_generic_worker_error(tmp_path, monkeypatch):
+    from firmavex.product import runtime_setup
+    def failed(**kwargs):
+        raise PermissionError(13, 'private credential')
+    monkeypatch.setattr(runtime_setup, '_install_vendor_runtime', failed)
+    output = io.BytesIO()
+    worker = Worker(output, SimpleNamespace(setup_runtime=lambda **kwargs:
+        runtime_setup.install_vendor_runtime(root=tmp_path / 'runtimes', **kwargs)))
+    worker.handle(message('setup_runtime'))
+    joined(worker)
+    error = events(output)[-1]['payload']
+    assert error['category'] == 'runtime_setup_io_failed'
+    assert error['details']['diagnostic_file'] in error['message']
+    assert 'private credential' not in str(error)

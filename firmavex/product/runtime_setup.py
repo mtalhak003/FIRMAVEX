@@ -17,6 +17,8 @@ import time
 import urllib.parse
 import urllib.request
 import uuid
+import traceback
+import urllib.error
 import zipfile
 
 from .errors import ProductError
@@ -67,6 +69,7 @@ def _download(destination, cancel, callback):
 def _run(command, *, cancel, callback, stage, env=None, timeout=900):
     from .runtime import _spawn, _cleanup
     _cancelled(cancel)
+    _progress(callback, stage, 'Running ' + stage + '.')
     # _spawn already isolates stdin and keeps children in the owned worker job.
     process, stdout, stderr = _spawn(command, env=env)
     original = None
@@ -167,7 +170,7 @@ def _remove_private_tree(work):
         operation(filename)
     shutil.rmtree(work, onerror=read_only)
 
-def install_vendor_runtime(*, cancel_event=None, event_callback=None, root=None):
+def _install_vendor_runtime(*, cancel_event=None, event_callback=None, root=None):
     if host() != {'os': 'windows', 'arch': 'x86_64'}:
         raise ProductError('runtime_provider_unavailable', 'Automatic vendor setup currently supports native x86-64 Windows only. Use verified existing tools or a trusted offline runtime pack on this platform.')
     root = Path(root) if root is not None else runtime_root()
@@ -218,3 +221,92 @@ def install_vendor_runtime(*, cancel_event=None, event_callback=None, root=None)
             if original is None:
                 raise ProductError('runtime_cleanup_failed', 'Temporary vendor installation could not be removed.', {'path': str(work), 'error': str(cleanup), 'activated_generation': result.get('generation') if result else None}) from cleanup
             original.add_note('Vendor temporary cleanup failed: ' + repr(cleanup))
+
+
+def _write_diagnostic(root, record):
+    """Never replace a file; reject linked/reparse-point directory components."""
+    base = Path(root) if root is not None else runtime_root()
+    if '..' in base.parts:
+        raise OSError('Unsafe diagnostic storage path.')
+    directory = base.absolute().parent / 'installation-diagnostics'
+    # lstat also detects dangling links. Windows junctions and other reparse
+    # points must be rejected even on Python versions without is_junction().
+    for component in [*reversed(directory.parents), directory]:
+        try:
+            metadata = component.lstat()
+        except FileNotFoundError:
+            component.mkdir(mode=0o700)
+            metadata = component.lstat()
+        if (stat.S_ISLNK(metadata.st_mode)
+                or getattr(metadata, 'st_file_attributes', 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT
+                or not stat.S_ISDIR(metadata.st_mode)):
+            raise OSError('Linked diagnostic storage is not allowed.')
+    # mkstemp uses exclusive creation, so collisions and pre-existing symlinks
+    # cannot overwrite their targets. No rename/replace follows this creation.
+    descriptor, name = tempfile.mkstemp(prefix='runtime-setup-', suffix='.json', dir=directory)
+    with os.fdopen(descriptor, 'w', encoding='utf-8') as stream:
+        json.dump(record, stream, sort_keys=True)
+        stream.write('\n')
+        stream.flush()
+        os.fsync(stream.fileno())
+    return Path(name)
+
+
+def install_vendor_runtime(*, cancel_event=None, event_callback=None, root=None):
+    """Save shareable diagnostics without exception strings, locals or vendor output."""
+    stage = 'initialization'
+
+    def progress(event):
+        nonlocal stage
+        if event.get('stage') != 'private vendor agent cleanup':
+            stage = event.get('stage', stage)
+        if event_callback is not None:
+            event_callback(event)
+
+    try:
+        return _install_vendor_runtime(cancel_event=cancel_event, event_callback=progress, root=root)
+    except Exception as exc:
+        if isinstance(exc, ProductError):
+            category, message = exc.category, exc.message
+        elif isinstance(exc, urllib.error.URLError):
+            category = 'runtime_download_failed'
+            message = ('MSYS2 could not be downloaded. Check the Windows date and time, internet '
+                       'connection and proxy settings. Your network must allow github.com and '
+                       'release-assets.githubusercontent.com. If Windows reports a certificate '
+                       'problem, contact your network administrator, then retry.')
+        elif isinstance(exc, OSError):
+            category = 'runtime_setup_io_failed'
+            message = ('Runtime setup could not access storage or start a vendor process. '
+                       'Check free space, per-user runtime folder permissions and security software.')
+        else:
+            category = 'runtime_setup_failed'
+            message = 'Runtime setup failed unexpectedly. Share the installation diagnostic for investigation.'
+        record = {
+            'schema_version': 1, 'operation': 'setup_runtime', 'stage': stage,
+            'category': category, 'exception_type': type(exc).__name__,
+            'firmware_executed': False,
+            'traceback': [{'file': Path(frame.filename).name, 'function': frame.name,
+                           'line': frame.lineno} for frame in traceback.extract_tb(exc.__traceback__)[-20:]],
+        }
+        if isinstance(exc, ProductError) and type(exc.details.get('return_code')) is int:
+            record['return_code'] = exc.details['return_code']
+        for name in ('errno', 'winerror'):
+            value = getattr(exc, name, None)
+            if type(value) is int:
+                record[name] = value
+        if isinstance(exc, urllib.error.HTTPError):
+            record['http_status'] = exc.code
+        details = {'stage': stage, 'exception_type': type(exc).__name__}
+        if isinstance(exc, ProductError):
+            generation = exc.details.get('activated_generation')
+            if isinstance(generation, str) and len(generation) == 32 and all(c in '0123456789abcdef' for c in generation):
+                record['activated_generation'] = generation
+                details['activated_generation'] = generation
+        try:
+            path = _write_diagnostic(root, record)
+            details['diagnostic_file'] = str(path)
+            message += ' Installation diagnostic: ' + str(path)
+        except Exception:
+            details['diagnostic_write_failed'] = True
+            message += ' The installation diagnostic could not be saved; check application data folder permissions.'
+        raise ProductError(category, message, details) from exc
