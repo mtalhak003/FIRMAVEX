@@ -332,3 +332,35 @@ def test_human_summary_preserves_raw_evidence_and_qualification_limits(view):
     assert 'synthetic_test' in window.result_view.toPlainText()
     assert window.record == record
     assert not window.reproduce_button.isEnabled()
+
+
+@pytest.mark.parametrize("command", ["backend_execute", "backend_inspect"])
+def test_compiler_diagnostics_in_fresh_and_saved_results(view, tmp_path, command):
+    from copy import deepcopy
+    import json
+    window, controller = view
+    # Saved identity, not the currently selected ARM profile, controls display.
+    record = {"schema_version": 1, "status": "invalid_input", "evidence": {
+        "backend": "verilog-icarus", "measurement_mode": "unverified",
+        "cleanup_verified": True, "compile_stderr": "testbench.v:2: syntax error\n<bad>\x00",
+        "compile_stdout": "", "admission": {"profile": {"id": "verilog-icarus"}},
+    }}
+    original = deepcopy(record)
+    if command == "backend_inspect":
+        window.inspect(tmp_path / "saved-run")
+    else:
+        window._start(command, {}, output=tmp_path / "fresh-run")
+    controller.finish(record)
+    text = window.summary_view.toPlainText()
+    assert "Compiler diagnostics\nstderr:\ntestbench.v:2: syntax error" in text
+    assert "<bad>\ufffd" in text and "\x00" not in text
+    assert "Recorded outcome: invalid_input" in text
+    assert "Measurement: unverified" in text and "Cleanup verified: True" in text
+    assert window.record == original
+    assert json.loads(window.result_view.toPlainText()) == original
+    assert not window.reproduce_button.isEnabled() and window.export_button.isEnabled()
+    assert [call[0] for call in controller.calls] == [command]
+    # A later result must not retain stale compiler diagnostics.
+    window.inspect(tmp_path / "another-run")
+    controller.finish({"status": "passed", "evidence": {"backend": "verilog-icarus"}})
+    assert "Compiler diagnostics" not in window.summary_view.toPlainText()

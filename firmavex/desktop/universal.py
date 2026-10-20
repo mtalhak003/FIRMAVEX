@@ -25,6 +25,7 @@ from firmavex.backends.api import Limits, Request, profiles, request_to_dict
 from firmavex.product.errors import ProductError
 from firmavex.product.presentation import summary, guidance
 from .controller import DesktopController
+from .diagnostics import compiler_diagnostics
 from .projects import _safe_root, application_data_directory
 
 
@@ -415,7 +416,11 @@ class UniversalWindow(QMainWindow):
             status = self.record.get("status", "unknown")
             prefix = "Saved record" if command == "backend_inspect" else "Observed outcome"
             self.status_label.setText(f"{prefix}: {status}. Review completion, evidence and cleanup fields; receipt arrival alone is not success.")
-            self.summary_view.setPlainText(summary(self.record))
+            explanation = summary(self.record)
+            diagnostics = compiler_diagnostics(self.record)
+            if diagnostics:
+                explanation += "\n\n" + diagnostics
+            self.summary_view.setPlainText(explanation)
             self.tabs.setCurrentWidget(self.summary_view)
         elif command == "backend_export":
             self.status_label.setText("Export complete: " + str(record.get("destination", self._output)))

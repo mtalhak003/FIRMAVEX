@@ -35,6 +35,65 @@ def _assert_cleanup(record):
                 os.kill(child["pid"], 0)
 
 
+def test_real_malformed_verilog_diagnostics_inspection_and_export(qtbot, tmp_path, monkeypatch):
+    """Actual compiler failure; display must not modify evidence or exports."""
+    import hashlib
+    from firmavex.desktop.universal import UniversalWindow
+    from firmavex.backends.report import export
+
+    _require("verilog-icarus")
+    source = tmp_path / "malformed.v"
+    source.write_text("module testbench; initial begin broken syntax end endmodule\n")
+    window = UniversalWindow(data_root=tmp_path / "compiler diagnostics data")
+    qtbot.addWidget(window)
+    window.show()
+    try:
+        window.profile_combo.setCurrentIndex(window.profile_combo.findData("verilog-icarus"))
+        window.check_runtime()
+        qtbot.waitUntil(lambda: not window.busy, timeout=120000)
+        assert window._ready, window.result_view.toPlainText()
+        window.source_edit.setText(str(source))
+        window.trust_box.setChecked(True)
+        window.execute()
+        qtbot.waitUntil(lambda: not window.busy, timeout=120000)
+        record = window.record
+        assert record["status"] == "invalid_input", record
+        assert record["evidence"]["measurement_mode"] == "unverified"
+        _assert_cleanup(record)
+        stderr = record["evidence"]["compile_stderr"]
+        assert stderr.strip() and "syntax error" in stderr.lower()
+        assert "Compiler diagnostics" in window.summary_view.toPlainText()
+        assert "syntax error" in window.summary_view.toPlainText().lower()
+        run = window.active_run
+        before = {p.relative_to(run): p.read_bytes() for p in run.rglob("*") if p.is_file()}
+        # Establish an export baseline, then inspect the saved run and export via UI.
+        baseline = tmp_path / "baseline-export"
+        export(run, baseline)
+        window.inspect(run)
+        qtbot.waitUntil(lambda: not window.busy, timeout=15000)
+        assert window.record == record
+        assert "Compiler diagnostics" in window.summary_view.toPlainText()
+        assert not window.trust_box.isChecked()
+        monkeypatch.setattr("firmavex.desktop.universal.QFileDialog.getExistingDirectory", lambda *a: str(tmp_path))
+        window.export()
+        qtbot.waitUntil(lambda: not window.busy, timeout=15000)
+        destinations = list(tmp_path.glob("firmavex-backend-export-*"))
+        assert len(destinations) == 1
+        destination = destinations[0]
+        baseline_files = {p.name: p.read_bytes() for p in baseline.iterdir()}
+        assert {p.name: p.read_bytes() for p in destination.iterdir()} == baseline_files
+        assert json.loads((destination / "result.json").read_text()) == record
+        assert (destination / "compile_stderr.txt").read_bytes() == stderr.encode("utf-8")
+        for name, digest in json.loads((destination / "checksums.json").read_text()).items():
+            assert hashlib.sha256((destination / name).read_bytes()).hexdigest() == digest
+        assert {p.relative_to(run): p.read_bytes() for p in run.rglob("*") if p.is_file()} == before
+    finally:
+        if window.busy:
+            window.cancel()
+            qtbot.waitUntil(lambda: not window.busy, timeout=30000)
+        window.close()
+
+
 @pytest.mark.parametrize("profile,status,mode", [
     ("cortex-m3-mps2", "triggered", "real_firmware"),
     ("riscv32-virt", "triggered", "real_firmware"),
