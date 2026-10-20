@@ -46,6 +46,7 @@ jobs:
           tests/backends/test_qualification.py
           tests/product/test_local_interface.py
           tests/product/test_ci_diagnostics.py
+          tests/product/test_compiler_diagnostics.py
           tests/product/test_release.py
           tests/product/test_release_bundle.py tests/product/test_frozen_inventory.py tests/product/test_build_inputs.py tests/product/test_payload_inventory.py tests/product/test_component_inventory.py tests/product/test_artifact_signature.py tests/product/test_release_attestation.py tests/product/test_versioned_install_ci.py tests/product/test_aggregate_isolation_probe.py tests/product/test_namespace_diagnostics.py
           tests/product/test_config.py
