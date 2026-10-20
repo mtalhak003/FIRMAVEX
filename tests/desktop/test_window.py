@@ -92,6 +92,42 @@ def test_welcome_opens_without_build_or_firmware_dispatch(view):
     assert w.doctor_button.isEnabled() and not w.run_button.isEnabled()
     assert 'no hardware validation' in w.warning.text()
 
+
+@pytest.mark.parametrize('command', ['reproduce', 'inspect'])
+@pytest.mark.parametrize('outcome', ['reproduced_in_emulator', 'reproduction_inconsistent',
+                                    'infrastructure_failure', 'cancelled'])
+def test_arm_replay_summary_fresh_and_saved(view, tmp_path, command, outcome):
+    from copy import deepcopy
+    import json
+    w, c = view
+    record = {'kind': 'firmavex_product_result', 'state': 'completed', 'outcome': outcome,
+              'measurement_mode': 'synthetic_test', 'execution_evidence': 'incomplete',
+              'triggering_input': [2, 1], 'parent': {'operation': 'reproduction'},
+              'accounting': {'infrastructure_failures': 1},
+              'reproduction': {'input': [2, 1], 'requested_attempts': 3,
+                               'completed_observations': 1, 'matching_observations': 1,
+                               'status': 'indeterminate'}}
+    original = deepcopy(record)
+    if command == 'inspect':
+        w.open_run(tmp_path / 'saved')
+        envelope = {'result': record}
+    else:
+        w._start('reproduce', {}, output=tmp_path / 'fresh')
+        envelope = record
+    c.finish(envelope)
+    text = w.report_view.toPlainText()
+    assert 'ARM reproduction summary' in text and 'Saved replay input: [2, 1]' in text
+    assert 'Matching failure observations: 1' in text
+    assert 'Recorded reproduction status: indeterminate' in text
+    assert 'Recorded outcome: ' + outcome in text
+    assert 'Evidence completeness: incomplete' in text
+    assert w.result_record == original
+    assert json.loads(w.result_text.toPlainText()) == envelope
+    assert not w.reproduce_button.isEnabled()  # Synthetic evidence never enables replay.
+    assert w.export_button.isEnabled() and len(c.calls) == 1
+    w._show_result({'state': 'completed', 'outcome': 'domain_exhausted'})
+    assert 'ARM reproduction summary' not in w.report_view.toPlainText()
+
 @pytest.mark.parametrize('minimum,maximum', [('0','4294967295'), ('0x10','0xFF')])
 def test_full_uint32_and_hex_input_configuration(view, tmp_path, minimum, maximum):
     w,c = view

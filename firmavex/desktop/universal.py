@@ -25,7 +25,7 @@ from firmavex.backends.api import Limits, Request, profiles, request_to_dict
 from firmavex.product.errors import ProductError
 from firmavex.product.presentation import summary, guidance
 from .controller import DesktopController
-from .diagnostics import compiler_diagnostics
+from .diagnostics import arm_reproduction_summary, compiler_diagnostics
 from .projects import _safe_root, application_data_directory
 
 
@@ -420,6 +420,9 @@ class UniversalWindow(QMainWindow):
             diagnostics = compiler_diagnostics(self.record)
             if diagnostics:
                 explanation += "\n\n" + diagnostics
+            reproduction = arm_reproduction_summary(self.record)
+            if reproduction:
+                explanation += "\n\n" + reproduction
             self.summary_view.setPlainText(explanation)
             self.tabs.setCurrentWidget(self.summary_view)
         elif command == "backend_export":
@@ -435,7 +438,13 @@ class UniversalWindow(QMainWindow):
     def _error(self, record):
         self._job = None
         self.result_view.setPlainText(_preview(record))
-        self.summary_view.setPlainText(str(record.get("message", "Worker failure")) + "\n" + guidance(record.get("category")))
+        explanation = str(record.get("message", "Worker failure")) + "\n" + guidance(record.get("category"))
+        details = record.get("details")
+        partial = details.get("partial_result") if type(details) is dict else None
+        reproduction = arm_reproduction_summary(partial)
+        if reproduction:
+            explanation += "\n\n" + reproduction
+        self.summary_view.setPlainText(explanation)
         self.status_label.setText(str(record.get("category", "worker_error")) + ": " + str(record.get("message", "Inspect saved results.")))
         self._refresh()
 

@@ -25,6 +25,7 @@ from firmavex.product.config import ProductConfig, load_config
 from firmavex.product.errors import ProductError
 from firmavex.product.services import _report
 from .controller import DesktopController
+from .diagnostics import arm_reproduction_summary
 from .projects import DesktopProject, application_data_directory, _safe_root
 
 
@@ -771,6 +772,9 @@ class MainWindow(QMainWindow):
             )
             self.result_text.setPlainText(_json(inspection or result))
             self.report_view.setPlainText(_report(result))
+            reproduction = arm_reproduction_summary(result)
+            if reproduction:
+                self.report_view.appendPlainText("\n" + reproduction)
             verification = (inspection or {}).get("accounting_verification", {})
             if verification.get("status") == "incomplete_receipts":
                 self.evidence_label.setText(self.evidence_label.text() + " • execution verification failed: missing receipts")

@@ -76,12 +76,35 @@ def test_real_desktop_builtin_search_reproduction_export_and_cancel(qtbot,tmp_pa
         assert replay['outcome']=='reproduced_in_emulator'
         assert replay['reproduction']['matching_observations']==3
         assert replay['accounting']['attempted_executions']==3
+        # Counts in the display must come from the persisted reproduction, not
+        # the UI repetition control or an inferred success verdict.
+        saved_replay=json.loads((replay_path/'result.json').read_text())
+        assert saved_replay == replay
+        def assert_replay_summary():
+            text=w.report_view.toPlainText()
+            assert 'ARM reproduction summary' in text
+            assert 'Saved replay input: '+json.dumps(saved_replay['reproduction']['input']) in text
+            for label,key in [('Requested repetitions','requested_attempts'),
+                              ('Completed observations','completed_observations'),
+                              ('Matching failure observations','matching_observations')]:
+                assert label+': '+str(saved_replay['reproduction'][key]) in text
+            assert 'Infrastructure failures: '+str(saved_replay['accounting']['infrastructure_failures']) in text
+            assert 'Evidence completeness: '+saved_replay['execution_evidence'] in text
+        assert_replay_summary()
+        retained={p.relative_to(replay_path):p.read_bytes() for p in replay_path.rglob('*') if p.is_file()}
+        w.open_run(replay_path)
+        qtbot.waitUntil(lambda:not w.busy,timeout=preflight_timeout)
+        assert w.result_record == saved_replay
+        assert_replay_summary()
         # Export is a read-only archive operation, not another execution.
         monkeypatch.setattr('firmavex.desktop.window.QFileDialog.getExistingDirectory',lambda *a:str(tmp_path))
         w.export_result()
         qtbot.waitUntil(lambda:not w.busy,timeout=10000)
         exports=list(tmp_path.glob('firmavex-report-*'))
         assert len(exports)==1 and (exports[0]/'SHA256SUMS').is_file()
+        assert (exports[0]/'report.md').read_bytes()==retained[Path('report.md')]
+        assert 'ARM reproduction summary' not in (exports[0]/'report.md').read_text()
+        assert {p.relative_to(replay_path):p.read_bytes() for p in replay_path.rglob('*') if p.is_file()}==retained
         for run in (source,replay_path):
             inspection=inspect_run(run)
             assert inspection['accounting_verification']['status']=='receipt_accounting_consistent'

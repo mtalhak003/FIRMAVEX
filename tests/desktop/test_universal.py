@@ -76,6 +76,63 @@ def test_opening_workspace_or_history_never_dispatches(view):
     assert "not a security sandbox" in window.notice.text()
 
 
+@pytest.mark.parametrize('command', ['backend_reproduce', 'backend_inspect'])
+@pytest.mark.parametrize('status', ['triggered', 'not_discovered', 'infrastructure_failure', 'cancelled'])
+def test_nested_arm_replay_summary_fresh_and_saved(view, tmp_path, command, status):
+    from copy import deepcopy
+    import json
+    window, controller = view
+    # Even when the currently selected target is HDL, use the saved ARM identity.
+    select(window, 'verilog-icarus')
+    record = {'status': status, 'evidence': {
+        'admission': {'profile': {'id': 'cortex-m3-mps2'}, 'reproduction_of': '/saved'},
+        'measurement_mode': 'synthetic_test', 'cleanup_verified': False,
+        'legacy_result': {'kind': 'firmavex_product_result', 'outcome': 'infrastructure_failure',
+            'state': 'failed', 'measurement_mode': 'synthetic_test', 'execution_evidence': 'incomplete',
+            'triggering_input': [2, 1], 'accounting': {'infrastructure_failures': 1},
+            'reproduction': {'input': [2, 1], 'requested_attempts': 3, 'completed_observations': 1,
+                             'matching_observations': 1, 'status': 'indeterminate'}}}}
+    original = deepcopy(record)
+    if command == 'backend_inspect':
+        window.inspect(tmp_path / 'saved')
+        envelope = record
+    else:
+        window._start(command, {}, output=tmp_path / 'fresh')
+        envelope = {'status': status, 'result': record, 'outcome_matches': False}
+    controller.finish(envelope)
+    text = window.summary_view.toPlainText()
+    assert 'ARM reproduction summary' in text and 'Saved replay input: [2, 1]' in text
+    assert 'Recorded backend status: ' + status in text
+    assert 'Recorded reproduction status: indeterminate' in text
+    assert 'Infrastructure failures: 1' in text and 'Cleanup verified: False' in text
+    assert window.record == original
+    assert json.loads(window.result_view.toPlainText()) == envelope
+    assert not window.reproduce_button.isEnabled()  # Trust is not granted by rendering.
+    assert window.export_button.isEnabled() and len(controller.calls) == 1
+    window.inspect(tmp_path / 'no-replay')
+    controller.finish({'status': 'passed', 'evidence': {}})
+    assert 'ARM reproduction summary' not in window.summary_view.toPlainText()
+
+
+def test_cancelled_arm_partial_error_shows_unknown_counts_without_enabling_actions(view, tmp_path):
+    from copy import deepcopy
+    window, controller = view
+    window._start('backend_reproduce', {}, output=tmp_path / 'cancelled')
+    error = {'category': 'cancelled', 'message': 'Interrupted; inspect saved evidence.',
+             'details': {'partial_result': {'status': 'cancelled', 'evidence': {
+                 'admission': {'profile': {'id': 'cortex-m3-mps2'}, 'reproduction_of': '/saved'},
+                 'accounting': 'see authoritative arm-run SQLite'}}}}
+    original = deepcopy(error)
+    controller.finish(error=error)
+    text = window.summary_view.toPlainText()
+    assert 'ARM reproduction summary' in text
+    assert 'Recorded backend status: cancelled' in text
+    assert 'Requested repetitions: unknown' in text
+    assert 'Matching failure observations: unknown' in text
+    assert window.record is None and error == original
+    assert not window.reproduce_button.isEnabled() and not window.export_button.isEnabled()
+
+
 @pytest.mark.parametrize("profile,values_visible,timeout_enabled,capability", [
     ("cortex-m3-mps2", False, False, "search"),
     ("riscv32-virt", True, True, "symbol-observation"),

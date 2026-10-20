@@ -149,11 +149,37 @@ def test_real_unified_example_execution_reproduction_history_export(qtbot, tmp_p
         _assert_cleanup(window.record)
         second = window.active_run
         assert first != second and inspect_run(first)["status"] == status
+        if profile == "cortex-m3-mps2":
+            saved_replay = json.loads((second / "result.json").read_text())
+            assert window.record == saved_replay
+            nested = saved_replay["evidence"]["legacy_result"]
+            def assert_arm_summary():
+                text = window.summary_view.toPlainText()
+                assert "ARM reproduction summary" in text
+                assert "Saved replay input: " + json.dumps(nested["reproduction"]["input"]) in text
+                for label, key in [("Requested repetitions", "requested_attempts"),
+                                   ("Completed observations", "completed_observations"),
+                                   ("Matching failure observations", "matching_observations")]:
+                    assert label + ": " + str(nested["reproduction"][key]) in text
+                assert "Recorded reproduction status: " + nested["reproduction"]["status"] in text
+            assert_arm_summary()
+            retained = {p.relative_to(second): p.read_bytes() for p in second.rglob("*") if p.is_file()}
+            from firmavex.backends.report import export as baseline_export
+            baseline = tmp_path / "arm-baseline-export"
+            baseline_export(second, baseline)
+            window.inspect(second)
+            qtbot.waitUntil(lambda: not window.busy, timeout=15000)
+            assert window.record == saved_replay
+            assert_arm_summary()
         monkeypatch.setattr("firmavex.desktop.universal.QFileDialog.getExistingDirectory", lambda *a: str(tmp_path))
         window.export()
         qtbot.waitUntil(lambda: not window.busy, timeout=15000)
         exports = list(tmp_path.glob("firmavex-backend-export-*"))
         assert len(exports) == 1 and (exports[0] / "REPORT.md").is_file()
+        if profile == "cortex-m3-mps2":
+            assert {p.name: p.read_bytes() for p in exports[0].iterdir()} == {
+                p.name: p.read_bytes() for p in baseline.iterdir()}
+            assert {p.relative_to(second): p.read_bytes() for p in second.rglob("*") if p.is_file()} == retained
         assert (exports[0] / "checksums.json").is_file()
         if profile == "verilog-icarus":
             assert list(exports[0].rglob("*.vcd"))
