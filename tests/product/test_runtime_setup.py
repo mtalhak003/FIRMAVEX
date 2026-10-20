@@ -419,4 +419,4 @@ def test_windows_workflow_collects_only_diagnostic_json_with_spaces(tmp_path):
     diagnostic = setup._write_diagnostic(directory.parent / 'runtimes', {'return_code': 23})
     (directory / 'vendor-raw.log').write_text('secret')
     (directory.parent / 'bootstrap.exe').write_bytes(b'private')
-    assert glob.glob(pattern.replace('${{ runner.temp }}', str(tmp_path))) == [str(diagnostic)]
+    assert [Path(p) for p in glob.glob(pattern.replace('${{ runner.temp }}', str(tmp_path)))] == [diagnostic]
