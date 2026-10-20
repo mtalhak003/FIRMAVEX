@@ -76,6 +76,81 @@ def test_opening_workspace_or_history_never_dispatches(view):
     assert "not a security sandbox" in window.notice.text()
 
 
+@pytest.mark.parametrize('profile', ['cortex-m3-mps2', 'riscv32-virt', 'verilog-icarus'])
+def test_inline_workflow_guides_input_readiness_and_explicit_consent(view, profile):
+    window, controller = view
+    select(window, profile)
+    assert 'Choose a compatible input' in window.workflow_hint.text()
+    window.source_edit.setText('trusted input')
+    assert 'check runtime readiness' in window.workflow_hint.text()
+    ready(window, controller)
+    assert 'acknowledge trust' in window.workflow_hint.text()
+    window.trust_box.setChecked(True)
+    assert window.run_button.isEnabled() and 'Ready to submit' in window.workflow_hint.text()
+    if profile == 'riscv32-virt':
+        window.values_edit.setText('4294967296, 0')
+        assert not window.run_button.isEnabled()
+        assert 'exactly two uint32' in window.workflow_hint.text()
+        window.values_edit.setText('0xffffffff, 0')
+        assert window.run_button.isEnabled()
+    assert [c[0] for c in controller.calls] == ['backend_check']
+
+
+def test_history_filter_selected_open_and_empty_states_never_execute(view):
+    window, controller = view
+    assert 'No saved jobs' in window.history_hint.text()
+    assert not window.open_selected_button.isEnabled()
+    root = window.data_root / 'runs'
+    for name in ('2026-alpha', '2026-beta'):
+        (root / name).mkdir(parents=True)
+    window.refresh_history()
+    alpha = next(window.history.item(i) for i in range(2) if 'alpha' in window.history.item(i).text())
+    window.history.setCurrentItem(alpha)
+    assert window.open_selected_button.isEnabled()
+    window.refresh_history()
+    assert 'alpha' in window.history.currentItem().text()
+    window.history_filter.setText('BETA')
+    assert '1 of 2' in window.history_hint.text()
+    assert not window.open_selected_button.isEnabled()
+    window.open_selected_history()
+    assert controller.calls == []
+    window.history_filter.setText('missing')
+    assert 'No matching run names' in window.history_hint.text()
+    window.history_filter.clear()
+    window.open_selected_button.click()
+    assert controller.calls[-1] == ('backend_inspect', {'run_dir': str(root / '2026-alpha')})
+    controller.finish({'status': 'passed', 'evidence': {}})
+    assert not window.trust_box.isChecked() and not window.reproduce_button.isEnabled()
+
+
+@pytest.mark.parametrize('profile', ['cortex-m3-mps2', 'riscv32-virt', 'verilog-icarus'])
+def test_saved_context_and_evidence_survive_administrative_operations(view, tmp_path, profile):
+    window, controller = view
+    window.inspect(tmp_path / 'saved-run')
+    record = {'status': 'passed', 'evidence': {'admission': {'profile': {'id': profile}}}}
+    controller.finish(record)
+    evidence = window.result_view.toPlainText()
+    explanation = window.summary_view.toPlainText()
+    context = window.result_context_label.text()
+    assert profile in context and 'saved-run' in context
+    select(window, 'verilog-icarus' if profile != 'verilog-icarus' else 'riscv32-virt')
+    for command in ('backend_check', 'backend_prepare', 'backend_export'):
+        window._start(command, {})
+        controller.finish({'status': 'tools_available'})
+        assert window.result_view.toPlainText() == evidence
+        assert window.summary_view.toPlainText() == explanation
+        assert window.result_context_label.text() == context
+        assert window.record == record
+        assert window.tabs.currentWidget() is window.operation_view
+        window._start(command, {})
+        controller.finish(error={'category': 'io_error', 'message': 'Operation could not complete'})
+        assert window.result_view.toPlainText() == evidence
+        assert window.summary_view.toPlainText() == explanation
+        assert window.result_context_label.text() == context
+        assert 'io_error' in window.operation_view.toPlainText()
+    assert not window.trust_box.isChecked()
+
+
 @pytest.mark.parametrize('command', ['backend_reproduce', 'backend_inspect'])
 @pytest.mark.parametrize('status', ['triggered', 'not_discovered', 'infrastructure_failure', 'cancelled'])
 def test_nested_arm_replay_summary_fresh_and_saved(view, tmp_path, command, status):

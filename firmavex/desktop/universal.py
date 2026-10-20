@@ -21,12 +21,13 @@ from PySide6.QtWidgets import (
     QSplitter, QTabWidget, QVBoxLayout, QWidget,
 )
 
-from firmavex.backends.api import Limits, Request, profiles, request_to_dict
+from firmavex.backends.api import profiles, request_to_dict
 from firmavex.product.errors import ProductError
 from firmavex.product.presentation import summary, guidance
 from .controller import DesktopController
 from .diagnostics import arm_reproduction_summary, compiler_diagnostics
 from .projects import _safe_root, application_data_directory
+from .workflow import display_text, execution_request, result_context
 
 
 _LABELS = {
@@ -123,6 +124,7 @@ class UniversalWindow(QMainWindow):
         form.addRow(self.source_label, row)
         self.values_edit = QLineEdit("2, 1")
         self.values_edit.setAccessibleName("RV32 input vector")
+        self.values_edit.textChanged.connect(self._refresh)
         self.values_label = QLabel("Two uint32 inputs (decimal or hex)")
         form.addRow(self.values_label, self.values_edit)
         self.timeout_spin = QDoubleSpinBox()
@@ -155,6 +157,11 @@ class UniversalWindow(QMainWindow):
         execution_actions.addWidget(self.run_button)
         execution_actions.addWidget(self.cancel_button)
         layout.addLayout(execution_actions)
+        self.workflow_hint = QLabel()
+        self.workflow_hint.setTextFormat(Qt.TextFormat.PlainText)
+        self.workflow_hint.setWordWrap(True)
+        self.workflow_hint.setAccessibleName('Next workflow step')
+        layout.addWidget(self.workflow_hint)
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 1)
         self.progress_bar.setValue(0)
@@ -164,18 +171,35 @@ class UniversalWindow(QMainWindow):
         history_panel = QWidget()
         history_layout = QVBoxLayout(history_panel)
         history_layout.addWidget(QLabel("Saved job history — reopen without execution"))
+        self.history_filter = QLineEdit()
+        self.history_filter.setPlaceholderText('Filter saved run names…')
+        self.history_filter.setAccessibleName('Filter saved run history')
+        self.history_filter.setMaxLength(128)
+        self.history_filter.textChanged.connect(self._filter_history)
+        history_layout.addWidget(self.history_filter)
         self.history = QListWidget()
         self.history.setAccessibleName("Persistent backend job history")
         self.history.itemDoubleClicked.connect(self.open_history_item)
+        self.history.itemSelectionChanged.connect(self._refresh)
         history_layout.addWidget(self.history)
+        self.history_hint = QLabel()
+        self.history_hint.setWordWrap(True)
+        history_layout.addWidget(self.history_hint)
         history_actions = QHBoxLayout()
         self.history_refresh_button = self._button("Refresh", self.refresh_history)
         self.open_button = self._button("Open saved run…", self.pick_run)
+        self.open_selected_button = self._button('Open selected', self.open_selected_history)
+        history_actions.addWidget(self.open_selected_button)
         history_actions.addWidget(self.history_refresh_button)
         history_actions.addWidget(self.open_button)
         history_layout.addLayout(history_actions)
         split.addWidget(history_panel)
         self.tabs = QTabWidget()
+        self.result_context_label = QLabel('No saved result selected. Opening history never executes a target.')
+        self.result_context_label.setTextFormat(Qt.TextFormat.PlainText)
+        self.result_context_label.setWordWrap(True)
+        self.result_context_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        layout.addWidget(self.result_context_label)
         self.result_view = QPlainTextEdit()
         self.result_view.setReadOnly(True)
         self.result_view.setAccessibleName("Backend result and execution evidence")
@@ -189,6 +213,12 @@ class UniversalWindow(QMainWindow):
         self.tabs.addTab(self.summary_view, "Summary")
         self.tabs.addTab(self.result_view, "Result / evidence")
         self.tabs.addTab(self.log_view, "Progress / logs")
+        self.operation_view = QPlainTextEdit()
+        self.operation_view.setReadOnly(True)
+        self.operation_view.setAccessibleName('Runtime, preparation and export details')
+        self.operation_view.setPlaceholderText('Runtime checks, example preparation and export details appear here.')
+        self.tabs.addTab(self.operation_view, 'Operation details')
+        self.summary_view.setPlaceholderText('Prepare a trusted example or open a saved run to review its outcome here.')
         split.addWidget(self.tabs)
         split.setStretchFactor(1, 2)
         layout.addWidget(split, 1)
@@ -246,6 +276,7 @@ class UniversalWindow(QMainWindow):
         if command in {'backend_execute', 'backend_reproduce', 'backend_inspect'}:
             self.summary_view.clear()
             self.result_view.clear()
+            self.result_context_label.setText('Waiting for a validated result; no saved outcome is displayed.')
         if command in {"backend_execute", "backend_reproduce"}:
             self.active_run, self.record = output, None
             self.result_view.clear()
@@ -280,17 +311,7 @@ class UniversalWindow(QMainWindow):
             if not self._ready:
                 raise ValueError("Check runtime readiness first; probes do not establish native qualification.")
             trust = self._trust()
-            text = self.source_edit.text().strip()
-            if not text or any(ord(character) < 32 for character in text):
-                raise ValueError("Choose a compatible input file with a valid path.")
-            values = ()
-            if self.profile == "riscv32-virt":
-                tokens = self.values_edit.text().replace(",", " ").split()
-                values = tuple(int(token, 16 if token.lower().startswith("0x") else 10) for token in tokens)
-            limits = Limits() if self.profile == "cortex-m3-mps2" else Limits(
-                self.timeout_spin.value(), artifact_bytes=self.artifact_spin.value() * 1024 * 1024
-            )
-            request = Request(self.profile, Path(text).expanduser(), values, limits)
+            request = self._request()
             output = self._fresh("runs")
             self._start("backend_execute", {"request": request_to_dict(request), "output_dir": str(output), "trust": trust}, output=output)
         except (ValueError, OSError, ProductError) as exc:
@@ -300,6 +321,10 @@ class UniversalWindow(QMainWindow):
         if not self.trust_box.isChecked():
             raise ValueError("Unknown or untrusted workloads are rejected. Explicitly acknowledge a trusted project.")
         return "trusted_example" if self._example_source == self.source_edit.text() else "trusted_project"
+
+    def _request(self):
+        return execution_request(self.profile, self.source_edit.text(), self.values_edit.text(),
+                                 self.timeout_spin.value(), self.artifact_spin.value())
 
     @Slot()
     def cancel(self):
@@ -329,12 +354,36 @@ class UniversalWindow(QMainWindow):
 
     @Slot(QListWidgetItem)
     def open_history_item(self, item):
-        self.inspect(Path(item.data(Qt.ItemDataRole.UserRole)))
+        if item is not None and not item.isHidden():
+            self.inspect(Path(item.data(Qt.ItemDataRole.UserRole)))
+
+    @Slot()
+    def open_selected_history(self):
+        self.open_history_item(self.history.currentItem())
+
+    @Slot()
+    def _filter_history(self):
+        query = self.history_filter.text().casefold()
+        visible = 0
+        for index in range(self.history.count()):
+            item = self.history.item(index)
+            item.setHidden(query not in item.text().casefold())
+            visible += not item.isHidden()
+        if not self.history.count():
+            message = 'No saved jobs here yet. Run a trusted project or use Open saved run to inspect another folder.'
+        elif not visible:
+            message = 'No matching run names. Clear the filter to see saved jobs.'
+        else:
+            message = f'{visible} of {self.history.count()} listed runs. Select one and Open; inspection does not execute it. Up to 1000 entries are listed.'
+        self.history_hint.setText(message)
+        self._refresh()
 
     @Slot()
     def refresh_history(self):
         if self.busy:
             return
+        selected = self.history.currentItem()
+        selected_path = selected.data(Qt.ItemDataRole.UserRole) if selected else None
         self.history.clear()
         root = self.data_root / "runs"
         try:
@@ -343,11 +392,14 @@ class UniversalWindow(QMainWindow):
                 # bounded record validation when a user opens an entry.
                 for directory in sorted(root.iterdir(), reverse=True)[:1000]:
                     if directory.is_dir() and not directory.is_symlink():
-                        item = QListWidgetItem(directory.name)
+                        item = QListWidgetItem(display_text(directory.name, 255))
                         item.setData(Qt.ItemDataRole.UserRole, str(directory))
                         self.history.addItem(item)
+                        if str(directory) == selected_path:
+                            self.history.setCurrentItem(item)
         except OSError as exc:
             self._local_error(exc)
+        self._filter_history()
 
     @Slot()
     def reproduce(self):
@@ -393,7 +445,11 @@ class UniversalWindow(QMainWindow):
     def _result(self, record):
         command = self._job
         self._job = None
-        self.result_view.setPlainText(_preview(record))
+        administrative = command in {'backend_check', 'backend_prepare', 'backend_export'}
+        target = self.operation_view if administrative else self.result_view
+        target.setPlainText(_preview(record))
+        if administrative:
+            self.tabs.setCurrentWidget(self.operation_view)
         if command == "backend_check":
             self._ready = record.get("status") in {"tools_available", "ready"} or record.get("success") is True
             self.status_label.setText("Runtime tools available; actual execution is checked by the backend." if self._ready else "Runtime unavailable or unsupported. Review readiness details; nothing executed.")
@@ -413,6 +469,7 @@ class UniversalWindow(QMainWindow):
                 self.status_label.setText("Preparation returned no usable source path; inspect details before proceeding.")
         elif command in {"backend_execute", "backend_inspect", "backend_reproduce"}:
             self.record = record.get("result", record) if command == "backend_reproduce" else record
+            self.result_context_label.setText(result_context(self.record, self.active_run))
             status = self.record.get("status", "unknown")
             prefix = "Saved record" if command == "backend_inspect" else "Observed outcome"
             self.status_label.setText(f"{prefix}: {status}. Review completion, evidence and cleanup fields; receipt arrival alone is not success.")
@@ -431,21 +488,30 @@ class UniversalWindow(QMainWindow):
 
     def _local_error(self, exc):
         category = exc.category if isinstance(exc, ProductError) else "invalid_input"
-        self.status_label.setText(category + ": " + str(exc) + " " + guidance(category))
+        self.status_label.setText(display_text(category + ": " + str(exc) + " " + guidance(category)))
         self._refresh()
 
     @Slot(dict)
     def _error(self, record):
+        command = self._job
         self._job = None
+        if command in {'backend_check', 'backend_prepare', 'backend_export'}:
+            self.operation_view.setPlainText(_preview(record))
+            self.tabs.setCurrentWidget(self.operation_view)
+            self.status_label.setText(display_text(str(record.get('category', 'worker_error')) + ': ' + str(record.get('message', 'Review operation details.'))))
+            self._refresh()
+            return
+        self.result_context_label.setText('No validated outcome from this operation. Review the error and inspect the saved run if available.')
         self.result_view.setPlainText(_preview(record))
-        explanation = str(record.get("message", "Worker failure")) + "\n" + guidance(record.get("category"))
+        explanation = display_text(record.get("message", "Worker failure"), 2000) + "\n" + guidance(record.get("category"))
         details = record.get("details")
         partial = details.get("partial_result") if type(details) is dict else None
         reproduction = arm_reproduction_summary(partial)
         if reproduction:
             explanation += "\n\n" + reproduction
         self.summary_view.setPlainText(explanation)
-        self.status_label.setText(str(record.get("category", "worker_error")) + ": " + str(record.get("message", "Inspect saved results.")))
+        self.tabs.setCurrentWidget(self.summary_view)
+        self.status_label.setText(display_text(str(record.get("category", "worker_error")) + ": " + str(record.get("message", "Inspect saved results."))))
         self._refresh()
 
     @Slot()
@@ -458,11 +524,30 @@ class UniversalWindow(QMainWindow):
     @Slot()
     def _refresh(self):
         idle = not self.busy and not self._closing
-        for control in (self.profile_combo, self.source_edit, self.browse_button, self.values_edit, self.trust_box, self.check_button, self.setup_button, self.example_button, self.arm_button, self.history, self.history_refresh_button, self.open_button):
+        for control in (self.profile_combo, self.source_edit, self.browse_button, self.values_edit, self.trust_box, self.check_button, self.setup_button, self.example_button, self.arm_button, self.history, self.history_filter, self.history_refresh_button, self.open_button):
             control.setEnabled(idle)
         self.timeout_spin.setEnabled(idle and self.profile != "cortex-m3-mps2")
         self.artifact_spin.setEnabled(idle and self.profile != "cortex-m3-mps2")
-        self.run_button.setEnabled(idle and self._ready and bool(self.source_edit.text().strip()) and self.trust_box.isChecked())
+        try:
+            self._request()
+            input_error = None
+        except ValueError as exc:
+            input_error = str(exc)
+        self.run_button.setEnabled(idle and self._ready and input_error is None and self.trust_box.isChecked())
+        if not idle:
+            hint = 'Wait for the active job and confirmed cleanup before starting another operation.'
+        elif input_error:
+            hint = input_error + ' Preparing an independent example does not execute it.'
+        elif not self._ready:
+            hint = 'Next: check runtime readiness for the selected backend. No target executes during this check.'
+        elif not self.trust_box.isChecked():
+            hint = 'Next: review the input and runtime tools, then acknowledge trust before Run.'
+        else:
+            hint = 'Ready to submit with Run. The worker will validate file compatibility and runtime support before dispatch.'
+        self.workflow_hint.setText(hint)
+        self.run_button.setToolTip(hint)
+        selected = self.history.currentItem()
+        self.open_selected_button.setEnabled(idle and selected is not None and not selected.isHidden())
         self.cancel_button.setEnabled(self.busy and not self._closing)
         self.reproduce_button.setEnabled(idle and self.active_run is not None and self.record is not None and self.record.get("status") in {"passed", "triggered"} and self.trust_box.isChecked())
         self.export_button.setEnabled(idle and self.active_run is not None and self.record is not None)
