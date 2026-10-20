@@ -102,7 +102,8 @@ def test_real_desktop_builtin_search_reproduction_export_and_cancel(qtbot,tmp_pa
         qtbot.waitUntil(lambda:not w.busy,timeout=10000)
         exports=list(tmp_path.glob('firmavex-report-*'))
         assert len(exports)==1 and (exports[0]/'SHA256SUMS').is_file()
-        assert (exports[0]/'report.md').read_bytes()==retained[Path('report.md')]
+        # Text export uses platform newlines; retained evidence keeps LF bytes.
+        assert (exports[0]/'report.md').read_text(encoding='utf-8')==retained[Path('report.md')].decode('utf-8').replace('\r\n','\n')
         assert 'ARM reproduction summary' not in (exports[0]/'report.md').read_text()
         assert {p.relative_to(replay_path):p.read_bytes() for p in replay_path.rglob('*') if p.is_file()}==retained
         for run in (source,replay_path):
