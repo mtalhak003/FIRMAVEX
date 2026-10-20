@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import stat
@@ -34,6 +35,68 @@ BOOTSTRAP = {
 }
 PACKAGES = ('mingw-w64-ucrt-x86_64-qemu', 'mingw-w64-ucrt-x86_64-gdb-multiarch',
             'mingw-w64-ucrt-x86_64-iverilog')
+
+# Export only recognized vendor error phrases, never arbitrary vendor text.
+# Regex-based secret replacement alone cannot safely recognize unknown tokens.
+_VENDOR_ERRORS = (
+    'failed retrieving file', 'failed to retrieve some files',
+    'failed to synchronize all databases', 'failed to commit transaction',
+    'failed to prepare transaction', 'target not found', 'could not resolve host',
+    'connection timed out', 'operation too slow', 'connection refused',
+    'SSL certificate problem', 'certificate verification failed',
+    'invalid or corrupted package', 'invalid or corrupted database',
+    'PGP signature', 'unknown trust', 'unknown public key', 'required key missing',
+    'signature is invalid', 'could not be verified', 'unable to lock database',
+    'could not lock database', 'permission denied', 'no space left on device',
+    'not enough free disk space', 'conflicting files', 'exists in filesystem',
+    'could not satisfy dependencies', 'unable to satisfy dependency',
+    'breaks dependency', 'unresolvable package conflicts detected',
+    'errors occurred, no packages were upgraded',
+)
+
+
+def _vendor_diagnostic(value):
+    """Bounded, lossy projection onto public phrases and requested package names.
+
+    URLs, paths, identities, key IDs, versions and unrecognized text are omitted,
+    including secrets with no recognizable credential prefix. Never export a
+    raw line, even when it contains a recognized phrase.
+    """
+    if not isinstance(value, str):
+        return []
+    rows = []
+    for line in value[-32768:].splitlines():
+        phrases = [phrase for phrase in _VENDOR_ERRORS if phrase.lower() in line.lower()]
+        if not phrases:
+            continue
+        packages = [package for package in PACKAGES
+                    if re.search(r'(?<![\w-])' + re.escape(package) + r'(?![\w-])', line)]
+        status = re.search(r'(?:HTTP(?:/[12](?:\.\d)?)?\s+|returned error:\s*)([45]\d\d)\b', line, re.I)
+        row = '; '.join(phrases + packages + (['HTTP ' + status[1]] if status else []))
+        if row not in rows:
+            rows.append(row)
+        if len(rows) == 16:
+            break
+    return rows
+
+
+def _pacman_log_tail(msys):
+    """Read only a bounded tail of the private regular log before cleanup."""
+    try:
+        path = msys
+        for component in ('var', 'log', 'pacman.log'):
+            path = path / component
+            metadata = path.lstat()
+            if (stat.S_ISLNK(metadata.st_mode)
+                    or getattr(metadata, 'st_file_attributes', 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT):
+                return ''
+        if not stat.S_ISREG(metadata.st_mode):
+            return ''
+        with path.open('rb') as stream:
+            stream.seek(max(0, metadata.st_size - 32768))
+            return stream.read(32768).decode('utf-8', errors='replace')
+    except OSError:
+        return ''
 
 
 def _cancelled(cancel):
@@ -198,7 +261,12 @@ def _install_vendor_runtime(*, cancel_event=None, event_callback=None, root=None
         # completes the supported two-stage upgrade before runtime installation.
         _run([str(bash), '--login', '-c', 'pacman -Syu --noconfirm'], cancel=cancel_event, callback=event_callback, env=environment, stage='vendor core update')
         _run([str(bash), '--login', '-c', 'pacman -Syu --noconfirm'], cancel=cancel_event, callback=event_callback, env=environment, stage='vendor update completion')
-        _run([str(bash), '--login', '-c', 'pacman -S --needed --noconfirm ' + ' '.join(PACKAGES)], cancel=cancel_event, callback=event_callback, env=environment, stage='signed runtime package installation')
+        try:
+            _run([str(bash), '--login', '-c', 'pacman -S --needed --noconfirm ' + ' '.join(PACKAGES)], cancel=cancel_event, callback=event_callback, env=environment, stage='signed runtime package installation')
+        except ProductError as exc:
+            if exc.category == 'runtime_vendor_install_failed':
+                exc.details['pacman_log'] = _pacman_log_tail(msys)
+            raise
         packages = _run([str(bash), '--login', '-c', 'pacman -Q'], cancel=cancel_event, callback=event_callback, env=environment, stage='vendor inventory')
         _progress(event_callback, 'snapshot', 'Retaining runtime dependencies, license notices and package identities.')
         archive = work / 'runtime-local.zip'
@@ -253,7 +321,7 @@ def _write_diagnostic(root, record):
 
 
 def install_vendor_runtime(*, cancel_event=None, event_callback=None, root=None):
-    """Save shareable diagnostics without exception strings, locals or vendor output."""
+    """Save shareable diagnostics; vendor text passes a strict lossy allowlist."""
     stage = 'initialization'
 
     def progress(event):
@@ -290,6 +358,13 @@ def install_vendor_runtime(*, cancel_event=None, event_callback=None, root=None)
         }
         if isinstance(exc, ProductError) and type(exc.details.get('return_code')) is int:
             record['return_code'] = exc.details['return_code']
+            if stage == 'signed runtime package installation':
+                record['vendor_diagnostics'] = {
+                    'format': 'allowlisted-phrases-v1',
+                    'unrecognized_text_omitted': True,
+                    **{name: _vendor_diagnostic(exc.details.get(name))
+                       for name in ('stdout', 'stderr', 'pacman_log')},
+                }
         for name in ('errno', 'winerror'):
             value = getattr(exc, name, None)
             if type(value) is int:
@@ -297,6 +372,8 @@ def install_vendor_runtime(*, cancel_event=None, event_callback=None, root=None)
         if isinstance(exc, urllib.error.HTTPError):
             record['http_status'] = exc.code
         details = {'stage': stage, 'exception_type': type(exc).__name__}
+        if 'return_code' in record:
+            details['return_code'] = record['return_code']
         if isinstance(exc, ProductError):
             generation = exc.details.get('activated_generation')
             if isinstance(generation, str) and len(generation) == 32 and all(c in '0123456789abcdef' for c in generation):

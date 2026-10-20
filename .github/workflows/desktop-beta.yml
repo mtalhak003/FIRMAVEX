@@ -60,6 +60,13 @@ jobs:
           ./packaging/test_windows_install.ps1 -FirmwareQualification
           firmavex runtime-history
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Retain sanitized installation diagnostics
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: Windows-runtime-installation-diagnostics
+          path: ${{ runner.temp }}/FIRMAVEX user with spaces/FIRMAVEX/installation-diagnostics/runtime-setup-*.json
+          if-no-files-found: warn
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:

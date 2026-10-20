@@ -282,3 +282,141 @@ def test_diagnostic_rejects_windows_reparse_attribute(tmp_path, monkeypatch):
     with pytest.raises(OSError, match='Linked'):
         setup._write_diagnostic(application / 'runtimes', {})
     assert not (application / 'installation-diagnostics').exists()
+
+
+def test_signed_package_failure_saves_safe_output_and_log_before_cleanup(tmp_path, monkeypatch):
+    import json
+    monkeypatch.setattr(setup, 'host', lambda: {'os': 'windows', 'arch': 'x86_64'})
+    monkeypatch.setattr(setup, '_download', lambda *args: None)
+    root = tmp_path / 'User with spaces' / 'runtimes'
+    root.mkdir(parents=True)
+    (root / 'active.json').write_text('previous')
+    calls = []
+
+    def run(command, *, stage, callback, **kwargs):
+        calls.append(stage)
+        callback({'stage': stage})
+        if stage == 'signed runtime package installation':
+            msys = next(root.glob('vendor-setup-*')) / 'msys64'
+            log = msys / 'var/log/pacman.log'
+            log.parent.mkdir(parents=True)
+            log.write_text('[ALPM] permission denied: C:\\Users\\Alice\\secret\n'
+                           '[ALPM] token=private-token\n')
+            raise ProductError('runtime_vendor_install_failed', 'Package installation failed.', {
+                'return_code': 23,
+                'stdout': 'Authorization: Bearer secret-bearer\n' +
+                          'error: failed to commit transaction (invalid or corrupted package)\n',
+                'stderr': "error: failed retrieving file 'mingw-w64-ucrt-x86_64-qemu' from "
+                          'https://user:password@mirror.invalid/private?token=secret-query : '
+                          'The requested URL returned error: 503\n',
+            })
+        return ''
+
+    monkeypatch.setattr(setup, '_run', run)
+    monkeypatch.setattr(setup, 'snapshot_runtime', lambda *a, **k: pytest.fail('snapshot after failure'))
+    monkeypatch.setattr(setup, 'install', lambda *a, **k: pytest.fail('activation after failure'))
+    with pytest.raises(ProductError) as caught:
+        setup.install_vendor_runtime(root=root)
+    text = Path(caught.value.details['diagnostic_file']).read_text()
+    record = json.loads(text)
+    assert record['return_code'] == 23
+    assert caught.value.details['return_code'] == 23
+    assert record['stage'] == 'signed runtime package installation'
+    vendor = record['vendor_diagnostics']
+    assert vendor['stdout'] == ['failed to commit transaction; invalid or corrupted package']
+    assert vendor['stderr'] == ['failed retrieving file; mingw-w64-ucrt-x86_64-qemu; HTTP 503']
+    assert vendor['pacman_log'] == ['permission denied']
+    for secret in ('Alice', 'secret', 'password', 'mirror.invalid', 'private-token', 'Authorization'):
+        assert secret not in text + str(caught.value.to_dict())
+    assert calls[-1] == 'signed runtime package installation'
+    assert (root / 'active.json').read_text() == 'previous'
+    assert list(root.iterdir()) == [root / 'active.json']
+
+
+def test_vendor_projection_omits_unknown_secrets_and_bounds_output():
+    raw = ('ghp_unlabelledsecret /home/alice/private C:\\Users\\Alice\\private '
+           'https://user:password@host/?token=secret \x1b[31m\n'
+           'error: target not found: unlabelledsecret\n')
+    assert setup._vendor_diagnostic(raw) == ['target not found']
+    assert setup._vendor_diagnostic('unknown secret text') == []
+    assert setup._vendor_diagnostic(None) == []
+    rows = setup._vendor_diagnostic('\n'.join(setup._VENDOR_ERRORS))
+    assert len(rows) == 16
+    assert setup._vendor_diagnostic('target not found\n' + 'x' * 32768) == []
+
+
+def test_run_preserves_actual_vendor_exit_code_and_cleans_process(monkeypatch):
+    from types import SimpleNamespace
+    from firmavex.product import runtime
+    process = SimpleNamespace(returncode=37, poll=lambda: 37)
+    output = SimpleNamespace(thread=SimpleNamespace(join=lambda **kwargs: None),
+                             text=lambda: 'error: target not found: secret')
+    monkeypatch.setattr(runtime, '_spawn', lambda *a, **k: (process, output, output))
+    cleaned = []
+    def cleanup(children, original):
+        cleaned.append(original)
+        return {'success': True}
+    monkeypatch.setattr(runtime, '_cleanup', cleanup)
+    with pytest.raises(ProductError) as caught:
+        setup._run(['pacman'], cancel=None, callback=None,
+                   stage='signed runtime package installation')
+    assert caught.value.details['return_code'] == 37
+    assert caught.value.details['stderr'] == output.text()
+    assert cleaned == [caught.value]
+
+
+def test_pacman_log_tail_is_bounded_and_missing_log_is_optional(tmp_path):
+    assert setup._pacman_log_tail(tmp_path) == ''
+    log = tmp_path / 'var/log/pacman.log'
+    log.parent.mkdir(parents=True)
+    log.write_bytes(b'old secret\n' + b'x' * 40000 + b'\nerror: permission denied\n')
+    text = setup._pacman_log_tail(tmp_path)
+    assert len(text) == 32768
+    assert 'old secret' not in text
+    assert setup._vendor_diagnostic(text) == ['permission denied']
+
+
+def test_pacman_log_rejects_linked_directory(tmp_path):
+    outside = tmp_path / 'outside'
+    outside.mkdir()
+    (outside / 'pacman.log').write_text('error: permission denied')
+    (tmp_path / 'var').mkdir()
+    try:
+        (tmp_path / 'var/log').symlink_to(outside, target_is_directory=True)
+    except OSError:
+        pytest.skip('Creating symlinks is unavailable on this host')
+    assert setup._pacman_log_tail(tmp_path) == ''
+
+
+def test_package_diagnostic_write_failure_keeps_exit_code_and_failure(tmp_path, monkeypatch):
+    def failed(**kwargs):
+        kwargs['event_callback']({'stage': 'signed runtime package installation'})
+        raise ProductError('runtime_vendor_install_failed', 'Package installation failed.',
+                           {'return_code': 41, 'stderr': 'permission denied: secret'})
+    def denied(*args):
+        raise PermissionError('private storage path')
+    monkeypatch.setattr(setup, '_install_vendor_runtime', failed)
+    monkeypatch.setattr(setup, '_write_diagnostic', denied)
+    with pytest.raises(ProductError) as caught:
+        setup.install_vendor_runtime(root=tmp_path / 'runtimes')
+    assert caught.value.category == 'runtime_vendor_install_failed'
+    assert caught.value.details['return_code'] == 41
+    assert caught.value.details['diagnostic_write_failed'] is True
+    assert 'secret' not in str(caught.value.to_dict())
+    assert 'private storage path' not in str(caught.value.to_dict())
+
+
+def test_windows_workflow_collects_only_diagnostic_json_with_spaces(tmp_path):
+    import glob
+    workflow = (Path(__file__).resolve().parents[2] / '.github/workflows/desktop-beta.yml').read_text()
+    block = workflow.split('      - name: Retain sanitized installation diagnostics\n', 1)[1].split('      - uses:', 1)[0]
+    assert 'if: failure()' in block
+    assert 'actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02' in block
+    pattern = block.split('          path: ', 1)[1].splitlines()[0]
+    assert pattern == '${{ runner.temp }}/FIRMAVEX user with spaces/FIRMAVEX/installation-diagnostics/runtime-setup-*.json'
+    directory = tmp_path / 'FIRMAVEX user with spaces/FIRMAVEX/installation-diagnostics'
+    directory.mkdir(parents=True)
+    diagnostic = setup._write_diagnostic(directory.parent / 'runtimes', {'return_code': 23})
+    (directory / 'vendor-raw.log').write_text('secret')
+    (directory.parent / 'bootstrap.exe').write_bytes(b'private')
+    assert glob.glob(pattern.replace('${{ runner.temp }}', str(tmp_path))) == [str(diagnostic)]
