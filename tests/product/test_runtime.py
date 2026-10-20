@@ -138,10 +138,12 @@ def test_spawn_second_reader_construction_failure_reaps_child(monkeypatch):
     assert readers[0].thread.ident is None
 
 
-def test_cleanup_escalates_after_termination_timeout():
+def test_cleanup_escalates_after_termination_timeout(monkeypatch):
+    monkeypatch.setattr("firmavex.product.windows_process.snapshot", lambda handle: {"terminated": True})
     calls = []
     class Process:
         pid = 123
+        _handle = 123
         returncode = None
         def poll(self): return self.returncode
         def terminate(self): calls.append("terminate")
@@ -156,11 +158,13 @@ def test_cleanup_escalates_after_termination_timeout():
     assert calls == ["terminate", "wait", "kill", "wait"]
 
 
-def test_cleanup_preserves_original_keyboard_interrupt_and_attempts_reap():
+def test_cleanup_preserves_original_keyboard_interrupt_and_attempts_reap(monkeypatch):
+    monkeypatch.setattr("firmavex.product.windows_process.snapshot", lambda handle: {"terminated": True})
     original = KeyboardInterrupt("original")
     calls = []
     class Process:
         pid = 123
+        _handle = 123
         returncode = None
         def poll(self): return self.returncode
         def terminate(self): calls.append("terminate"); raise SystemExit("secondary cleanup cancellation")
@@ -177,10 +181,12 @@ def test_cleanup_preserves_original_keyboard_interrupt_and_attempts_reap():
     assert "kill" in calls
 
 
-def test_cleanup_new_control_flow_exception_propagates_after_reaping():
+def test_cleanup_new_control_flow_exception_propagates_after_reaping(monkeypatch):
+    monkeypatch.setattr("firmavex.product.windows_process.snapshot", lambda handle: {"terminated": True})
     calls = []
     class Process:
         pid = 123
+        _handle = 123
         returncode = None
         def poll(self): return self.returncode
         def terminate(self): raise KeyboardInterrupt("cleanup cancellation")

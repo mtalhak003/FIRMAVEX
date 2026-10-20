@@ -37,7 +37,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m tools.desktop_native_evidence "$env:RUNNER_TEMP/windows-builtin-demo"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python tools/product_ci_tests.py -q tests/desktop/test_real_builtin.py
+          python tools/product_ci_tests.py -q -rP tests/desktop/test_real_builtin.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Frozen GUI and console worker compiler-free execution
         shell: pwsh
@@ -105,7 +105,7 @@ jobs:
           python -m pip install --no-deps --no-build-isolation .
           python -m tools.check_build_inputs
       - name: Real compiler-free GUI execution reproduction cancellation and export
-        run: python tools/product_ci_tests.py -q tests/desktop/test_real_builtin.py
+        run: python tools/product_ci_tests.py -q -rP tests/desktop/test_real_builtin.py
       - run: python -m PyInstaller --clean --noconfirm packaging/desktop.spec
       - name: Frozen compiler-free firmware evidence
         shell: bash

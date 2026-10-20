@@ -14,6 +14,75 @@ from firmavex.product.windows_job import (
     JOB_OBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
     WindowsJob,
 )
+from firmavex.product.windows_process import snapshot, classify
+
+
+@pytest.mark.parametrize('terminated,current,expected', [
+    (False, None, 'original_running'),
+    (False, {'creation_time': 2, 'terminated': True}, 'original_running'),
+    (True, None, 'original_terminated_pid_absent'),
+    (True, {'creation_time': 1, 'terminated': True}, 'original_terminated'),
+    (True, {'creation_time': 2, 'terminated': False}, 'pid_reused'),
+])
+def test_process_identity_does_not_confuse_reused_pid_with_original(terminated, current, expected):
+    assert classify({'creation_time': 1, 'terminated': terminated}, current) == expected
+
+
+@pytest.mark.parametrize('wait,terminated', [(0, True), (258, False)])
+def test_process_snapshot_uses_wait_status_even_for_exit_code_259(wait, terminated):
+    class Api:
+        def GetProcessTimes(self, handle, created, *unused):
+            assert handle == 123
+            created._obj.value = 456
+            return 1
+        def WaitForSingleObject(self, handle, timeout):
+            assert handle == 123 and timeout == 0
+            return wait
+        def GetExitCodeProcess(self, handle, code):
+            code._obj.value = 259
+            return 1
+    assert snapshot(123, Api()) == {'creation_time': 456, 'wait_status': wait,
+                                   'terminated': terminated, 'exit_code': 259}
+
+
+@pytest.mark.parametrize('terminated', [False, True])
+def test_cleanup_requires_original_windows_handle_termination(monkeypatch, terminated):
+    from types import SimpleNamespace
+    from firmavex.product import runtime
+    monkeypatch.setattr(runtime, 'os', SimpleNamespace(name='nt'))
+    identity = {'creation_time': 1, 'terminated': terminated}
+    monkeypatch.setattr('firmavex.product.windows_process.snapshot', lambda handle: identity)
+    process = SimpleNamespace(pid=123, _handle=456, poll=lambda: 0, wait=lambda timeout: 0)
+    drain = SimpleNamespace(thread=SimpleNamespace(join=lambda timeout: None, is_alive=lambda: False),
+                            error=None, stream=SimpleNamespace(close=lambda: None))
+    result = runtime._cleanup([('child', process, drain, drain)])
+    assert result['success'] is terminated
+    assert result['processes'][0]['reaped'] is terminated
+    assert result['processes'][0]['windows_identity'] == identity
+
+
+@pytest.mark.skipif(sys.platform != 'win32', reason='Native Windows handle identity')
+@pytest.mark.parametrize('exit_code', [0, 259])
+def test_original_windows_handle_proves_termination_independently_of_exit_code(exit_code):
+    process = subprocess.Popen([sys.executable, '-c',
+                                f'import time,sys; time.sleep(120); sys.exit({exit_code})'])
+    try:
+        before = snapshot(int(process._handle))
+        assert not before['terminated']
+        # TerminateProcess supplies a controlled DWORD exit code, including 259.
+        import _winapi
+        _winapi.TerminateProcess(int(process._handle), exit_code)
+        process.wait(timeout=10)
+        after = snapshot(int(process._handle))
+        assert after['creation_time'] == before['creation_time']
+        assert after['terminated'] and after['exit_code'] == exit_code
+        assert classify(after, after) == 'original_terminated'
+    finally:
+        if not snapshot(int(process._handle))['terminated']:
+            process.kill()
+        process.wait(timeout=10)
+
+
 
 
 class SyntheticApi:

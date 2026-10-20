@@ -177,8 +177,16 @@ def _cleanup(processes, primary: BaseException | None = None) -> dict:
         code = attempt("final poll", process.poll)
         if code is None:
             errors.append(f"{name} was not reaped.")
-        statuses.append({"name": name, "pid": process.pid, "return_code": code,
-                         "reaped": code is not None})
+        status = {"name": name, "pid": process.pid, "return_code": code,
+                  "reaped": code is not None}
+        if os.name == "nt":
+            from .windows_process import snapshot
+            identity = attempt("original handle identity", lambda: snapshot(int(process._handle)))
+            status["windows_identity"] = identity
+            if identity is None or not identity["terminated"]:
+                errors.append(f"{name} original process handle did not confirm termination.")
+                status["reaped"] = False
+        statuses.append(status)
     if primary is not None:
         for error in errors:
             try:
