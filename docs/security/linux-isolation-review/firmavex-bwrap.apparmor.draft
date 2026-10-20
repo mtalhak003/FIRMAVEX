@@ -1,0 +1,43 @@
+# REVIEW ONLY: deliberately incomplete, NOT an installable qualification policy.
+# Linux aggregate isolation remains unqualified. This draft is inactive and NOT
+# approved for installation. A disposable VM is only a proposed qualification
+# environment, not an established security solution. See architecture-decision.md.
+# No mount, runtime-library, proc, device, signal or filesystem setup allowances
+# have been guessed. This profile is expected to deny startup/setup.
+# Attachment covers ALL callers of /usr/bin/bwrap on a future dedicated VM;
+# it cannot verify argv, caller identity, executable digest or namespace ownership.
+# Never load on a shared machine. See README.md for prerequisites and blockers.
+# Capability rules below are NOT namespace-scoped. They cannot prevent use by
+# root/pre-capable callers in the initial namespace; attachment is not caller
+# authorization. Permissions remain review hypotheses, not verified necessities.
+abi <abi/4.0>,
+
+profile firmavex_bwrap_setup /usr/bin/bwrap {
+  # U1: initial user namespace and nested namespace for --disable-userns.
+  userns,
+  # C1: observed denial; bounding-set manipulation, not a host capability grant.
+  capability setpcap,
+  # C2: observed denial; loopback configuration in the NEW network namespace.
+  capability net_admin,
+  # C3: source-supported namespace/mount setup; broad kernel capability whose
+  # file/mount rules and actual namespace scope remain mandatory review gates.
+  capability sys_admin,
+
+  # T1: proposed mandatory stack on two pathnames, NOT authenticated fixed code.
+  # Alias/remount, interpreter argv and caller environment remain review blockers.
+  # Lowercase px does not request environment scrubbing. No inherit/unconfined
+  # fallback. Python's real versioned path must be resolved on the target image;
+  # do not add a wildcard execute rule to make this template work.
+  /usr/bin/python3 px -> &firmavex_bwrap_workload,
+  /usr/bin/true px -> &firmavex_bwrap_workload,
+}
+
+profile firmavex_bwrap_workload {
+  # D1: IF stacked exec is enforced, both profiles constrain the workload.
+  # This denial checks capability use; it does not clear Linux capability sets.
+  audit deny capability,
+  # D2: no further user namespace creation after the trusted setup phase.
+  audit deny userns,
+  # No execute fallback and no workload filesystem/network permissions supplied.
+  # Complete these only for fixed probe behavior after mount/path review.
+}
