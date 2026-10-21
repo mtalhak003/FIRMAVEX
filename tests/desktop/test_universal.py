@@ -225,6 +225,8 @@ def test_live_verification_progress_cancel_and_partial_results_preserve_other_vi
     window.record = {'status': 'passed', 'evidence': {}}
     window.result_view.setPlainText('Retained evidence')
     window.comparison_view.setRowCount(1)
+    window.log_view.setPlainText('Retained execution progress')
+    assert not window.verification_progress.isTextVisible()
     window.verify_button.click()
     assert controller.calls[-1] == ('backend_verify', {'run_dir': str(root / 'saved')})
     assert window.verification_progress.maximum() == 0
@@ -248,6 +250,7 @@ def test_live_verification_progress_cancel_and_partial_results_preserve_other_vi
     assert 'cancelled' in window.verification_label.text()
     assert window.result_view.toPlainText() == 'Retained evidence'
     assert window.comparison_view.rowCount() == 1 and window.active_run == root / 'saved'
+    assert window.log_view.toPlainText() == 'Retained execution progress'
     assert window.history.currentItem().data(Qt.ItemDataRole.UserRole) == str(root / 'saved')
     assert not window.trust_box.isChecked()
 

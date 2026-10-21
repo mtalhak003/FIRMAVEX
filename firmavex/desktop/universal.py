@@ -282,6 +282,7 @@ class UniversalWindow(QMainWindow):
         self.verification_progress = QProgressBar()
         self.verification_progress.setRange(0, 1)
         self.verification_progress.setValue(0)
+        self.verification_progress.setTextVisible(False)
         self.verification_progress.setAccessibleName('Artifact verification progress')
         verification_layout.addWidget(self.verification_progress)
         self.verification_table = QTableWidget(0, 2)
@@ -363,7 +364,8 @@ class UniversalWindow(QMainWindow):
         if command in {"backend_execute", "backend_reproduce"}:
             self.active_run, self.record = output, None
             self.result_view.clear()
-        self.log_view.clear()
+        if command != 'backend_verify':
+            self.log_view.clear()
         self.status_label.setText("Running supervised job; waiting for confirmed completion and cleanup…")
         if not self.controller.start(command, payload):
             self._job = None
