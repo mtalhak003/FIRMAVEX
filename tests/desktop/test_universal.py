@@ -268,6 +268,17 @@ def test_verification_worker_error_preserves_completed_rows_as_partial(view, mon
     assert 'no overall verification result' in window.verification_label.text()
 
 
+def test_large_session_verification_preview_does_not_claim_a_saved_report(view):
+    window, controller = view
+    window._start('backend_verify', {'run_dir': '/saved'})
+    controller.finish({'status': 'failed', 'success': False, 'read_only': True, 'completed': 1, 'total': 256,
+        'items': [{'name': '"' * 160, 'state': 'not_checked'} for _ in range(256)]})
+    text = window.operation_view.toPlainText()
+    assert len(text) < 66000 and 'no verification report was saved' in text
+    assert 'complete record remains on disk' not in text
+    assert window.verification_table.rowCount() == 256
+
+
 @pytest.mark.parametrize('profile', ['cortex-m3-mps2', 'riscv32-virt', 'verilog-icarus'])
 def test_saved_context_and_evidence_survive_administrative_operations(view, tmp_path, profile):
     window, controller = view

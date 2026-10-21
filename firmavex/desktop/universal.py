@@ -39,10 +39,12 @@ _LABELS = {
 }
 
 
-def _preview(record: dict) -> str:
+def _preview(record: dict, *, session_only=False) -> str:
     text = json.dumps(record, indent=2, sort_keys=True, ensure_ascii=False)
     if len(text) > 65536:
-        return text[:65536] + "\n[Display truncated; the complete record remains on disk.]"
+        note = ('all bounded artifact rows remain in Verify evidence; no verification report was saved.'
+                if session_only else 'the complete record remains on disk.')
+        return text[:65536] + '\n[Display truncated; ' + note + ']'
     return text
 
 
@@ -623,7 +625,7 @@ class UniversalWindow(QMainWindow):
         self._job = None
         administrative = command in {'backend_check', 'backend_prepare', 'backend_export', 'backend_history', 'backend_compare', 'backend_verify'}
         target = self.operation_view if administrative else self.result_view
-        target.setPlainText(_preview(record))
+        target.setPlainText(_preview(record, session_only=command == 'backend_verify'))
         if administrative:
             self.tabs.setCurrentWidget(self.operation_view)
         if command == 'backend_verify':
