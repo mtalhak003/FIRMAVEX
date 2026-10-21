@@ -202,3 +202,124 @@ def test_worker_cancel_channel_stops_hashing_with_partial_result(tmp_path, monke
     assert result['status'] == 'cancelled' and not result['success']
     assert [r['state'] for r in result['items']] == ['hash_match', 'cancelled', 'not_checked']
     assert archive(tmp_path) == before
+
+
+def test_session_provenance_freshness_and_read_only_report(tmp_path, monkeypatch):
+    from datetime import datetime
+    from firmavex.product.verification_session import review
+    path = saved(tmp_path / 'run')
+    before = archive(tmp_path / 'run')
+    session = verify(path)
+    provenance = session['provenance']
+    assert datetime.fromisoformat(provenance['started_at']) <= datetime.fromisoformat(provenance['finished_at'])
+    assert provenance['archive'] == path
+    assert provenance['scope'] == 'Listed backend artifacts'
+    assert provenance['completion'] == 'completed' and not provenance['partial']
+    assert session['freshness']['state'] == 'unknown'
+    # Metadata-only review must not read/rehash artifact contents.
+    monkeypatch.setattr('firmavex.product.verification.digest', lambda *a: pytest.fail('unexpected rehash'))
+    result = review(session, output_dir=str(tmp_path / 'report'))
+    assert result['freshness']['state'] == 'no_observed_metadata_changes'
+    report = (tmp_path / 'report' / 'verification.txt').read_text(encoding='utf-8')
+    assert 'authenticity' in report and path in report and 'hash_match' in report
+    assert 'unchanged bytes' in report
+    assert archive(tmp_path / 'run') == before
+    (tmp_path / 'run' / 'a.bin').write_bytes(b'changed data')
+    assert review(session)['freshness']['state'] == 'stale'
+    assert session['items'][0]['state'] == 'hash_match'  # historical observation retained
+    with pytest.raises(FileExistsError):
+        review(session, output_dir=str(tmp_path / 'report'))
+
+
+def test_unknown_freshness_and_export_rejections(tmp_path):
+    from firmavex.product.verification_session import review
+    session = verify(saved(tmp_path / 'run'))
+    (tmp_path / 'run' / 'a.bin').unlink()
+    assert review(session)['freshness']['state'] == 'unknown'
+    session['observations'] = None
+    assert review(session)['freshness']['state'] == 'unknown'
+    before = archive(tmp_path / 'run')
+    with pytest.raises(ValueError, match='outside original'):
+        review(session, output_dir=str(tmp_path / 'run' / 'report'))
+    assert archive(tmp_path / 'run') == before
+    for value in ({}, {'provenance': {}, 'items': []}, dict(session, items=[None]),
+                  dict(session, observations=[{'name': '../outside', 'state': [1]*5}])):
+        if value.get('observations') == [{'name': '../outside', 'state': [1]*5}]:
+            assert review(value)['freshness']['state'] == 'unknown'
+        else:
+            with pytest.raises(ValueError):
+                review(value)
+
+
+def test_cancelled_session_report_is_bounded_and_never_overwrites_evidence(tmp_path):
+    from firmavex.product.verification_session import review
+    path = saved(tmp_path / 'run')
+    cancel = threading.Event()
+    def stop(event):
+        if event.get('phase') == 'artifact' and event.get('completed') == 1:
+            cancel.set()
+    session = verify(path, cancel_event=cancel, event_callback=stop)
+    assert session['provenance']['completion'] == 'cancelled'
+    assert session['provenance']['partial']
+    assert [r['state'] for r in session['items']] == ['hash_match', 'not_checked', 'not_checked']
+    before = archive(tmp_path / 'run')
+    with pytest.raises(KeyboardInterrupt):
+        review(session, output_dir=str(tmp_path / 'cancelled'), cancel_event=cancel)
+    assert not (tmp_path / 'cancelled').exists()
+    session['items'] = [{'name': '<script>\n' + '長' * 160, 'state': 'hash_match\r\nforged'}] * 256
+    session['diagnostic'] = 'x' * 1000
+    result = review(session, output_dir=str(tmp_path / 'report'))
+    data = (tmp_path / 'report' / 'verification.txt').read_bytes()
+    assert len(data) <= 262144 and b'\r' not in data and b'\nforged' not in data
+    assert b'completion: cancelled' in data and b'not proof' in data
+    assert archive(tmp_path / 'run') == before
+
+
+def test_real_supervised_session_review_export_and_portable_freshness(tmp_path):
+    from firmavex.product.supervisor import Supervisor
+    from firmavex.product.verification_session import review
+    path = saved(tmp_path / 'run')
+    before = archive(tmp_path / 'run')
+    session = Supervisor().execute('backend_verify', {'run_dir': path})
+    result = Supervisor().execute('backend_verification_review', {
+        'session': session, 'output_dir': str(tmp_path / 'report')})
+    assert result['freshness']['state'] == 'no_observed_metadata_changes'
+    assert (tmp_path / 'report' / 'verification.txt').is_file()
+    assert archive(tmp_path / 'run') == before
+    session['provenance']['platform'] = 'different-platform'
+    assert review(session)['freshness']['state'] == 'unknown'
+
+
+def test_legacy_arm_report_scope_and_malformed_freshness_are_unknown(tmp_path):
+    from firmavex.product.verification_session import review
+    root = tmp_path / 'legacy-arm'
+    with RunStore(root, create=True) as store:
+        store.initialize({'application': 'firmavex-desktop', 'measurement_mode': 'synthetic_test'})
+        store.write_text('a.txt', 'retained legacy artifact')
+    before = archive(root)
+    session = verify(str(root))
+    assert session['provenance']['scope'] == 'Registered ARM artifacts'
+    assert session['status'] == 'verified'
+    # This legacy archive has no result.json; missing freshness data is unknown.
+    assert review(session)['freshness']['state'] == 'unknown'
+    session['observations'] = [{'name': 'a.txt', 'state': [True]}, {'name': 'run.sqlite3', 'state': None}]
+    assert review(session)['freshness']['state'] == 'unknown'
+    review(session, output_dir=str(tmp_path / 'legacy report'))
+    assert archive(root) == before
+
+
+def test_report_rejects_symlink_destination_and_traversing_archive(tmp_path):
+    from firmavex.product.verification_session import review
+    session = verify(saved(tmp_path / 'run'))
+    before = archive(tmp_path / 'run')
+    alias = tmp_path / 'alias'
+    try:
+        alias.symlink_to(tmp_path / 'run', target_is_directory=True)
+    except OSError:
+        pytest.skip('Host cannot create directory symlinks')
+    with pytest.raises(ValueError, match='Symlink/reparse'):
+        review(session, output_dir=str(alias / 'report'))
+    session['provenance']['archive'] = str(tmp_path / 'run' / '..' / 'run')
+    with pytest.raises(ValueError, match='non-traversing'):
+        review(session, output_dir=str(tmp_path / 'report'))
+    assert archive(tmp_path / 'run') == before

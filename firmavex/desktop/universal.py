@@ -66,6 +66,7 @@ class UniversalWindow(QMainWindow):
         self._ready = False
         self._example_source: str | None = None
         self._comparison_left: str | None = None
+        self._verification_session = None
         self._history_summaries = {}
         self.setWindowTitle("FIRMAVEX — processor and HDL backends")
         self.resize(1100, 760)
@@ -277,6 +278,18 @@ class UniversalWindow(QMainWindow):
         self.verification_target.setTextFormat(Qt.TextFormat.PlainText)
         self.verification_target.setWordWrap(True)
         verification_layout.addWidget(self.verification_target)
+        self.verification_provenance = QLabel('No completed verification session. Freshness: unknown.')
+        self.verification_provenance.setTextFormat(Qt.TextFormat.PlainText)
+        self.verification_provenance.setWordWrap(True)
+        verification_layout.addWidget(self.verification_provenance)
+        session_actions = QHBoxLayout()
+        self.freshness_button = QPushButton('Check for changes')
+        self.verification_export_button = QPushButton('Export verification report…')
+        self.freshness_button.clicked.connect(self.check_verification_changes)
+        self.verification_export_button.clicked.connect(self.export_verification_report)
+        session_actions.addWidget(self.freshness_button)
+        session_actions.addWidget(self.verification_export_button)
+        verification_layout.addLayout(session_actions)
         self.verification_label = QLabel('Select a run or choose a folder to check its supported artifacts without execution. Hash matches are not authenticity or execution proof.')
         self.verification_label.setTextFormat(Qt.TextFormat.PlainText)
         self.verification_label.setWordWrap(True)
@@ -350,6 +363,10 @@ class UniversalWindow(QMainWindow):
             return False
         self._job, self._output = command, output
         if command == 'backend_verify':
+            self._verification_session = {'provenance': {
+                'archive': payload['run_dir'], 'started_at': datetime.now(timezone.utc).isoformat(),
+                'scope': 'Unavailable until worker completion'}}
+            self.verification_provenance.setText('Verification in progress. Freshness: unknown.')
             self.verification_table.setRowCount(0)
             self.verification_target.setText('Verification folder: ' + display_text(payload.get('run_dir', 'unavailable'), 500))
             self.verification_label.setText('Inspecting archive; artifact count is not known yet. Cancel stops verification without changing saved files.')
@@ -366,7 +383,7 @@ class UniversalWindow(QMainWindow):
         if command in {"backend_execute", "backend_reproduce"}:
             self.active_run, self.record = output, None
             self.result_view.clear()
-        if command != 'backend_verify':
+        if command not in {'backend_verify', 'backend_verification_review'}:
             self.log_view.clear()
         self.status_label.setText("Running supervised job; waiting for confirmed completion and cleanup…")
         if not self.controller.start(command, payload):
@@ -416,7 +433,10 @@ class UniversalWindow(QMainWindow):
     @Slot()
     def cancel(self):
         if self.controller.cancel():
-            self.status_label.setText('Cancellation requested; waiting for file checks to stop and worker cleanup. Saved evidence stays unchanged.' if self._job == 'backend_verify' else "Cancellation requested; waiting for persistence and process-tree cleanup…")
+            if self._job == 'backend_verification_review':
+                self.status_label.setText('Cancellation requested; waiting for metadata checks and worker cleanup. A report write already started may complete.')
+            else:
+                self.status_label.setText('Cancellation requested; waiting for file checks to stop and worker cleanup. Saved evidence stays unchanged.' if self._job == 'backend_verify' else "Cancellation requested; waiting for persistence and process-tree cleanup…")
             self.cancel_button.setEnabled(False)
 
     @Slot()
@@ -494,6 +514,32 @@ class UniversalWindow(QMainWindow):
         folder = QFileDialog.getExistingDirectory(self, 'Verify saved evidence without execution')
         if folder:
             self._start('backend_verify', {'run_dir': folder})
+
+    def _show_verification_provenance(self):
+        session = self._verification_session or {}
+        provenance = session.get('provenance', {})
+        freshness = session.get('freshness', {})
+        self.verification_provenance.setText(
+            'Session observation: ' + display_text(provenance.get('started_at', 'unavailable'), 80) +
+            ' to ' + display_text(provenance.get('finished_at', 'unavailable'), 80) +
+            ' | ' + display_text(provenance.get('scope', 'unavailable'), 160) +
+            ' | ' + display_text(provenance.get('completion', 'unknown'), 80) +
+            (' (partial)' if provenance.get('partial') else '') +
+            '\nFreshness: ' + display_text(freshness.get('state', 'unknown'), 80) +
+            ' at ' + display_text(freshness.get('checked_at', 'not checked'), 80) +
+            '. Metadata observations do not reverify bytes or prove authenticity or execution.')
+
+    def check_verification_changes(self):
+        if self._verification_session is not None:
+            self._start('backend_verification_review', {'session': self._verification_session})
+
+    def export_verification_report(self):
+        if self.busy or self._verification_session is None:
+            return
+        parent = QFileDialog.getExistingDirectory(self, 'Choose a report parent outside original evidence storage')
+        if parent:
+            destination = Path(parent) / ('firmavex-verification-' + uuid4().hex[:12])
+            self._start('backend_verification_review', {'session': self._verification_session, 'output_dir': str(destination)})
 
     def _verification_update(self, payload):
         if 'items' in payload:
@@ -598,8 +644,8 @@ class UniversalWindow(QMainWindow):
     @Slot(dict)
     def _progress(self, envelope):
         payload = envelope.get('payload', {})
-        if self._job == 'backend_verify':
-            if type(payload) is dict and payload.get('type') == 'verification_progress':
+        if self._job in {'backend_verify', 'backend_verification_review'}:
+            if self._job == 'backend_verify' and type(payload) is dict and payload.get('type') == 'verification_progress':
                 self._verification_update(payload)
             return
         self.log_view.appendPlainText(_preview(envelope)[:8192])
@@ -624,12 +670,20 @@ class UniversalWindow(QMainWindow):
     def _result(self, record):
         command = self._job
         self._job = None
-        administrative = command in {'backend_check', 'backend_prepare', 'backend_export', 'backend_history', 'backend_compare', 'backend_verify'}
+        administrative = command in {'backend_check', 'backend_prepare', 'backend_export', 'backend_history', 'backend_compare', 'backend_verify', 'backend_verification_review'}
         target = self.operation_view if administrative else self.result_view
         target.setPlainText(_preview(record, session_only=command == 'backend_verify'))
         if administrative:
             self.tabs.setCurrentWidget(self.operation_view)
-        if command == 'backend_verify':
+        if command == 'backend_verification_review':
+            if self._verification_session is not None:
+                self._verification_session['freshness'] = record['freshness']
+                self._show_verification_provenance()
+            self.tabs.setCurrentWidget(self.verification_panel)
+            self.status_label.setText('Verification report exported: ' + display_text(record['report'], 500) if 'report' in record else 'Metadata check complete; saved hash observations were not rerun.')
+        elif command == 'backend_verify':
+            self._verification_session = record
+            self._show_verification_provenance()
             self._verification_update(record)
             self.tabs.setCurrentWidget(self.verification_panel)
             self.status_label.setText('Evidence verification: ' + display_text(record.get('status', 'unavailable'), 80) + '. Review per-artifact outcomes and scope.')
@@ -703,7 +757,7 @@ class UniversalWindow(QMainWindow):
     def _error(self, record):
         command = self._job
         self._job = None
-        if command in {'backend_check', 'backend_prepare', 'backend_export', 'backend_history', 'backend_compare', 'backend_verify'}:
+        if command in {'backend_check', 'backend_prepare', 'backend_export', 'backend_history', 'backend_compare', 'backend_verify', 'backend_verification_review'}:
             if command == 'backend_verify':
                 for index in range(self.verification_table.rowCount()):
                     state = self.verification_table.item(index, 1)
@@ -713,6 +767,16 @@ class UniversalWindow(QMainWindow):
                 self.verification_progress.setValue(0)
                 self.verification_progress.setTextVisible(False)
                 self.verification_label.setText('Verification interrupted. Completed checks retained; no overall verification result is available.')
+                session = self._verification_session or {'provenance': {}}
+                session.update(status='failed', observations=None, diagnostic='Worker interrupted; partial observations only.',
+                               items=[{'name': self.verification_table.item(i, 0).text(),
+                                       'state': self.verification_table.item(i, 1).text()}
+                                      for i in range(self.verification_table.rowCount())],
+                               freshness={'state': 'unknown'})
+                session['provenance'].update(finished_at=datetime.now(timezone.utc).isoformat(),
+                    completion='failed', partial=any(row['state'] == 'hash_match' for row in session['items']))
+                self._verification_session = session
+                self._show_verification_provenance()
             if command == 'backend_compare':
                 self.comparison_scope.setText('Comparison unavailable: ' + display_text(record.get('message', 'Review operation details.'), 500))
             self.operation_view.setPlainText(_preview(record))
@@ -774,6 +838,8 @@ class UniversalWindow(QMainWindow):
         self.right_folder_button.setEnabled(idle and self._comparison_left is not None)
         self.verify_button.setEnabled(idle and selected is not None and not selected.isHidden())
         self.verify_folder_button.setEnabled(idle)
+        self.freshness_button.setEnabled(idle and self._verification_session is not None)
+        self.verification_export_button.setEnabled(idle and self._verification_session is not None)
         self.cancel_button.setEnabled(self.busy and not self._closing)
         self.reproduce_button.setEnabled(idle and self.active_run is not None and self.record is not None and self.record.get("status") in {"passed", "triggered"} and self.trust_box.isChecked())
         self.export_button.setEnabled(idle and self.active_run is not None and self.record is not None)

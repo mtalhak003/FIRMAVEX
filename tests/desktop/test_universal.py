@@ -266,6 +266,10 @@ def test_verification_worker_error_preserves_completed_rows_as_partial(view, mon
     assert window.verification_table.item(0, 1).text() == 'hash_match'
     assert window.verification_table.item(1, 1).text() == 'not_checked'
     assert 'no overall verification result' in window.verification_label.text()
+    assert window._verification_session['provenance']['completion'] == 'failed'
+    assert window._verification_session['provenance']['partial']
+    assert window._verification_session['freshness']['state'] == 'unknown'
+    assert window.verification_export_button.isEnabled()
 
 
 def test_large_session_verification_preview_does_not_claim_a_saved_report(view):
@@ -307,6 +311,14 @@ def test_verification_with_real_supervised_worker_preserves_views_and_evidence(q
         assert window.verification_table.rowCount() == 1
         assert window.verification_table.item(0, 1).text() == 'hash_match'
         assert window.verification_label.text().startswith('verified')
+        assert 'Freshness: unknown' in window.verification_provenance.text()
+        window.check_verification_changes()
+        qtbot.waitUntil(lambda: not window.busy, timeout=20000)
+        assert 'no_observed_metadata_changes' in window.verification_provenance.text()
+        window._start('backend_verification_review', {'session': window._verification_session,
+                      'output_dir': str(tmp_path / 'verification report')})
+        qtbot.waitUntil(lambda: not window.busy, timeout=20000)
+        assert (tmp_path / 'verification report' / 'verification.txt').is_file()
         assert window.result_view.toPlainText() == 'Original evidence view'
         assert window.log_view.toPlainText() == 'Original execution log'
         assert window.comparison_view.rowCount() == 1
@@ -692,3 +704,27 @@ def test_compiler_diagnostics_in_fresh_and_saved_results(view, tmp_path, command
     window.inspect(tmp_path / "another-run")
     controller.finish({"status": "passed", "evidence": {"backend": "verilog-icarus"}})
     assert "Compiler diagnostics" not in window.summary_view.toPlainText()
+
+
+def test_verification_provenance_review_and_export_cancellation(view, monkeypatch):
+    window, controller = view
+    assert not window.freshness_button.isEnabled()
+    window._start('backend_verify', {'run_dir': '/synthetic/archive'})
+    session = {'status': 'cancelled', 'items': [], 'provenance': {
+        'archive': '/synthetic/archive', 'started_at': '2026-10-21T00:00:00+00:00',
+        'finished_at': '2026-10-21T00:00:01+00:00', 'scope': 'Listed backend artifacts',
+        'completion': 'cancelled', 'partial': True}, 'freshness': {'state': 'unknown'}}
+    controller.finish(session)
+    assert 'cancelled (partial)' in window.verification_provenance.text()
+    assert 'Freshness: unknown' in window.verification_provenance.text()
+    assert window.freshness_button.isEnabled()
+    monkeypatch.setattr('firmavex.desktop.universal.QFileDialog.getExistingDirectory', lambda *a: '')
+    count = len(controller.calls)
+    window.export_verification_report()
+    assert len(controller.calls) == count
+    window.check_verification_changes()
+    assert controller.calls[-1] == ('backend_verification_review', {'session': session})
+    assert not window.verification_export_button.isEnabled()
+    controller.finish({'freshness': {'state': 'stale', 'checked_at': '2026-10-21T00:00:02+00:00'}})
+    assert 'Freshness: stale' in window.verification_provenance.text()
+    assert window._verification_session['status'] == 'cancelled'
