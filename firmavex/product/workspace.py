@@ -204,7 +204,8 @@ def execute_captured(request, output, data, *, trust, cancel_event=None, event_c
     from .backend_services import execute
     check_cancel(cancel_event)
     with tempfile.TemporaryDirectory(prefix='firmavex-selected-input-') as temporary:
-        source = Path(temporary) / 'input'
+        temporary_root = checked_path(Path(temporary).resolve(), directory=True)
+        source = temporary_root / 'input'
         if request.profile == 'cortex-m3-mps2':
             from .config import ProductConfig
             config = ProductConfig.from_dict(_json(data), base_dir=request.source.parent)
@@ -212,7 +213,7 @@ def execute_captured(request, output, data, *, trust, cancel_event=None, event_c
             if expected_firmware is not None and (type(expected_firmware) is not str or
                     not _ID.fullmatch(expected_firmware) or hashlib.sha256(image).hexdigest() != expected_firmware):
                 raise ValueError('Selected ARM firmware changed; import a new build explicitly')
-            firmware = Path(temporary) / 'firmware.elf'
+            firmware = temporary_root / 'firmware.elf'
             firmware.write_bytes(image)
             data = _encoded(replace(config, firmware=firmware).to_dict())
         source.write_bytes(data)

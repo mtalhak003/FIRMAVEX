@@ -211,3 +211,36 @@ def test_preflight_respects_selected_snapshot_identity(tmp_path):
     (Path(saved['configuration']) / 'input').write_bytes(request.source.read_bytes().replace(b'PASS', b'FAIL'))
     with pytest.raises(ValueError, match='changed'):
         workspace.preflight(selected, configuration=saved['configuration'])
+
+
+def test_owned_temporary_directory_alias_is_canonical_without_relaxing_imports(tmp_path, monkeypatch):
+    from contextlib import contextmanager
+    from firmavex.product import backend_services
+    from firmavex.backends.security import checked_path
+    import tempfile
+    request = image(tmp_path)
+    saved = workspace.save(tmp_path / 'configs', 'test', request_to_dict(request))
+    real = tmp_path / 'real-temp'
+    real.mkdir()
+    alias = tmp_path / 'temp-alias'
+    try:
+        alias.symlink_to(real, target_is_directory=True)
+    except OSError:
+        pytest.skip('Host cannot create directory symlinks')
+    copied = real / 'external.v'
+    copied.write_bytes(request.source.read_bytes())
+    with pytest.raises(ValueError, match='Symlink/reparse'):
+        workspace.save(tmp_path / 'configs', 'not imported through alias', request_to_dict(replace(request, source=alias / copied.name)))
+    factory = tempfile.TemporaryDirectory
+    @contextmanager
+    def aliased_temporary(**kwargs):
+        with factory(dir=real, **kwargs) as directory:
+            yield str(alias / Path(directory).name)
+    monkeypatch.setattr(workspace.tempfile, 'TemporaryDirectory', aliased_temporary)
+    def synthetic(record, output, **kwargs):
+        assert checked_path(record['source']).read_bytes() == request.source.read_bytes()
+        assert Path(record['source']).parent.parent == real.resolve()
+        return {'status': 'synthetic_test'}
+    monkeypatch.setattr(backend_services, 'execute', synthetic)
+    root = Path(saved['configuration'])
+    assert workspace.execute_saved(root, root / 'runs' / 'alias', trust='trusted_project')['status'] == 'synthetic_test'
