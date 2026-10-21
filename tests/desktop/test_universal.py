@@ -811,7 +811,11 @@ def test_configuration_controls_use_existing_tab_space_and_fit_desktop_width(vie
     assert index >= 0 and window.tabs.tabText(index) == 'Configurations'
     window.tabs.setCurrentIndex(index)
     assert window.configuration_save.isVisible()
-    assert window.minimumSizeHint().width() <= 1100
+    widths = {name: widget.minimumSizeHint().width() for name, widget in {
+        'window': window, 'tabs': window.tabs, 'tab_bar': window.tabs.tabBar(),
+        'configuration_panel': window.configuration_panel, 'history_panel': window.history.parentWidget(),
+    }.items()}
+    assert widths['window'] <= 1100, widths
     window._start('backend_configurations', {'action': 'list', 'root': str(window.data_root / 'configurations')})
     controller.finish({'entries': [], 'limit': 200, 'execution_performed': False})
     assert window.tabs.currentWidget() is window.configuration_panel

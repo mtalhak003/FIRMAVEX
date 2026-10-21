@@ -271,6 +271,8 @@ class UniversalWindow(QMainWindow):
         history_layout.addLayout(folder_actions)
         split.addWidget(history_panel)
         self.tabs = QTabWidget()
+        self.tabs.setUsesScrollButtons(True)
+        self.tabs.setElideMode(Qt.TextElideMode.ElideRight)
         self.result_context_label = QLabel('No saved result selected. Opening history never executes a target.')
         self.result_context_label.setTextFormat(Qt.TextFormat.PlainText)
         self.result_context_label.setWordWrap(True)
