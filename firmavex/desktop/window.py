@@ -206,6 +206,19 @@ class MainWindow(QMainWindow):
         for button in (self.new_button, self.open_button, self.example_button):
             row.addWidget(button)
         layout.addLayout(row)
+        self.recent_projects = QComboBox()
+        self.recent_projects.setAccessibleName('Recently opened desktop projects')
+        layout.addWidget(self.recent_projects)
+        recent_actions = QHBoxLayout()
+        self.open_recent_button = self._button('Open selected recent project', self.open_recent_project)
+        self.forget_recent_button = self._button('Remove from recent list', self.forget_recent_project)
+        recent_actions.addWidget(self.open_recent_button)
+        recent_actions.addWidget(self.forget_recent_button)
+        layout.addLayout(recent_actions)
+        self.recent_hint = QLabel('Recent entries are shortcuts only. Projects are verified again when opened; nothing executes.')
+        self.recent_hint.setWordWrap(True)
+        layout.addWidget(self.recent_hint)
+        self._refresh_recents()
         self.setup_button = self._button("First-launch setup and runtime repair…", self.show_setup)
         layout.addWidget(self.setup_button)
         self.doctor_button = self._button("Check runtime tools", self.check_tools)
@@ -426,6 +439,9 @@ class MainWindow(QMainWindow):
 
     def _refresh_enabled(self):
         idle = not self.busy and not self._closing
+        self.recent_projects.setEnabled(idle)
+        self.open_recent_button.setEnabled(idle and self.recent_projects.currentData() is not None)
+        self.forget_recent_button.setEnabled(idle and self.recent_projects.currentData() is not None)
         project = self.project is not None
         for button in (self.new_button, self.open_button, self.example_button,
                        self.setup_button, self.runtime_install_button, self.runtime_verify_button,
@@ -546,6 +562,42 @@ class MainWindow(QMainWindow):
         self.navigation.setCurrentRow(1)
         self.validation_text.clear()
         self._refresh_enabled()
+        from .recents import remember
+        try:
+            remember(self.data_root, project.root)
+        except (OSError, ValueError, ProductError):
+            self.recent_hint.setText('Project opened, but recent-project preferences could not be saved. No project files were changed by this preference update.')
+        else:
+            self._refresh_recents()
+
+    def _refresh_recents(self):
+        from .recents import load
+        from .workflow import display_text
+        self.recent_projects.clear()
+        try:
+            for path in load(self.data_root):
+                self.recent_projects.addItem(display_text(path, 200), path)
+        except (OSError, ValueError, ProductError):
+            self.recent_hint.setText('Recent-project preferences are unavailable. Use Open project to locate and verify a project.')
+        if not self.recent_projects.count():
+            self.recent_projects.addItem('No recent projects — use Open project', None)
+        self.open_recent_button.setEnabled(self.recent_projects.currentData() is not None)
+        self.forget_recent_button.setEnabled(self.recent_projects.currentData() is not None)
+
+    def open_recent_project(self):
+        path = self.recent_projects.currentData()
+        if path and not self.busy:
+            self.open_project(path)  # Existing verification; missing or moved projects fail safely.
+
+    def forget_recent_project(self):
+        if self.busy or not self.recent_projects.currentData():
+            return
+        from .recents import load, save
+        try:
+            save(self.data_root, [p for p in load(self.data_root) if p != self.recent_projects.currentData()])
+            self._refresh_recents()
+        except (OSError, ValueError, ProductError):
+            self.recent_hint.setText('Recent-project preferences could not be updated. No project was deleted.')
 
     def create_project(self):
         if self.busy:

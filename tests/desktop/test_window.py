@@ -93,6 +93,31 @@ def test_welcome_opens_without_build_or_firmware_dispatch(view):
     assert 'no hardware validation' in w.warning.text()
 
 
+def test_recent_projects_are_explicit_verified_and_removable(view, tmp_path, qtbot, monkeypatch):
+    from firmavex.desktop.recents import remember, load
+    w, controller = view
+    assert not w.open_recent_button.isEnabled()
+    missing = tmp_path / 'moved-project'
+    remember(w.data_root, missing)
+    w._refresh_recents()
+    assert controller.calls == [] and w.project is None
+    w.open_recent_project()
+    qtbot.waitUntil(lambda: not w.busy)
+    assert w.project is None and controller.calls == []
+    # Opening a remembered path still goes through the existing project verifier.
+    verified = SyntheticProject(missing, ProductConfig(firmware=tmp_path / 'firmware.elf',
+        input_symbols=('inputs[0]', 'inputs[1]'), ready_breakpoint='ready',
+        completion_breakpoint='complete', failure_symbol='failure'))
+    monkeypatch.setattr(ui.DesktopProject, 'open', lambda path: verified)
+    w.open_recent_project()
+    qtbot.waitUntil(lambda: not w.busy)
+    assert w.project is verified and controller.calls == []
+    assert load(w.data_root)[0] == str(missing)
+    w.forget_recent_project()
+    assert load(w.data_root) == [] and w.project is verified
+    assert not w.open_recent_button.isEnabled()
+
+
 @pytest.mark.parametrize('command', ['reproduce', 'inspect'])
 @pytest.mark.parametrize('outcome', ['reproduced_in_emulator', 'reproduction_inconsistent',
                                     'infrastructure_failure', 'cancelled'])

@@ -26,6 +26,8 @@ _FIELDS = {
     "backend_prepare": ({"profile", "output_dir"}, set()),
     "backend_execute": ({"request", "output_dir", "trust"}, set()),
     "backend_inspect": ({"run_dir"}, set()),
+    "backend_history": ({"run_dirs"}, set()),
+    "backend_compare": ({"left", "right"}, set()),
     "backend_reproduce": ({"run_dir", "output_dir", "trust"}, set()),
     "backend_export": ({"run_dir", "output_dir"}, set()),
     "cancel": (set(), {"job_request_id"}), "shutdown": (set(), set()),
@@ -173,6 +175,12 @@ class Worker:
                     result = backend.execute(payload["request"],payload["output_dir"],trust=payload["trust"],cancel_event=cancel,event_callback=callback)
                 elif command == "backend_inspect":
                     result = backend.inspect(payload["run_dir"])
+                elif command == "backend_history":
+                    from .run_review import history
+                    result = history(payload['run_dirs'], cancel_event=cancel)
+                elif command == "backend_compare":
+                    from .run_review import compare
+                    result = compare(payload['left'], payload['right'], cancel_event=cancel)
                 elif command == "backend_reproduce":
                     result = backend.reproduce(payload["run_dir"],payload["output_dir"],trust=payload["trust"],cancel_event=cancel,event_callback=callback)
                 elif command == "backend_export":
@@ -237,7 +245,10 @@ class Worker:
                         details["partial_result"] = self.services.inspect_run(output_dir)
                 except Exception as inspection_error:
                     details["inspection_error"] = str(inspection_error)
-            self.emit(request_id, "error", ProductError("cancelled", "Execution was interrupted; inspect the partial run before restart.", details).to_dict())
+            description = ('Read-only review cancelled; saved evidence was not modified.'
+                           if command in {'backend_history', 'backend_compare'} else
+                           'Execution was interrupted; inspect the partial run before restart.')
+            self.emit(request_id, "error", ProductError("cancelled", description, details).to_dict())
         except Exception as exc:
             self.failed = True
             self.emit(request_id, "error", ProductError("worker_failure", "Execution service raised an unexpected exception.", {"exception_type": type(exc).__name__, "diagnostic": str(exc)}).to_dict())

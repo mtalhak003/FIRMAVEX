@@ -123,6 +123,53 @@ def test_history_filter_selected_open_and_empty_states_never_execute(view):
     assert not window.trust_box.isChecked() and not window.reproduce_button.isEnabled()
 
 
+def test_history_summaries_and_comparison_are_read_only_and_preserve_selected_result(view):
+    window, controller = view
+    root = window.data_root / 'runs'
+    for name in ('left', 'right'):
+        (root / name).mkdir(parents=True)
+    window.refresh_history()
+    assert not window.compare_button.isEnabled()
+    items = {window.history.item(i).text(): window.history.item(i) for i in range(2)}
+    window.history.setCurrentItem(items['left'])
+    window.pin_button.click()
+    assert controller.calls == [] and not window.compare_button.isEnabled()
+    window.history.setCurrentItem(items['right'])
+    assert window.compare_button.isEnabled()
+    window.active_run = root / 'left'
+    window.record = {'status': 'passed', 'evidence': {}}
+    window.result_view.setPlainText('Retained evidence')
+    window.history_summary_button.click()
+    assert controller.calls[-1][0] == 'backend_history'
+    entries = [{'run_dir': str(root / name), 'inspection': 'validated', 'state': 'completed',
+                'fields': {'backend': 'riscv32-virt', 'status': 'passed'},
+                'evidence_reference': str(root / name / 'result.json')} for name in ('left', 'right')]
+    controller.finish({'entries': entries, 'read_only': True})
+    assert all('last inspected: validated' in window.history.item(i).text() for i in range(2))
+    assert window.result_view.toPlainText() == 'Retained evidence'
+    window.history_filter.setText('right')
+    assert '1 of 2' in window.history_hint.text()
+    window.compare_button.click()
+    assert controller.calls[-1] == ('backend_compare', {'left': str(root / 'left'), 'right': str(root / 'right')})
+    controller.finish({'left': entries[0], 'right': entries[1], 'rows': [
+        {'field': 'status', 'comparison': 'unchanged', 'left': 'passed', 'right': 'passed'},
+        {'field': 'measurement', 'comparison': 'unavailable', 'left': None, 'right': None}],
+        'scope': 'Saved metadata only', 'read_only': True})
+    assert 'status — unchanged' in window.comparison_view.toPlainText()
+    assert 'measurement — unavailable' in window.comparison_view.toPlainText()
+    assert window.tabs.currentWidget() is window.comparison_view
+    assert window.active_run == root / 'left' and window.result_view.toPlainText() == 'Retained evidence'
+    # Cancellation cannot leave a stale comparison presented as a new result.
+    window.compare_selected()
+    assert window.comparison_view.toPlainText() == ''
+    controller.finish(error={'category': 'cancelled', 'message': 'Read-only review cancelled'})
+    assert window.result_view.toPlainText() == 'Retained evidence'
+    assert 'cancelled' in window.operation_view.toPlainText()
+    assert not window.trust_box.isChecked()
+    window.refresh_history()
+    assert all('last inspected:' not in window.history.item(i).text() for i in range(2))
+
+
 @pytest.mark.parametrize('profile', ['cortex-m3-mps2', 'riscv32-virt', 'verilog-icarus'])
 def test_saved_context_and_evidence_survive_administrative_operations(view, tmp_path, profile):
     window, controller = view
