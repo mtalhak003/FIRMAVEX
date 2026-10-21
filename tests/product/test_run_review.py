@@ -122,3 +122,49 @@ def test_invalid_optional_timestamp_and_cleanup_are_unavailable():
     result = fields({'status': 'passed', 'evidence': {'cleanup_verified': 'yes',
                     'admission': {'started_at_utc': 'invalid'}}})
     assert result['started_at_utc'] is None and result['cleanup_verified'] is None
+
+
+def test_existing_backend_artifact_checks_are_required_for_verified_state(tmp_path):
+    import hashlib
+    data = b'waveform bytes'
+    path = stored(tmp_path / 'run', artifacts=[{'name': 'trace.vcd', 'sha256': hashlib.sha256(data).hexdigest(), 'size_bytes': len(data)}])
+    artifact = tmp_path / 'run/trace.vcd'
+    artifact.write_bytes(data)
+    before = archive(tmp_path)
+    entry = history([path])['entries'][0]
+    assert entry['integrity']['state'] == 'verified'
+    assert entry['integrity']['artifacts_checked'] == 1
+    assert archive(tmp_path) == before
+    artifact.write_bytes(b'changed')
+    changed = archive(tmp_path)
+    entry = history([path])['entries'][0]
+    assert entry['integrity']['state'] == 'unverified'
+    assert entry['fields']['status'] == 'passed'  # Exact recorded outcome; integrity is separate.
+    assert archive(tmp_path) == changed
+    artifact.unlink()
+    assert history([path])['entries'][0]['integrity']['state'] == 'unverified'
+
+
+def test_missing_inventory_or_recorded_hash_alone_is_not_verified(tmp_path):
+    path = stored(tmp_path / 'run', sha256='a' * 64)
+    assert history([path])['entries'][0]['integrity']['state'] == 'unavailable'
+
+
+def test_malformed_sqlite_archive_is_unavailable_not_a_shared_fallback(tmp_path):
+    root = tmp_path / 'bad-arm'; root.mkdir()
+    (root / 'run.sqlite3').write_bytes(b'not a database')
+    before = archive(tmp_path)
+    entry = history([str(root)])['entries'][0]
+    assert entry['inspection'] == 'unavailable' and entry['fields'] == {}
+    assert entry['integrity']['state'] == 'unverified'
+    assert archive(tmp_path) == before
+
+
+@pytest.mark.parametrize('status,category', [('triggered', 'observed_failure'),
+    ('configured_failure_observed', 'observed_failure'), ('passed', 'no_failure'),
+    ('no_failure_within_budget', 'no_failure'), ('infrastructure_failure', 'failed'),
+    ('cancelled', 'cancelled'), ('incomplete', 'unknown'), (None, 'unknown'), ([], 'unknown')])
+def test_outcome_categories_preserve_missing_and_legacy_semantics(status, category):
+    from firmavex.product.run_review import outcome_category
+    assert outcome_category({'inspection': 'validated', 'fields': {'status': status}}) == category
+    assert outcome_category({'inspection': 'unavailable', 'fields': {'status': status}}) == 'unknown'

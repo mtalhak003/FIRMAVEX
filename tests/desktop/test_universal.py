@@ -155,19 +155,64 @@ def test_history_summaries_and_comparison_are_read_only_and_preserve_selected_re
         {'field': 'status', 'comparison': 'unchanged', 'left': 'passed', 'right': 'passed'},
         {'field': 'measurement', 'comparison': 'unavailable', 'left': None, 'right': None}],
         'scope': 'Saved metadata only', 'read_only': True})
-    assert 'status — unchanged' in window.comparison_view.toPlainText()
-    assert 'measurement — unavailable' in window.comparison_view.toPlainText()
-    assert window.tabs.currentWidget() is window.comparison_view
+    assert window.comparison_view.item(1, 0).text() == 'status'
+    assert window.comparison_view.item(1, 3).text() == 'unchanged'
+    assert window.comparison_view.item(2, 3).text() == 'unavailable'
+    assert window.tabs.currentWidget() is window.comparison_panel
     assert window.active_run == root / 'left' and window.result_view.toPlainText() == 'Retained evidence'
     # Cancellation cannot leave a stale comparison presented as a new result.
     window.compare_selected()
-    assert window.comparison_view.toPlainText() == ''
+    assert window.comparison_view.rowCount() == 0
     controller.finish(error={'category': 'cancelled', 'message': 'Read-only review cancelled'})
     assert window.result_view.toPlainText() == 'Retained evidence'
     assert 'cancelled' in window.operation_view.toPlainText()
     assert not window.trust_box.isChecked()
     window.refresh_history()
     assert all('last inspected:' not in window.history.item(i).text() for i in range(2))
+
+
+def test_outcome_filter_combines_names_last_inspection_and_preserves_selection(view):
+    window, controller = view
+    root = window.data_root / 'runs'
+    for name in ('alpha', 'beta', 'unknown'):
+        (root / name).mkdir(parents=True)
+    window.refresh_history()
+    selected = next(window.history.item(i) for i in range(3) if window.history.item(i).text() == 'alpha')
+    window.history.setCurrentItem(selected)
+    window._history_summaries = {
+        str(root / 'alpha'): {'inspection': 'validated', 'fields': {'status': 'triggered'}},
+        str(root / 'beta'): {'inspection': 'validated', 'fields': {'status': 'passed'}}}
+    window.outcome_filter.setCurrentIndex(window.outcome_filter.findData('no_failure'))
+    assert selected.isHidden() and not window.open_selected_button.isEnabled()
+    window.outcome_filter.setCurrentIndex(window.outcome_filter.findData('observed_failure'))
+    assert not selected.isHidden() and window.history.currentItem() is selected
+    window.history_filter.setText('beta')
+    assert all(window.history.item(i).isHidden() for i in range(3))
+    # Summaries can still be requested when the outcome filter hides all rows.
+    assert window.history_summary_button.isEnabled()
+    assert controller.calls == []
+    window.history_filter.clear()
+    window.outcome_filter.setCurrentIndex(window.outcome_filter.findData('unknown'))
+    assert sum(not window.history.item(i).isHidden() for i in range(3)) == 1
+
+
+def test_comparison_folder_navigation_and_bounded_read_only_table(view, monkeypatch):
+    window, controller = view
+    answers = iter(['/legacy/left', '/shared/right'])
+    monkeypatch.setattr('firmavex.desktop.universal.QFileDialog.getExistingDirectory', lambda *a: next(answers))
+    window.pick_comparison_left()
+    assert controller.calls == []
+    window.pick_comparison_right()
+    assert controller.calls[-1] == ('backend_compare', {'left': '/legacy/left', 'right': '/shared/right'})
+    entry = {'run_dir': 'x' * 5000, 'evidence_reference': 'run.sqlite3',
+             'integrity': {'state': 'verified', 'scope': 'Registered artifact checks only'}}
+    controller.finish({'left': entry, 'right': entry, 'scope': 'Not execution verification',
+                       'rows': [{'field': 'status', 'left': 'configured_failure_observed', 'right': None, 'comparison': 'unavailable'}]})
+    assert len(window.comparison_view.item(0, 1).text()) <= 301
+    assert len(window.comparison_view.item(0, 1).toolTip()) <= 1001
+    assert window.comparison_view.item(1, 3).text() == 'unavailable'
+    assert window.comparison_view.editTriggers() == window.comparison_view.EditTrigger.NoEditTriggers
+    assert window.record is None and not window.trust_box.isChecked()
 
 
 @pytest.mark.parametrize('profile', ['cortex-m3-mps2', 'riscv32-virt', 'verilog-icarus'])

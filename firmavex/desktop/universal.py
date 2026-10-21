@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
     QMainWindow, QPlainTextEdit, QProgressBar, QPushButton, QSpinBox,
     QSplitter, QTabWidget, QVBoxLayout, QWidget,
+    QTableWidget, QTableWidgetItem, QAbstractItemView, QHeaderView,
 )
 
 from firmavex.backends.api import profiles, request_to_dict
@@ -28,6 +29,7 @@ from .controller import DesktopController
 from .diagnostics import arm_reproduction_summary, compiler_diagnostics
 from .projects import _safe_root, application_data_directory
 from .workflow import display_text, execution_request, result_context
+from firmavex.product.run_review import outcome_category
 
 
 _LABELS = {
@@ -179,6 +181,14 @@ class UniversalWindow(QMainWindow):
         self.history_filter.setMaxLength(128)
         self.history_filter.textChanged.connect(self._filter_history)
         history_layout.addWidget(self.history_filter)
+        self.outcome_filter = QComboBox()
+        self.outcome_filter.setAccessibleName('Filter history by last inspected recorded outcome')
+        for title, category in [('All outcomes', 'all'), ('Recorded failure observed', 'observed_failure'),
+                                ('Passed / no failure recorded', 'no_failure'), ('Failed / inconsistent', 'failed'),
+                                ('Cancelled', 'cancelled'), ('Unknown / incomplete / not inspected', 'unknown')]:
+            self.outcome_filter.addItem(title, category)
+        self.outcome_filter.currentIndexChanged.connect(self._filter_history)
+        history_layout.addWidget(self.outcome_filter)
         self.history = QListWidget()
         self.history.setAccessibleName("Persistent backend job history")
         self.history.itemDoubleClicked.connect(self.open_history_item)
@@ -206,6 +216,12 @@ class UniversalWindow(QMainWindow):
         self.comparison_hint.setTextFormat(Qt.TextFormat.PlainText)
         self.comparison_hint.setWordWrap(True)
         history_layout.addWidget(self.comparison_hint)
+        folder_actions = QHBoxLayout()
+        self.left_folder_button = self._button('Choose left folder…', self.pick_comparison_left)
+        self.right_folder_button = self._button('Compare folder…', self.pick_comparison_right)
+        folder_actions.addWidget(self.left_folder_button)
+        folder_actions.addWidget(self.right_folder_button)
+        history_layout.addLayout(folder_actions)
         split.addWidget(history_panel)
         self.tabs = QTabWidget()
         self.result_context_label = QLabel('No saved result selected. Opening history never executes a target.')
@@ -231,11 +247,22 @@ class UniversalWindow(QMainWindow):
         self.operation_view.setAccessibleName('Runtime, preparation and export details')
         self.operation_view.setPlaceholderText('Runtime checks, example preparation and export details appear here.')
         self.tabs.addTab(self.operation_view, 'Operation details')
-        self.comparison_view = QPlainTextEdit()
-        self.comparison_view.setReadOnly(True)
+        comparison_panel = QWidget()
+        comparison_layout = QVBoxLayout(comparison_panel)
+        self.comparison_scope = QLabel('Choose two saved backend or standalone ARM run folders. Comparison never executes them.')
+        self.comparison_scope.setTextFormat(Qt.TextFormat.PlainText)
+        self.comparison_scope.setWordWrap(True)
+        comparison_layout.addWidget(self.comparison_scope)
+        self.comparison_view = QTableWidget(0, 4)
+        self.comparison_view.setHorizontalHeaderLabels(['Field', 'Left run', 'Right run', 'Comparison'])
+        self.comparison_view.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.comparison_view.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.comparison_view.verticalHeader().hide()
+        self.comparison_view.setWordWrap(True)
         self.comparison_view.setAccessibleName('Read-only saved-run comparison')
-        self.comparison_view.setPlaceholderText('Mark a left run, select another run and Compare. Missing fields are unavailable, never assumed equal.')
-        self.tabs.addTab(self.comparison_view, 'Compare saved runs')
+        comparison_layout.addWidget(self.comparison_view)
+        self.comparison_panel = comparison_panel
+        self.tabs.addTab(comparison_panel, 'Compare saved runs')
         self.summary_view.setPlaceholderText('Prepare a trusted example or open a saved run to review its outcome here.')
         split.addWidget(self.tabs)
         split.setStretchFactor(1, 2)
@@ -292,7 +319,8 @@ class UniversalWindow(QMainWindow):
             return False
         self._job, self._output = command, output
         if command == 'backend_compare':
-            self.comparison_view.clear()
+            self.comparison_view.setRowCount(0)
+            self.comparison_scope.setText('Comparison in progress. Previous values cleared; cancellation does not produce a comparison.')
         if command in {'backend_execute', 'backend_reproduce', 'backend_inspect'}:
             self.summary_view.clear()
             self.result_view.clear()
@@ -383,7 +411,7 @@ class UniversalWindow(QMainWindow):
 
     def inspect_history_summaries(self):
         paths = [self.history.item(i).data(Qt.ItemDataRole.UserRole) for i in range(self.history.count())
-                 if not self.history.item(i).isHidden()][:50]
+                 if self.history_filter.text().casefold() in Path(self.history.item(i).data(Qt.ItemDataRole.UserRole)).name.casefold()][:50]
         if paths:
             self._start('backend_history', {'run_dirs': paths})
 
@@ -393,6 +421,22 @@ class UniversalWindow(QMainWindow):
             self._comparison_left = item.data(Qt.ItemDataRole.UserRole)
             self.comparison_hint.setText('Left run: ' + display_text(self._comparison_left, 200) + '. Select a different right run, then Compare. Both are re-inspected.')
             self._refresh()
+
+    def pick_comparison_left(self):
+        if self.busy:
+            return
+        folder = QFileDialog.getExistingDirectory(self, 'Choose left saved backend or standalone ARM run')
+        if folder:
+            self._comparison_left = folder
+            self.comparison_hint.setText('Left run: ' + display_text(folder, 200) + '. Choose another folder or select a right run.')
+            self._refresh()
+
+    def pick_comparison_right(self):
+        if self.busy or not self._comparison_left:
+            return
+        folder = QFileDialog.getExistingDirectory(self, 'Choose right saved backend or standalone ARM run')
+        if folder:
+            self._start('backend_compare', {'left': self._comparison_left, 'right': folder})
 
     def compare_selected(self):
         item = self.history.currentItem()
@@ -406,14 +450,17 @@ class UniversalWindow(QMainWindow):
         visible = 0
         for index in range(self.history.count()):
             item = self.history.item(index)
-            item.setHidden(query not in Path(item.data(Qt.ItemDataRole.UserRole)).name.casefold())
+            path = item.data(Qt.ItemDataRole.UserRole)
+            category = self.outcome_filter.currentData()
+            matches = category == 'all' or outcome_category(self._history_summaries.get(path, {})) == category
+            item.setHidden(query not in Path(path).name.casefold() or not matches)
             visible += not item.isHidden()
         if not self.history.count():
             message = 'No saved jobs here yet. Run a trusted project or use Open saved run to inspect another folder.'
         elif not visible:
-            message = 'No matching run names. Clear the filter to see saved jobs.'
+            message = 'No matching run names or inspected outcomes. Inspect summaries for matching names, or clear the filters.'
         else:
-            message = f'{visible} of {self.history.count()} listed runs. Select one and Open; inspection does not execute it. Up to 1000 entries are listed.'
+            message = f'{visible} of {self.history.count()} listed runs. Outcomes reflect the last inspection; inspect summaries to update. Up to 1000 entries are listed.'
         self.history_hint.setText(message)
         self._refresh()
 
@@ -449,7 +496,7 @@ class UniversalWindow(QMainWindow):
         if entry:
             fields = entry.get('fields', {})
             item.setText(display_text(Path(path).name, 100) + ' · ' + display_text(fields.get('backend') or 'unknown backend', 80) +
-                         ' · ' + display_text(fields.get('status') or 'unknown', 80) + ' · last inspected: ' + entry['inspection'])
+                         ' · ' + display_text(fields.get('status') or 'unknown', 80) + ' · integrity: ' + entry.get('integrity', {}).get('state', 'unavailable') + ' · last inspected: ' + entry['inspection'])
 
     @Slot()
     def reproduce(self):
@@ -508,14 +555,22 @@ class UniversalWindow(QMainWindow):
                 self._summary_label(item)
             self.status_label.setText('Inspected up to 50 listed run summaries. Saved metadata is not execution verification; refresh clears summaries.')
         elif command == 'backend_compare':
-            lines = [record.get('scope', ''), 'Left: ' + str(record['left']['run_dir']),
-                     'Right: ' + str(record['right']['run_dir'])]
+            rows = [('Saved folder', record['left']['run_dir'], record['right']['run_dir'], 'Reference only')]
             for row in record['rows']:
-                lines.append(row['field'] + ' — ' + row['comparison'] + '\n  Left: ' + json.dumps(row['left']) + '\n  Right: ' + json.dumps(row['right']))
-            for side in ('left', 'right'):
-                lines.append(side.capitalize() + ' evidence reference: ' + str(record[side]['evidence_reference'] or 'unavailable'))
-            self.comparison_view.setPlainText('\n'.join(lines)[:20000])
-            self.tabs.setCurrentWidget(self.comparison_view)
+                rows.append((row['field'], row['left'], row['right'], row['comparison']))
+            rows.append(('Evidence reference', record['left']['evidence_reference'], record['right']['evidence_reference'], 'Reference only'))
+            for key in ('state', 'scope'):
+                rows.append(('Integrity ' + key, record['left'].get('integrity', {}).get(key), record['right'].get('integrity', {}).get(key), 'Scoped checks only'))
+            self.comparison_view.setRowCount(len(rows))
+            for index, row in enumerate(rows):
+                for column, value in enumerate(row):
+                    text = 'unavailable' if value is None else value if type(value) is str else json.dumps(value)
+                    item = QTableWidgetItem(display_text(text, 300))
+                    item.setToolTip(display_text(text, 1000))
+                    self.comparison_view.setItem(index, column, item)
+            self.comparison_view.resizeRowsToContents()
+            self.comparison_scope.setText(display_text(record.get('scope', ''), 1000))
+            self.tabs.setCurrentWidget(self.comparison_panel)
             self.status_label.setText('Read-only comparison complete. Unavailable fields are not evidence of equality.')
         elif command == "backend_check":
             self._ready = record.get("status") in {"tools_available", "ready"} or record.get("success") is True
@@ -563,6 +618,8 @@ class UniversalWindow(QMainWindow):
         command = self._job
         self._job = None
         if command in {'backend_check', 'backend_prepare', 'backend_export', 'backend_history', 'backend_compare'}:
+            if command == 'backend_compare':
+                self.comparison_scope.setText('Comparison unavailable: ' + display_text(record.get('message', 'Review operation details.'), 500))
             self.operation_view.setPlainText(_preview(record))
             self.tabs.setCurrentWidget(self.operation_view)
             self.status_label.setText(display_text(str(record.get('category', 'worker_error')) + ': ' + str(record.get('message', 'Review operation details.'))))
@@ -591,7 +648,7 @@ class UniversalWindow(QMainWindow):
     @Slot()
     def _refresh(self):
         idle = not self.busy and not self._closing
-        for control in (self.profile_combo, self.source_edit, self.browse_button, self.values_edit, self.trust_box, self.check_button, self.setup_button, self.example_button, self.arm_button, self.history, self.history_filter, self.history_refresh_button, self.open_button):
+        for control in (self.profile_combo, self.source_edit, self.browse_button, self.values_edit, self.trust_box, self.check_button, self.setup_button, self.example_button, self.arm_button, self.history, self.history_filter, self.outcome_filter, self.history_refresh_button, self.open_button, self.left_folder_button):
             control.setEnabled(idle)
         self.timeout_spin.setEnabled(idle and self.profile != "cortex-m3-mps2")
         self.artifact_spin.setEnabled(idle and self.profile != "cortex-m3-mps2")
@@ -618,7 +675,8 @@ class UniversalWindow(QMainWindow):
         self.pin_button.setEnabled(idle and selected is not None and not selected.isHidden())
         self.compare_button.setEnabled(idle and selected is not None and not selected.isHidden() and
                                        self._comparison_left is not None and selected.data(Qt.ItemDataRole.UserRole) != self._comparison_left)
-        self.history_summary_button.setEnabled(idle and any(not self.history.item(i).isHidden() for i in range(self.history.count())))
+        self.history_summary_button.setEnabled(idle and any(self.history_filter.text().casefold() in Path(self.history.item(i).data(Qt.ItemDataRole.UserRole)).name.casefold() for i in range(self.history.count())))
+        self.right_folder_button.setEnabled(idle and self._comparison_left is not None)
         self.cancel_button.setEnabled(self.busy and not self._closing)
         self.reproduce_button.setEnabled(idle and self.active_run is not None and self.record is not None and self.record.get("status") in {"passed", "triggered"} and self.trust_box.isChecked())
         self.export_button.setEnabled(idle and self.active_run is not None and self.record is not None)

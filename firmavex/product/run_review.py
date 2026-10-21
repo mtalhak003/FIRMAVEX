@@ -5,6 +5,8 @@ import json
 
 from firmavex.backends.api import profiles
 from firmavex.backends.engine import inspect_run, STATUSES
+from firmavex.backends.security import checked_path, EXPORT_BYTES
+from firmavex.product.errors import ProductError
 
 
 def _path(value):
@@ -42,20 +44,87 @@ def fields(record):
     }
 
 
+def outcome_category(entry):
+    """Recorded classifications only; absence is never a passing outcome."""
+    data = entry.get('fields')
+    status = data.get('status') if type(data) is dict else None
+    if entry.get('inspection') != 'validated' or type(status) is not str or status == 'incomplete':
+        return 'unknown'
+    if status in {'triggered', 'configured_failure_observed', 'reproduced_in_emulator'}:
+        return 'observed_failure'
+    if status in {'passed', 'not_discovered', 'no_failure_within_budget', 'domain_exhausted'}:
+        return 'no_failure'
+    if status == 'cancelled':
+        return 'cancelled'
+    return 'failed' if status in {'invalid_input', 'invalid_output', 'infrastructure_failure', 'reproduction_inconsistent'} else 'unknown'
+
+
+def _integrity(state, scope, count=0):
+    return {'state': state, 'scope': scope, 'artifacts_checked': count}
+
+
+def _legacy(path):
+    from firmavex.backends.process import inspect_artifacts
+    from firmavex.product.services import inspect_run as inspect_arm
+    from firmavex.product.config import ProductConfig
+    # Reuse the existing ARM export preflight before its hash/SQLite inspector.
+    inspect_artifacts(path, EXPORT_BYTES)
+    inspected = inspect_arm(path)
+    metadata = inspected['metadata']
+    ProductConfig.from_dict(metadata['configuration'])
+    result = inspected['result']
+    supported = type(result) is dict and result.get('kind') == 'firmavex_product_result'
+    outcome = result.get('outcome') if supported else None
+    known = {'configured_failure_observed', 'no_failure_within_budget', 'domain_exhausted',
+             'reproduced_in_emulator', 'reproduction_inconsistent', 'infrastructure_failure', 'invalid_output', 'cancelled'}
+    values = {key: None for key in fields({'evidence': {}})}
+    values['backend'] = 'cortex-m3-mps2'
+    values['status'] = outcome if type(outcome) is str and outcome in known else 'incomplete' if result is None else None
+    if supported and result.get('measurement_mode') in {'real_firmware', 'synthetic_test'}:
+        values['measurement'] = result['measurement_mode']
+    # Do not infer cleanup from an overall outcome or evidence-completeness flag.
+    artifacts = inspected['artifact_verification']
+    integrity = (_integrity('verified', 'Registered ARM artifact SHA-256/size checks passed; not authenticity or execution verification.', len(artifacts))
+                 if artifacts else _integrity('unavailable', 'No registered artifacts were available for hash verification.'))
+    return {'run_dir': path, 'archive_format': 'standalone_arm', 'inspection': 'validated',
+            'state': inspected['state'], 'fields': values, 'integrity': integrity,
+            'evidence_reference': str(Path(path) / 'run.sqlite3')}
+
+
 def _review(path):
+    legacy = False
     try:
+        root = checked_path(path, directory=True)
+        legacy = (root / 'run.sqlite3').exists() or (root / 'run.sqlite3').is_symlink()
+        if legacy:
+            if (root / 'admission.json').exists() or (root / 'admission.json').is_symlink():
+                raise ValueError('Ambiguous archive format')
+            return _legacy(path)
         record = inspect_run(path)
         values = fields(record)
         status = values['status']
         state = ('completed' if status in {'passed', 'triggered', 'not_discovered'} else
                  'incomplete' if status == 'incomplete' else
                  'cancelled' if status == 'cancelled' else 'failed' if status in STATUSES else 'unknown')
-        return {'run_dir': path, 'inspection': 'validated', 'state': state, 'fields': values,
+        integrity = _integrity('unavailable', 'No listed artifacts were hash-checked; record inspection is not artifact verification.')
+        if record['evidence'].get('artifacts'):
+            from firmavex.backends.report import _saved_artifacts
+            try:
+                artifacts = _saved_artifacts(root, record)
+                if inspect_run(path) != record:
+                    raise ValueError('Record changed during verification')
+                integrity = _integrity('verified', 'Listed backend artifact SHA-256/size checks passed; not authenticity, ARM receipt or execution verification.', len(artifacts))
+            except (OSError, ValueError, RuntimeError):
+                integrity = _integrity('unverified', 'Listed artifact verification failed or was rejected by existing limits.')
+        return {'run_dir': path, 'archive_format': 'shared_backend', 'integrity': integrity,
+                'inspection': 'validated', 'state': state, 'fields': values,
                 'evidence_reference': str(Path(path) / ('admission.json' if status == 'incomplete' else 'result.json'))}
-    except (OSError, ValueError, TypeError):
+    except (OSError, ValueError, TypeError, KeyError, RuntimeError, ProductError):
         # Missing, legacy and malformed records are not evidence of an outcome.
         return {'run_dir': path, 'inspection': 'unavailable', 'state': 'unknown',
-                'fields': {}, 'evidence_reference': None}
+                'fields': {}, 'evidence_reference': None,
+                'integrity': _integrity('unverified' if legacy else 'unavailable',
+                                        'ARM archive verification failed or format unsupported.' if legacy else 'No integrity checks completed.')}
 
 
 def history(run_dirs, *, cancel_event=None):
@@ -70,7 +139,7 @@ def history(run_dirs, *, cancel_event=None):
         entries.append(_review(path))
     _cancel(cancel_event)
     return {'entries': entries, 'read_only': True,
-            'scope': 'Saved metadata inspection; not execution verification. Refresh to inspect changed files.'}
+            'scope': 'Saved metadata inspection with explicitly scoped artifact checks; not execution verification. Refresh to inspect changed files.'}
 
 
 def compare(left, right, *, cancel_event=None):
@@ -82,4 +151,4 @@ def compare(left, right, *, cancel_event=None):
         rows.append({'field': name, 'left': a, 'right': b,
                      'comparison': 'unavailable' if a is None or b is None else 'unchanged' if a == b else 'changed'})
     return {'left': entries[0], 'right': entries[1], 'rows': rows, 'read_only': True,
-            'scope': 'Sequential saved metadata inspection only; no replay, artifact validation or atomic snapshot. Evidence references are not content hashes.'}
+            'scope': 'Sequential read-only review; no replay or atomic snapshot. Integrity states apply only to the named checks, not authenticity or execution validity. Evidence references alone prove no integrity.'}

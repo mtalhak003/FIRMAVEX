@@ -74,6 +74,66 @@ def archive_bytes(path):
     return {p.relative_to(path).as_posix(): p.read_bytes() for p in path.rglob("*") if p.is_file()}
 
 
+def test_legacy_arm_review_reuses_hash_verification_and_preserves_exact_outcome(project, tmp_path, monkeypatch):
+    from firmavex.product.run_review import compare, history
+    config, _ = project
+    root = tmp_path / 'legacy'
+    services.run_project(config, root, _executor_factory=factory(SyntheticExecutor()))
+    before = archive_bytes(root)
+    review = compare(str(root), str(root))
+    entry = review['left']
+    assert entry['archive_format'] == 'standalone_arm'
+    assert entry['fields']['status'] == 'configured_failure_observed'
+    assert entry['fields']['measurement'] == 'synthetic_test'
+    assert entry['fields']['cleanup_verified'] is None  # Not inferred from the outcome.
+    assert entry['integrity']['state'] == 'verified' and entry['integrity']['artifacts_checked'] > 0
+    assert archive_bytes(root) == before
+    cancel = threading.Event()
+    original_inspect = services.inspect_run
+    def cancel_after_inspection(path):
+        result = original_inspect(path)
+        cancel.set()
+        return result
+    with monkeypatch.context() as patch:
+        patch.setattr(services, 'inspect_run', cancel_after_inspection)
+        with pytest.raises(KeyboardInterrupt):
+            history([str(root)], cancel_event=cancel)
+    assert archive_bytes(root) == before
+    from firmavex.backends.engine import _write
+    shared = tmp_path / 'shared'; shared.mkdir()
+    admission = {'attempt_id': 'shared', 'profile': {'id': 'cortex-m3-mps2'}, 'values': []}
+    _write(shared / 'admission.json', admission)
+    _write(shared / 'result.json', {'schema_version': 1, 'status': 'triggered',
+        'evidence': {'admission': admission, 'measurement_mode': 'synthetic_test', 'cleanup_verified': True}})
+    shared_before = archive_bytes(shared)
+    mixed = compare(str(root), str(shared))
+    rows = {r['field']: r for r in mixed['rows']}
+    assert rows['backend']['comparison'] == 'unchanged'
+    assert rows['status']['comparison'] == 'changed'  # Preserve both formats' exact recorded vocabulary.
+    assert rows['cleanup_verified']['comparison'] == 'unavailable'
+    assert mixed['right']['integrity']['state'] == 'unavailable'
+    assert archive_bytes(root) == before and archive_bytes(shared) == shared_before
+    (root / 'report.md').write_bytes(b'tampered')
+    tampered = archive_bytes(root)
+    rejected = compare(str(root), str(root))['left']
+    assert rejected['inspection'] == 'unavailable'
+    assert rejected['integrity']['state'] == 'unverified'
+    assert archive_bytes(root) == tampered
+
+
+def test_legacy_arm_incomplete_review_does_not_invent_results(project, tmp_path):
+    from firmavex.product.run_review import compare
+    config, _ = project
+    root = tmp_path / 'incomplete-arm'
+    with RunStore(root, create=True) as store:
+        store.initialize({'configuration': config.to_dict(), 'run_id': 'incomplete'})
+    before = archive_bytes(root)
+    entry = compare(str(root), str(root))['left']
+    assert entry['inspection'] == 'validated' and entry['fields']['status'] == 'incomplete'
+    assert entry['fields']['measurement'] is None and entry['integrity']['state'] == 'unavailable'
+    assert archive_bytes(root) == before
+
+
 def mutate_metadata(path, edit):
     db = sqlite3.connect(path / "run.sqlite3")
     metadata = json.loads(db.execute("SELECT metadata FROM run").fetchone()[0])
