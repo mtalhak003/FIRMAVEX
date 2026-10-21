@@ -279,6 +279,46 @@ def test_large_session_verification_preview_does_not_claim_a_saved_report(view):
     assert window.verification_table.rowCount() == 256
 
 
+def test_verification_with_real_supervised_worker_preserves_views_and_evidence(qtbot, tmp_path):
+    """Real worker transport and file checks; saved measurement stays synthetic."""
+    import hashlib
+    import json
+    window = UniversalWindow(data_root=tmp_path / 'supervised verification')
+    qtbot.addWidget(window)
+    window.show()
+    root = window.data_root / 'runs' / 'saved'
+    root.mkdir(parents=True)
+    data = b'synthetic retained waveform'
+    (root / 'trace.vcd').write_bytes(data)
+    admission = {'attempt_id': 'synthetic', 'profile': {'id': 'verilog-icarus'}, 'values': []}
+    (root / 'admission.json').write_text(json.dumps(admission), encoding='utf-8')
+    (root / 'result.json').write_text(json.dumps({'schema_version': 1, 'status': 'passed',
+        'evidence': {'admission': admission, 'measurement_mode': 'synthetic_test',
+                     'artifacts': [{'name': 'trace.vcd', 'size_bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest()}]}}), encoding='utf-8')
+    before = {p.name: p.read_bytes() for p in root.iterdir()}
+    window.refresh_history()
+    window.history.setCurrentItem(window.history.item(0))
+    window.result_view.setPlainText('Original evidence view')
+    window.log_view.setPlainText('Original execution log')
+    window.comparison_view.setRowCount(1)
+    try:
+        window.verify_selected()
+        qtbot.waitUntil(lambda: not window.busy, timeout=20000)
+        assert window.verification_table.rowCount() == 1
+        assert window.verification_table.item(0, 1).text() == 'hash_match'
+        assert window.verification_label.text().startswith('verified')
+        assert window.result_view.toPlainText() == 'Original evidence view'
+        assert window.log_view.toPlainText() == 'Original execution log'
+        assert window.comparison_view.rowCount() == 1
+        assert not window.trust_box.isChecked()
+        assert {p.name: p.read_bytes() for p in root.iterdir()} == before
+    finally:
+        if window.busy:
+            window.controller.cancel()
+            qtbot.waitUntil(lambda: not window.busy, timeout=20000)
+        window.close()
+
+
 @pytest.mark.parametrize('profile', ['cortex-m3-mps2', 'riscv32-virt', 'verilog-icarus'])
 def test_saved_context_and_evidence_survive_administrative_operations(view, tmp_path, profile):
     window, controller = view

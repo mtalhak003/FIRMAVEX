@@ -598,8 +598,9 @@ class UniversalWindow(QMainWindow):
     @Slot(dict)
     def _progress(self, envelope):
         payload = envelope.get('payload', {})
-        if self._job == 'backend_verify' and type(payload) is dict and payload.get('type') == 'verification_progress':
-            self._verification_update(payload)
+        if self._job == 'backend_verify':
+            if type(payload) is dict and payload.get('type') == 'verification_progress':
+                self._verification_update(payload)
             return
         self.log_view.appendPlainText(_preview(envelope)[:8192])
         payload = envelope.get("payload", {})
