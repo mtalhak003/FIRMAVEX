@@ -1,4 +1,17 @@
-# Batch 6: unified offline desktop
+# Unified desktop: current capability guide
+
+The current custom-project workflow is described in
+[Batch 17: repeatable custom inputs](batch17-custom-workflow.md): explicit ARM
+configuration handoff, named immutable RV32/Verilog snapshots, new-build imports,
+non-executing preflight and project-associated history. Saved-run formats and
+execution permissions are unchanged. Windows x64/Ubuntu x64 baseline native
+qualification does not imply arbitrary-target or physical hardware support;
+macOS unified native execution remains unsupported. See the release policy for
+unresolved security, legal, signing and consumer-acceptance gates.
+
+The following sections retain the historical implementation/qualification record.
+
+## Batch 6: unified offline desktop
 
 The **Backends** workspace in the desktop application's Backends menu uses the
 same supervised worker as the existing ARM interface. Choose ARM Cortex-M3,

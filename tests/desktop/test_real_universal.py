@@ -241,3 +241,88 @@ def test_real_unified_cancel_icarus_after_simulator_dispatch(qtbot, tmp_path):
             window.cancel()
             qtbot.waitUntil(lambda: not window.busy, timeout=30000)
         window.close()
+
+
+@pytest.mark.parametrize('profile', ['cortex-m3-mps2', 'riscv32-virt', 'verilog-icarus'])
+def test_real_custom_configuration_workflow(qtbot, tmp_path, monkeypatch, profile):
+    """Native custom fixtures, immutable snapshots and associated ordinary runs."""
+    _require(profile)
+    from firmavex.backends.bundled import catalog
+    from firmavex.desktop.universal import UniversalWindow
+    import tempfile
+    with tempfile.TemporaryDirectory(prefix='fx17-') as temporary:
+        window = UniversalWindow(data_root=Path(temporary) / 'w')
+        qtbot.addWidget(window)
+        window.show()
+        source = tmp_path / 'custom input'
+        if profile == 'cortex-m3-mps2':
+            from firmavex.product.services import prepare_example_project
+            from firmavex.product.config import load_config
+            from firmavex.desktop.projects import DesktopProject
+            from firmavex.product.workspace import arm_context
+            from dataclasses import replace
+            prepared = prepare_example_project(Path(temporary) / 'example')
+            config = load_config(prepared['config_file'])
+            source.write_bytes(config.firmware.read_bytes() + b'custom ARM fixture revision')
+            project = DesktopProject.create(Path(temporary) / 'p', source, replace(config, firmware=source))
+            context = arm_context(project, project.load_config())
+        elif profile == 'riscv32-virt':
+            source.write_bytes(catalog()[1] + b'custom fixture revision')
+        else:
+            source.write_text('module testbench; initial begin $display("FIRMAVEX_TEST_RESULT=PASS"); $finish; end endmodule', encoding='ascii')
+        original = source.read_bytes()
+        try:
+            window.profile_combo.setCurrentIndex(window.profile_combo.findData(profile))
+            if profile == 'cortex-m3-mps2':
+                window.select_arm_context(context)
+            else:
+                window.source_edit.setText(str(source))
+            if profile == 'riscv32-virt':
+                window.values_edit.setText('0, 0')
+            window.configuration_name.setText('Native custom fixture')
+            window.preflight()
+            qtbot.waitUntil(lambda: not window.busy, timeout=30000)
+            assert 'static_checks_passed' in window.operation_view.toPlainText()
+            if profile == 'cortex-m3-mps2':
+                root, manifest_path, input_path = project.root, project.config_path, project.firmware_path
+            else:
+                window.save_named_configuration()
+                qtbot.waitUntil(lambda: not window.busy, timeout=30000)
+                saved = window._saved_configuration
+                assert saved is not None, window.operation_view.toPlainText()
+                root = Path(saved['configuration'])
+                manifest_path, input_path = root / 'configuration.json', root / 'input'
+            manifest = manifest_path.read_bytes()
+            expected = 'triggered' if profile == 'cortex-m3-mps2' else 'passed'
+            source.unlink()
+            window.check_runtime()
+            qtbot.waitUntil(lambda: not window.busy, timeout=120000)
+            assert window._ready and not window.trust_box.isChecked()
+            window.trust_box.setChecked(True)
+            window.execute()
+            qtbot.waitUntil(lambda: not window.busy, timeout=120000)
+            assert window.record and window.record['status'] == expected, window.result_view.toPlainText()
+            _assert_cleanup(window.record)
+            first = window.active_run
+            assert first.parent == root / 'runs' and window.history.count() == 1
+            window.reproduce()
+            qtbot.waitUntil(lambda: not window.busy, timeout=120000)
+            assert window.record and window.record['status'] == expected
+            _assert_cleanup(window.record)
+            assert window.history.count() == 2
+            before = {p.relative_to(first): p.read_bytes() for p in first.rglob('*') if p.is_file()}
+            window.inspect(first)
+            qtbot.waitUntil(lambda: not window.busy, timeout=15000)
+            assert not window.trust_box.isChecked()
+            monkeypatch.setattr('firmavex.desktop.universal.QFileDialog.getExistingDirectory', lambda *a: str(tmp_path))
+            window.export()
+            qtbot.waitUntil(lambda: not window.busy, timeout=30000)
+            assert list(tmp_path.glob('firmavex-backend-export-*/REPORT.md'))
+            assert manifest_path.read_bytes() == manifest
+            assert input_path.read_bytes() == original
+            assert {p.relative_to(first): p.read_bytes() for p in first.rglob('*') if p.is_file()} == before
+        finally:
+            if window.busy:
+                window.controller.cancel()
+                qtbot.waitUntil(lambda: not window.busy, timeout=20000)
+            window.close()

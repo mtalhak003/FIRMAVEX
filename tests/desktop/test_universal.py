@@ -92,6 +92,8 @@ def test_inline_workflow_guides_input_readiness_and_explicit_consent(view, profi
         assert not window.run_button.isEnabled()
         assert 'exactly two uint32' in window.workflow_hint.text()
         window.values_edit.setText('0xffffffff, 0')
+        assert not window.trust_box.isChecked() and not window.run_button.isEnabled()
+        window.trust_box.setChecked(True)
         assert window.run_button.isEnabled()
     assert [c[0] for c in controller.calls] == ['backend_check']
 
@@ -479,6 +481,7 @@ def test_valid_rv_request_preserves_values_limits_and_explicit_trust(view):
     window.values_edit.setText("0xffffffff, 2")
     window.timeout_spin.setValue(17.5)
     window.artifact_spin.setValue(3)
+    window.trust_box.setChecked(True)
     window.execute()
     command, payload = controller.calls[-1]
     assert command == "backend_execute"
@@ -498,6 +501,7 @@ def test_invalid_rv_vectors_do_not_dispatch(view, values):
     window.source_edit.setText("firmware.elf")
     window.trust_box.setChecked(True)
     window.values_edit.setText(values)
+    window.trust_box.setChecked(True)
     before = len(controller.calls)
     window.execute()
     assert len(controller.calls) == before
@@ -728,3 +732,74 @@ def test_verification_provenance_review_and_export_cancellation(view, monkeypatc
     controller.finish({'freshness': {'state': 'stale', 'checked_at': '2026-10-21T00:00:02+00:00'}})
     assert 'Freshness: stale' in window.verification_provenance.text()
     assert window._verification_session['status'] == 'cancelled'
+
+
+def test_named_snapshot_open_resets_consent_and_scopes_history(view, tmp_path):
+    from firmavex.backends.api import Request, request_to_dict
+    from firmavex.product.workspace import save
+    window, controller = view
+    source = tmp_path / 'custom.v'
+    source.write_text('module testbench; initial $display("FIRMAVEX_TEST_RESULT=PASS"); endmodule')
+    saved = save(tmp_path / 'configurations', 'Custom counter', request_to_dict(Request('verilog-icarus', source)))
+    (Path(saved['configuration']) / 'runs' / 'legacy').mkdir(parents=True)
+    window.trust_box.setChecked(True)
+    window._start('backend_configurations', {'action': 'open', 'configuration': saved['configuration']})
+    controller.finish(saved)
+    assert window._saved_configuration['identity'] == saved['identity']
+    assert not window.trust_box.isChecked() and not window._ready
+    assert window.source_edit.text() == saved['request']['source']
+    assert window.history.count() == 1
+    assert 'legacy' == window.history.item(0).text()
+    assert all(command != 'backend_configuration_execute' for command, _ in controller.calls)
+    window.check_runtime()
+    controller.finish({'status': 'tools_available'})
+    window.trust_box.setChecked(True)
+    window.execute()
+    command, payload = controller.calls[-1]
+    assert command == 'backend_configuration_execute'
+    assert Path(payload['output_dir']).parent == Path(saved['configuration']) / 'runs'
+    controller.finish({'status': 'passed', 'evidence': {'measurement_mode': 'synthetic_test'}})
+    window.timeout_spin.setValue(12)
+    assert window._saved_configuration is None and not window.trust_box.isChecked()
+    assert window._associated_history is None
+
+
+def test_configuration_revision_dialog_cancellation_and_preflight_preserve_result(view, tmp_path, monkeypatch):
+    from firmavex.backends.api import Request, request_to_dict
+    from firmavex.product.workspace import save
+    window, controller = view
+    source = tmp_path / 'custom.v'
+    source.write_text('module testbench; endmodule')
+    saved = save(tmp_path / 'configs', 'test', request_to_dict(Request('verilog-icarus', source)))
+    window._apply_configuration(saved)
+    window.result_view.setPlainText('Previous evidence')
+    monkeypatch.setattr('firmavex.desktop.universal.QFileDialog.getOpenFileName', lambda *a: ('', ''))
+    window.import_revision()
+    assert not controller.calls
+    window.preflight()
+    assert controller.calls[-1][0] == 'backend_preflight'
+    controller.finish({'status': 'static_checks_passed', 'execution_performed': False, 'findings': ['syntax unverified']})
+    assert window.result_view.toPlainText() == 'Previous evidence'
+    assert not window.trust_box.isChecked()
+    assert window._saved_configuration['identity'] == saved['identity']
+
+
+def test_arm_context_execution_uses_pinned_selection_and_project_history(view, tmp_path):
+    window, controller = view
+    project = tmp_path / 'arm'
+    (project / 'runs' / 'old').mkdir(parents=True)
+    context = {'source': str(project / 'selected.json'), 'project': str(project),
+               'sha256': 'a' * 64, 'firmware_sha256': 'b' * 64}
+    window.select_arm_context(context)
+    assert window.source_edit.text() == context['source'] and window.history.count() == 1
+    assert not controller.calls and not window.trust_box.isChecked()
+    window.check_runtime()
+    controller.finish({'status': 'tools_available'})
+    window.trust_box.setChecked(True)
+    window.execute()
+    command, payload = controller.calls[-1]
+    assert command == 'backend_execute'
+    assert payload['input_sha256'] == context['sha256']
+    assert payload['firmware_sha256'] == context['firmware_sha256']
+    assert Path(payload['output_dir']).parent == project / 'runs'
+    controller.finish({'status': 'cancelled', 'evidence': {}})

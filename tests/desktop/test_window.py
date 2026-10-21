@@ -289,3 +289,29 @@ def test_runtime_setup_controls_disabled_while_execution_active(view):
     w._refresh_enabled()
     assert not w.runtime_install_button.isEnabled()
     assert not w.runtime_verify_button.isEnabled()
+
+
+def test_arm_workspace_handoff_roundtrip_never_runs_and_uses_exact_saved_settings(qtbot, tmp_path):
+    from firmavex.product.services import prepare_example_project
+    from firmavex.product.config import load_config
+    from firmavex.desktop.projects import DesktopProject
+    from dataclasses import replace
+    prepared = prepare_example_project(tmp_path / 'builtin')
+    config = load_config(prepared['config_file'])
+    project = DesktopProject.create(tmp_path / 'project', config.firmware, config)
+    controller = SyntheticController()
+    window = ui.MainWindow(controller, data_root=tmp_path / 'app')
+    qtbot.addWidget(window)
+    window._adopt_project((project, project.load_config()))
+    window.budget_spin.setValue(7)
+    window.show_backends()
+    qtbot.waitUntil(lambda: window._local_task is None, timeout=10000)
+    child = window._universal_window
+    assert child is not None and child._arm_context is not None
+    assert not child.trust_box.isChecked() and not child.busy and not controller.calls
+    project.save_config(replace(project.load_config(), execution_budget=11))
+    child.arm_configuration_requested.emit()
+    qtbot.waitUntil(lambda: window._local_task is None, timeout=10000)
+    assert window.configuration().execution_budget == 7
+    assert window.project.root == project.root and not controller.calls
+    window.close()

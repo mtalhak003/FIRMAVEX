@@ -22,9 +22,12 @@ _FIELDS = {
     "prepare_example": ({"output_dir"}, set()), "setup_runtime": (set(), set()),
     "runtime_history": (set(), set()), "rollback_runtime": ({"generation"}, set()),
     "demo_builtin": ({"output_dir"}, set()),
+    "backend_preflight": ({"request"}, {"configuration", "input_sha256", "firmware_sha256"}),
+    "backend_configurations": ({"action"}, {"root", "configuration", "name", "request"}),
+    "backend_configuration_execute": ({"configuration", "output_dir", "trust"}, set()),
     "backend_check": ({"profile"}, set()),
     "backend_prepare": ({"profile", "output_dir"}, set()),
-    "backend_execute": ({"request", "output_dir", "trust"}, set()),
+    "backend_execute": ({"request", "output_dir", "trust"}, {"input_sha256", "firmware_sha256"}),
     "backend_inspect": ({"run_dir"}, set()),
     "backend_history": ({"run_dirs"}, set()),
     "backend_compare": ({"left", "right"}, set()),
@@ -39,6 +42,8 @@ def validate_payload(command, payload):
     """Shared command-field validation; service-specific values stay in services."""
     if command not in _FIELDS or type(payload) is not dict:
         raise ProductError("protocol_error", "Invalid command payload fields.")
+    if command == 'backend_execute' and 'firmware_sha256' in payload and 'input_sha256' not in payload:
+        raise ProductError('protocol_error', 'A firmware identity requires a configuration identity.')
     required, optional = _FIELDS[command]
     if not required <= payload.keys() or not payload.keys() <= required | optional:
         raise ProductError("protocol_error", "Invalid command payload fields.")
@@ -169,12 +174,25 @@ class Worker:
                 result = describe()
             elif command.startswith("backend_"):
                 from . import backend_services as backend
-                if command == "backend_check":
+                if command == 'backend_preflight':
+                    from .workspace import preflight
+                    result = preflight(payload['request'], cancel_event=cancel, configuration=payload.get('configuration'), expected=payload.get('input_sha256'), expected_firmware=payload.get('firmware_sha256'))
+                elif command == 'backend_configurations':
+                    from .workspace import operation
+                    result = operation(payload, cancel_event=cancel)
+                elif command == 'backend_configuration_execute':
+                    from .workspace import execute_saved
+                    result = execute_saved(payload['configuration'], payload['output_dir'], trust=payload['trust'], cancel_event=cancel, event_callback=callback)
+                elif command == "backend_check":
                     result = backend.check(payload["profile"])
                 elif command == "backend_prepare":
                     result = backend.prepare(payload["profile"], payload["output_dir"], cancel_event=cancel)
                 elif command == "backend_execute":
-                    result = backend.execute(payload["request"],payload["output_dir"],trust=payload["trust"],cancel_event=cancel,event_callback=callback)
+                    if 'input_sha256' in payload:
+                        from .workspace import execute_selected
+                        result = execute_selected(payload['request'], payload['output_dir'], payload['input_sha256'], trust=payload['trust'], cancel_event=cancel, event_callback=callback, expected_firmware=payload.get('firmware_sha256'))
+                    else:
+                        result = backend.execute(payload["request"],payload["output_dir"],trust=payload["trust"],cancel_event=cancel,event_callback=callback)
                 elif command == "backend_inspect":
                     result = backend.inspect(payload["run_dir"])
                 elif command == "backend_history":
@@ -253,10 +271,17 @@ class Worker:
                         details["partial_result"] = self.services.inspect_run(output_dir)
                 except Exception as inspection_error:
                     details["inspection_error"] = str(inspection_error)
-            description = ('Read-only review cancelled; saved evidence was not modified.'
-                           if command in {'backend_history', 'backend_compare'} else
+            description = ('Configuration operation cancelled; no target execution started. Previous configurations and evidence were not changed.'
+                           if command == 'backend_configurations' else
+                           'Read-only review cancelled; saved evidence was not modified.'
+                           if command in {'backend_history', 'backend_compare', 'backend_preflight'} else
                            'Execution was interrupted; inspect the partial run before restart.')
             self.emit(request_id, "error", ProductError("cancelled", description, details).to_dict())
+        except (ValueError, OSError) as exc:
+            self.failed = True
+            error = (ProductError("invalid_input", str(exc)[:600]) if command in {'backend_preflight', 'backend_configurations', 'backend_configuration_execute'} else
+                     ProductError("worker_failure", "Execution service raised an unexpected exception.", {"exception_type": type(exc).__name__, "diagnostic": str(exc)}))
+            self.emit(request_id, "error", error.to_dict())
         except Exception as exc:
             self.failed = True
             self.emit(request_id, "error", ProductError("worker_failure", "Execution service raised an unexpected exception.", {"exception_type": type(exc).__name__, "diagnostic": str(exc)}).to_dict())

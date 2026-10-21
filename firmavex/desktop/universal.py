@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QAbstractItemView, QHeaderView,
 )
 
-from firmavex.backends.api import profiles, request_to_dict
+from firmavex.backends.api import profiles, request_to_dict, request_from_dict
 from firmavex.product.errors import ProductError
 from firmavex.product.presentation import summary, guidance
 from .controller import DesktopController
@@ -66,6 +66,10 @@ class UniversalWindow(QMainWindow):
         self._ready = False
         self._example_source: str | None = None
         self._comparison_left: str | None = None
+        self._saved_configuration = None
+        self._loading_configuration = False
+        self._associated_history = None
+        self._arm_context = None
         self._verification_session = None
         self._history_summaries = {}
         self.setWindowTitle("FIRMAVEX — processor and HDL backends")
@@ -150,6 +154,35 @@ class UniversalWindow(QMainWindow):
         self.trust_box.toggled.connect(self._refresh)
         form.addRow(self.trust_box)
         layout.addLayout(form)
+        configuration_actions = QHBoxLayout()
+        self.configuration_name = QLineEdit()
+        self.configuration_name.setPlaceholderText('Name for a saved RV32 / Verilog configuration')
+        self.configuration_name.setMaxLength(80)
+        self.configurations = QComboBox()
+        self.configurations.setAccessibleName('Saved backend configurations and revisions')
+        self.configurations.currentIndexChanged.connect(self._refresh)
+        configuration_actions.addWidget(self.configuration_name)
+        configuration_actions.addWidget(self.configurations)
+        layout.addLayout(configuration_actions)
+        configuration_buttons = QHBoxLayout()
+        self.configuration_save = self._button('Save named snapshot', self.save_named_configuration)
+        self.configuration_list = self._button('List configurations', self.list_configurations)
+        self.configuration_open = self._button('Open selected configuration', self.open_named_configuration)
+        self.configuration_clear = self._button('Use unsaved form / workspace history', self._configuration_edited)
+        self.configuration_revision = self._button('Import new revision…', self.import_revision)
+        self.preflight_button = self._button('Check input compatibility (no execution)', self.preflight)
+        for button in (self.configuration_save, self.configuration_list, self.configuration_open,
+                       self.configuration_revision, self.configuration_clear, self.preflight_button):
+            configuration_buttons.addWidget(button)
+        layout.addLayout(configuration_buttons)
+        self.configuration_context = QLabel('No saved configuration selected. ARM uses its existing project editor.')
+        self.configuration_context.setTextFormat(Qt.TextFormat.PlainText)
+        self.configuration_context.setWordWrap(True)
+        layout.addWidget(self.configuration_context)
+        self.timeout_spin.valueChanged.connect(self._configuration_edited)
+        self.artifact_spin.valueChanged.connect(self._configuration_edited)
+        self.values_edit.textChanged.connect(self._configuration_edited)
+
         actions = QHBoxLayout()
         self.check_button = self._button("Check runtime readiness", self.check_runtime)
         self.example_button = self._button("Prepare independent example", self.prepare_example)
@@ -324,6 +357,7 @@ class UniversalWindow(QMainWindow):
 
     @Slot()
     def _profile_changed(self):
+        self._configuration_edited()
         self._ready = False
         self._example_source = None
         self.trust_box.setChecked(False)
@@ -348,13 +382,115 @@ class UniversalWindow(QMainWindow):
 
     @Slot(str)
     def _source_changed(self, text):
+        self._configuration_edited()
         if self._example_source != text:
             self._example_source = None
             self.trust_box.setChecked(False)
         self._refresh()
 
+    def _configuration_edited(self, *_):
+        if self._loading_configuration:
+            return
+        had_scope = self._associated_history is not None
+        self._saved_configuration = None
+        self._associated_history = None
+        self._arm_context = None
+        self.trust_box.setChecked(False)
+        self.configuration_context.setText('Unsaved form uses the displayed settings and default memory/log limits. Save a named snapshot or explicitly select an ARM project configuration.')
+        if had_scope and not self.busy:
+            self.refresh_history()
+        self._refresh()
+
+    def select_arm_context(self, context):
+        if self.busy:
+            return False
+        self._loading_configuration = True
+        try:
+            self.profile_combo.setCurrentIndex(self.profile_combo.findData('cortex-m3-mps2'))
+            self.source_edit.setText(context['source'])
+            self._arm_context = context
+            self._saved_configuration = None
+            self._associated_history = Path(context['project']) / 'runs'
+            self.trust_box.setChecked(False)
+            self._ready = False
+            self.configuration_context.setText('Selected ARM configuration: ' + display_text(context['source'], 500) +
+                ' · SHA-256 ' + context['sha256'] + '. Navigation does not execute it.')
+        finally:
+            self._loading_configuration = False
+        self.refresh_history()
+
+    def _apply_configuration(self, record):
+        request = record['request']
+        self._loading_configuration = True
+        try:
+            self.profile_combo.setCurrentIndex(self.profile_combo.findData(request['profile']))
+            self.source_edit.setText(request['source'])
+            self.values_edit.setText(', '.join(str(v) for v in request['values']))
+            self.timeout_spin.setValue(request['limits']['timeout_seconds'])
+            self.artifact_spin.setValue(request['limits']['artifact_bytes'] // (1024 * 1024))
+            self.configuration_name.setText(record['name'])
+            self._saved_configuration = record
+            index = self.configurations.findData(record['configuration'])
+            if index < 0:
+                self.configurations.addItem(display_text(record['name'], 80) + ' · ' + request['profile'] + ' · ' + record['identity'][:12], record['configuration'])
+                index = self.configurations.count() - 1
+            self.configurations.setCurrentIndex(index)
+            self._arm_context = None
+            self._associated_history = Path(record['configuration']) / 'runs'
+            self._ready = False
+            self.trust_box.setChecked(False)
+            self._example_source = None
+            self.configuration_context.setText('Selected ' + display_text(record['name'], 80) + ' · ' + record['identity'][:16] +
+                ' · input SHA-256 ' + record['input_sha256'] +
+                '. Saved limits: ' + str(request['limits']['timeout_seconds']) + ' s, artifacts ' + str(request['limits']['artifact_bytes']) +
+                ' bytes, memory ' + str(request['limits']['memory_bytes']) + ' bytes, logs ' + str(request['limits']['log_bytes']) +
+                ' bytes. Recorded origin: ' + display_text(record.get('origin', 'unavailable'), 200) +
+                '. ' + display_text(record.get('note', ''), 400))
+        finally:
+            self._loading_configuration = False
+
+    def preflight(self):
+        try:
+            payload = {'request': request_to_dict(self._request())}
+            if self._saved_configuration is not None:
+                payload['configuration'] = self._saved_configuration['configuration']
+            elif self._arm_context is not None:
+                payload.update(input_sha256=self._arm_context['sha256'], firmware_sha256=self._arm_context['firmware_sha256'])
+            self._start('backend_preflight', payload)
+        except (ValueError, OSError, ProductError) as exc:
+            self._local_error(exc)
+
+    def list_configurations(self):
+        self._start('backend_configurations', {'action': 'list', 'root': str(self.data_root / 'configurations')})
+
+    def open_named_configuration(self):
+        path = self.configurations.currentData()
+        if path:
+            self._start('backend_configurations', {'action': 'open', 'configuration': path})
+
+    def save_named_configuration(self):
+        try:
+            payload = {'action': 'save', 'root': str(self.data_root / 'configurations'),
+                'name': self.configuration_name.text(), 'request': request_to_dict(self._request())}
+            if self._saved_configuration is not None:
+                payload.update(action='revise', configuration=self._saved_configuration['configuration'])
+            self._start('backend_configurations', payload)
+        except (ValueError, OSError, ProductError) as exc:
+            self._local_error(exc)
+
+    def import_revision(self):
+        if self.busy or self._saved_configuration is None:
+            return
+        path, _ = QFileDialog.getOpenFileName(self, 'Import a new build into a separate immutable revision')
+        if not path:
+            return
+        request = dict(self._saved_configuration['request'], source=path)
+        self._start('backend_configurations', {'action': 'revise', 'root': str(self.data_root / 'configurations'),
+            'name': self.configuration_name.text(), 'request': request,
+            'configuration': self._saved_configuration['configuration']})
+
     def _fresh(self, category):
-        root = self.data_root / category
+        root = (self._associated_history if category == 'runs' and self._associated_history is not None else self.data_root / category)
         root.mkdir(parents=True, exist_ok=True)
         return root / (datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid4().hex[:12])
 
@@ -376,11 +512,11 @@ class UniversalWindow(QMainWindow):
         if command == 'backend_compare':
             self.comparison_view.setRowCount(0)
             self.comparison_scope.setText('Comparison in progress. Previous values cleared; cancellation does not produce a comparison.')
-        if command in {'backend_execute', 'backend_reproduce', 'backend_inspect'}:
+        if command in {'backend_execute', 'backend_configuration_execute', 'backend_reproduce', 'backend_inspect'}:
             self.summary_view.clear()
             self.result_view.clear()
             self.result_context_label.setText('Waiting for a validated result; no saved outcome is displayed.')
-        if command in {"backend_execute", "backend_reproduce"}:
+        if command in {"backend_execute", "backend_configuration_execute", "backend_reproduce"}:
             self.active_run, self.record = output, None
             self.result_view.clear()
         if command not in {'backend_verify', 'backend_verification_review'}:
@@ -417,7 +553,15 @@ class UniversalWindow(QMainWindow):
             trust = self._trust()
             request = self._request()
             output = self._fresh("runs")
-            self._start("backend_execute", {"request": request_to_dict(request), "output_dir": str(output), "trust": trust}, output=output)
+            if self._saved_configuration is not None:
+                self._start('backend_configuration_execute', {'configuration': self._saved_configuration['configuration'],
+                    'output_dir': str(output), 'trust': trust}, output=output)
+            else:
+                payload = {'request': request_to_dict(request), 'output_dir': str(output), 'trust': trust}
+                if self._arm_context is not None:
+                    payload['input_sha256'] = self._arm_context['sha256']
+                    payload['firmware_sha256'] = self._arm_context['firmware_sha256']
+                self._start('backend_execute', payload, output=output)
         except (ValueError, OSError, ProductError) as exc:
             self._local_error(exc)
 
@@ -427,6 +571,8 @@ class UniversalWindow(QMainWindow):
         return "trusted_example" if self._example_source == self.source_edit.text() else "trusted_project"
 
     def _request(self):
+        if self._saved_configuration is not None:
+            return request_from_dict(self._saved_configuration['request'])
         return execution_request(self.profile, self.source_edit.text(), self.values_edit.text(),
                                  self.timeout_spin.value(), self.artifact_spin.value())
 
@@ -579,7 +725,7 @@ class UniversalWindow(QMainWindow):
             item.setHidden(query not in Path(path).name.casefold() or not matches)
             visible += not item.isHidden()
         if not self.history.count():
-            message = 'No saved jobs here yet. Run a trusted project or use Open saved run to inspect another folder.'
+            message = 'No saved jobs in the selected configuration scope yet. Run a trusted project or use Open saved run to inspect another folder.'
         elif not visible:
             message = 'No matching run names or inspected outcomes. Inspect summaries for matching names, or clear the filters.'
         else:
@@ -596,7 +742,7 @@ class UniversalWindow(QMainWindow):
         selected = self.history.currentItem()
         selected_path = selected.data(Qt.ItemDataRole.UserRole) if selected else None
         self.history.clear()
-        root = self.data_root / "runs"
+        root = self._associated_history if self._associated_history is not None else self.data_root / "runs"
         try:
             if root.is_dir() and not root.is_symlink():
                 # No file content is trusted or parsed in Qt. The worker owns
@@ -670,12 +816,23 @@ class UniversalWindow(QMainWindow):
     def _result(self, record):
         command = self._job
         self._job = None
-        administrative = command in {'backend_check', 'backend_prepare', 'backend_export', 'backend_history', 'backend_compare', 'backend_verify', 'backend_verification_review'}
+        administrative = command in {'backend_check', 'backend_prepare', 'backend_export', 'backend_history', 'backend_compare', 'backend_verify', 'backend_verification_review', 'backend_preflight', 'backend_configurations'}
         target = self.operation_view if administrative else self.result_view
         target.setPlainText(_preview(record, session_only=command == 'backend_verify'))
         if administrative:
             self.tabs.setCurrentWidget(self.operation_view)
-        if command == 'backend_verification_review':
+        if command == 'backend_configurations':
+            if 'entries' in record:
+                self.configurations.clear()
+                for entry in record['entries']:
+                    self.configurations.addItem(display_text(entry['name'], 80) + ' · ' + entry['profile'] + ' · ' + entry['identity'][:12], entry['configuration'])
+                self.status_label.setText('Listed up to 200 configuration folders. Select one and Open; listing does not verify input bytes or execute anything.')
+            else:
+                self._apply_configuration(record)
+                self.status_label.setText('Configuration snapshot selected; check compatibility/runtime and explicitly acknowledge trust before Run.')
+        elif command == 'backend_preflight':
+            self.status_label.setText('Static input checks completed. Review findings; no tools or target were executed. Runtime validation remains mandatory.')
+        elif command == 'backend_verification_review':
             if self._verification_session is not None:
                 self._verification_session['freshness'] = record['freshness']
                 self._show_verification_provenance()
@@ -729,7 +886,7 @@ class UniversalWindow(QMainWindow):
                 self.status_label.setText("Independent example prepared; no target execution performed. Check runtime, acknowledge trusted runtime tools, then Run.")
             else:
                 self.status_label.setText("Preparation returned no usable source path; inspect details before proceeding.")
-        elif command in {"backend_execute", "backend_inspect", "backend_reproduce"}:
+        elif command in {"backend_execute", "backend_configuration_execute", "backend_inspect", "backend_reproduce"}:
             self.record = record.get("result", record) if command == "backend_reproduce" else record
             self.result_context_label.setText(result_context(self.record, self.active_run))
             status = self.record.get("status", "unknown")
@@ -757,7 +914,7 @@ class UniversalWindow(QMainWindow):
     def _error(self, record):
         command = self._job
         self._job = None
-        if command in {'backend_check', 'backend_prepare', 'backend_export', 'backend_history', 'backend_compare', 'backend_verify', 'backend_verification_review'}:
+        if command in {'backend_check', 'backend_prepare', 'backend_export', 'backend_history', 'backend_compare', 'backend_verify', 'backend_verification_review', 'backend_preflight', 'backend_configurations'}:
             if command == 'backend_verify':
                 for index in range(self.verification_table.rowCount()):
                     state = self.verification_table.item(index, 1)
@@ -838,6 +995,15 @@ class UniversalWindow(QMainWindow):
         self.right_folder_button.setEnabled(idle and self._comparison_left is not None)
         self.verify_button.setEnabled(idle and selected is not None and not selected.isHidden())
         self.verify_folder_button.setEnabled(idle)
+        self.preflight_button.setEnabled(idle and input_error is None)
+        self.configuration_save.setEnabled(idle and self.profile != 'cortex-m3-mps2' and input_error is None)
+        self.configuration_list.setEnabled(idle)
+        self.configuration_clear.setEnabled(idle)
+        self.configuration_open.setEnabled(idle and self.configurations.currentData() is not None)
+        self.configuration_revision.setEnabled(idle and self._saved_configuration is not None)
+        self.configuration_name.setEnabled(idle)
+        self.configurations.setEnabled(idle)
+
         self.freshness_button.setEnabled(idle and self._verification_session is not None)
         self.verification_export_button.setEnabled(idle and self._verification_session is not None)
         self.cancel_button.setEnabled(self.busy and not self._closing)

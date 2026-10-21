@@ -7,6 +7,7 @@ small background task so copying an image cannot block the GUI event loop.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from dataclasses import replace
 import json
 from pathlib import Path
 from uuid import uuid4
@@ -143,14 +144,27 @@ class MainWindow(QMainWindow):
             action.triggered.connect(callback)
             examples.addAction(action)
         backends = self.menuBar().addMenu("&Backends")
-        self.backend_action = QAction("Processor and HDL workspace…", self)
-        self.backend_action.triggered.connect(self.show_backends)
+        self.backend_action = QAction("Processor and HDL workspace (save current ARM settings)…", self)
+        self.backend_action.triggered.connect(lambda checked=False: self.show_backends())
         backends.addAction(self.backend_action)
 
-    def show_backends(self):
+    def show_backends(self, *, preserve_arm=True):
         """Open a separate capability-aware workspace; preserve the ARM editor."""
-        if self.busy or self._closing:
-            self.status_label.setText("Wait for the active ARM job and cleanup before switching workspaces.")
+        if self.busy or self._closing or (self._universal_window is not None and self._universal_window.busy):
+            self.status_label.setText("Wait for the active job and cleanup before switching workspaces.")
+            return
+        if preserve_arm and self.project is not None:
+            from firmavex.product.workspace import arm_context
+            try:
+                project, config = self.project, self.configuration()
+            except (ValueError, ProductError) as exc:
+                self._error(exc.to_dict() if isinstance(exc, ProductError) else {'category': 'invalid_configuration', 'message': str(exc)})
+                return
+            def selected(context):
+                self._workspace_arm_context = context
+                self.show_backends(preserve_arm=False)
+                self._universal_window.select_arm_context(context)
+            self._local_operation(lambda: arm_context(project, config), selected)
             return
         from .universal import UniversalWindow
         if self._universal_window is None:
@@ -165,8 +179,25 @@ class MainWindow(QMainWindow):
 
     def _return_to_arm(self):
         if self._universal_window is not None and not self._universal_window.busy:
+            source = self._universal_window.source_edit.text()
+            if self._universal_window.profile != 'cortex-m3-mps2':
+                self.status_label.setText('Select an ARM configuration before opening the ARM editor.')
+                return
             self._universal_window.close()
-            self.navigation.setCurrentRow(1)
+            if not source:
+                self.navigation.setCurrentRow(1)
+                return
+            from firmavex.product.workspace import arm_selection
+            def selected(value):
+                project, config = value
+                self.project = project
+                self._load_fields(config)
+                self.project_label.setText((project.root.name + ' · selected ' + Path(source).name) if project else 'External ARM configuration — import into a new project before running')
+                self.project_dir_edit.setText(str(project.root) if project else str(self.data_root / 'projects' / _fresh_name('project')))
+                self.status_label.setText('Exact selected ARM configuration loaded; navigation did not execute firmware.')
+                self.navigation.setCurrentRow(1)
+                self._refresh_enabled()
+            self._local_operation(lambda: arm_selection(source, getattr(self, '_workspace_arm_context', None)), selected)
 
     def _backend_idle(self):
         if self._closing:
@@ -329,9 +360,10 @@ class MainWindow(QMainWindow):
         outer.addWidget(scroll, 1)
         row = QHBoxLayout()
         self.save_button = self._button("Save configuration", self.save_configuration)
+        self.revision_button = self._button('Import new firmware build as a new project…', self.import_firmware_revision)
         self.validate_button = self._button("Validate firmware & tools", self.validate_configuration)
         self.run_button = self._button("Run bounded test", self.start_run)
-        for button in (self.save_button, self.validate_button, self.run_button):
+        for button in (self.save_button, self.revision_button, self.validate_button, self.run_button):
             row.addWidget(button)
         outer.addLayout(row)
         self.validation_text = QPlainTextEdit()
@@ -448,7 +480,7 @@ class MainWindow(QMainWindow):
                        self.doctor_button, self.create_button, self.firmware_button,
                        self.project_dir_button, self.open_run_button):
             button.setEnabled(idle)
-        for button in (self.save_button, self.validate_button, self.run_button):
+        for button in (self.save_button, self.revision_button, self.validate_button, self.run_button):
             button.setEnabled(idle and project)
         self.cancel_button.setEnabled(self.controller.busy and not self._closing)
         self.inspect_button.setEnabled(idle and self.active_run is not None)
@@ -612,6 +644,22 @@ class MainWindow(QMainWindow):
             self._local_operation(lambda: self._verified_project(DesktopProject.create(directory, config.firmware, config)), self._adopt_project)
         except Exception as exc:
             self._error(exc.to_dict() if isinstance(exc, ProductError) else {"category": "project_error", "message": str(exc)})
+
+    def import_firmware_revision(self):
+        if self.busy or self.project is None:
+            return
+        source, _ = QFileDialog.getOpenFileName(self, 'Select new Cortex-M3 ELF build; previous project stays unchanged', '', 'ELF firmware (*.elf);;All files (*)')
+        if not source:
+            return
+        parent = QFileDialog.getExistingDirectory(self, 'Choose parent for a fresh revision project')
+        if not parent:
+            return
+        try:
+            config = replace(self.configuration(), firmware=Path(source).resolve())
+            directory = Path(parent) / _fresh_name('project-revision')
+            self._local_operation(lambda: self._verified_project(DesktopProject.create(directory, config.firmware, config)), self._adopt_project)
+        except Exception as exc:
+            self._error(exc.to_dict() if isinstance(exc, ProductError) else {'category': 'project_error', 'message': str(exc)})
 
     def open_project(self, directory):
         if not self.busy:
