@@ -20,7 +20,9 @@ are not automatically merged.
 
 ## Named RV32 and Verilog snapshots
 
-Enter a name and use Save named snapshot. The existing Request/Limit contract is
+Open the Configurations tab, enter a name and use Save named snapshot.
+Configuration controls use a two-column layout inside the existing tab area,
+keeping the main execution form compact. The existing Request/Limit contract is
 stored with a bounded copied input, original-path reference, timestamp and SHA-256
 identity. Metadata is limited to 16 KiB. Each new folder is named by the manifest
 hash; reopening validates that identity and the copied input hash before selection.
@@ -38,7 +40,7 @@ Import new revision explicitly selects a new file and creates a separate named
 snapshot linked to its parent identity. Earlier inputs/configurations/evidence are
 not replaced. A damaged parent cannot silently become a valid revision lineage.
 Settings/source edits detach the saved selection and clear consent; saving again
-is explicit. Use unsaved form / workspace history returns to the ordinary workflow.
+is explicit. Use unsaved form returns to ordinary workspace history.
 Opening/listing/preflight never execute targets or grant trust.
 
 Run from a selected configuration captures verified bytes into an owned temporary

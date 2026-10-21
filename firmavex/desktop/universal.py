@@ -16,7 +16,7 @@ from PySide6.QtCore import Qt, Signal, Slot
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout,
-    QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
+    QHBoxLayout, QGridLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
     QMainWindow, QPlainTextEdit, QProgressBar, QPushButton, QSpinBox,
     QSplitter, QTabWidget, QVBoxLayout, QWidget,
     QTableWidget, QTableWidgetItem, QAbstractItemView, QHeaderView,
@@ -154,31 +154,36 @@ class UniversalWindow(QMainWindow):
         self.trust_box.toggled.connect(self._refresh)
         form.addRow(self.trust_box)
         layout.addLayout(form)
+        self.configuration_panel = QWidget()
+        configuration_layout = QVBoxLayout(self.configuration_panel)
         configuration_actions = QHBoxLayout()
         self.configuration_name = QLineEdit()
         self.configuration_name.setPlaceholderText('Name for a saved RV32 / Verilog configuration')
+        self.source_edit.setToolTip('Use the Configurations tab to save and reopen custom RV32 / Verilog inputs.')
         self.configuration_name.setMaxLength(80)
         self.configurations = QComboBox()
         self.configurations.setAccessibleName('Saved backend configurations and revisions')
         self.configurations.currentIndexChanged.connect(self._refresh)
         configuration_actions.addWidget(self.configuration_name)
         configuration_actions.addWidget(self.configurations)
-        layout.addLayout(configuration_actions)
-        configuration_buttons = QHBoxLayout()
+        configuration_layout.addLayout(configuration_actions)
+        configuration_buttons = QGridLayout()
         self.configuration_save = self._button('Save named snapshot', self.save_named_configuration)
         self.configuration_list = self._button('List configurations', self.list_configurations)
         self.configuration_open = self._button('Open selected configuration', self.open_named_configuration)
-        self.configuration_clear = self._button('Use unsaved form / workspace history', self._configuration_edited)
+        self.configuration_clear = self._button('Use unsaved form', self._configuration_edited)
+        self.configuration_clear.setToolTip('Detach the saved selection, clear consent and show ordinary workspace history.')
         self.configuration_revision = self._button('Import new revision…', self.import_revision)
-        self.preflight_button = self._button('Check input compatibility (no execution)', self.preflight)
-        for button in (self.configuration_save, self.configuration_list, self.configuration_open,
-                       self.configuration_revision, self.configuration_clear, self.preflight_button):
-            configuration_buttons.addWidget(button)
-        layout.addLayout(configuration_buttons)
+        self.preflight_button = self._button('Preflight (no execution)', self.preflight)
+        for index, button in enumerate((self.configuration_save, self.configuration_list, self.configuration_open,
+                                       self.configuration_revision, self.configuration_clear, self.preflight_button)):
+            configuration_buttons.addWidget(button, index // 2, index % 2)
+        configuration_layout.addLayout(configuration_buttons)
         self.configuration_context = QLabel('No saved configuration selected. ARM uses its existing project editor.')
         self.configuration_context.setTextFormat(Qt.TextFormat.PlainText)
         self.configuration_context.setWordWrap(True)
-        layout.addWidget(self.configuration_context)
+        configuration_layout.addWidget(self.configuration_context)
+        configuration_layout.addStretch()
         self.timeout_spin.valueChanged.connect(self._configuration_edited)
         self.artifact_spin.valueChanged.connect(self._configuration_edited)
         self.values_edit.textChanged.connect(self._configuration_edited)
@@ -341,6 +346,7 @@ class UniversalWindow(QMainWindow):
         verification_layout.addWidget(self.verification_table)
         self.tabs.addTab(self.verification_panel, 'Verify evidence')
         self.summary_view.setPlaceholderText('Prepare a trusted example or open a saved run to review its outcome here.')
+        self.tabs.addTab(self.configuration_panel, 'Configurations')
         split.addWidget(self.tabs)
         split.setStretchFactor(1, 2)
         layout.addWidget(split, 1)
@@ -822,6 +828,7 @@ class UniversalWindow(QMainWindow):
         if administrative:
             self.tabs.setCurrentWidget(self.operation_view)
         if command == 'backend_configurations':
+            self.tabs.setCurrentWidget(self.configuration_panel)
             if 'entries' in record:
                 self.configurations.clear()
                 for entry in record['entries']:

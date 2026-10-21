@@ -803,3 +803,16 @@ def test_arm_context_execution_uses_pinned_selection_and_project_history(view, t
     assert payload['firmware_sha256'] == context['firmware_sha256']
     assert Path(payload['output_dir']).parent == project / 'runs'
     controller.finish({'status': 'cancelled', 'evidence': {}})
+
+
+def test_configuration_controls_use_existing_tab_space_and_fit_desktop_width(view):
+    window, controller = view
+    index = window.tabs.indexOf(window.configuration_panel)
+    assert index >= 0 and window.tabs.tabText(index) == 'Configurations'
+    window.tabs.setCurrentIndex(index)
+    assert window.configuration_save.isVisible()
+    assert window.minimumSizeHint().width() <= 1100
+    window._start('backend_configurations', {'action': 'list', 'root': str(window.data_root / 'configurations')})
+    controller.finish({'entries': [], 'limit': 200, 'execution_performed': False})
+    assert window.tabs.currentWidget() is window.configuration_panel
+    assert all(command != 'backend_configuration_execute' for command, _ in controller.calls)
