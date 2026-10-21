@@ -31,7 +31,7 @@ publisher authenticity. Existing execution/run/export formats are unchanged.
 
 List configurations examines at most 200 folders in the app-owned configuration
 store. Invalid/unsupported entries are skipped without repair. Listing does not
-hash all inputs; Open selected configuration performs full bounded input checks.
+hash all inputs; Open configuration performs full bounded input checks.
 An original build may change or disappear: the selected imported snapshot remains
 explicitly identified and is used instead. Modified/missing imported snapshots
 are rejected. Original paths are not reopened automatically.

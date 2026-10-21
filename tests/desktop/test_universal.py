@@ -805,17 +805,22 @@ def test_arm_context_execution_uses_pinned_selection_and_project_history(view, t
     controller.finish({'status': 'cancelled', 'evidence': {}})
 
 
-def test_configuration_controls_use_existing_tab_space_and_fit_desktop_width(view):
+def test_configuration_controls_use_existing_tab_space_without_widening_window(view):
     window, controller = view
     index = window.tabs.indexOf(window.configuration_panel)
     assert index >= 0 and window.tabs.tabText(index) == 'Configurations'
+    # Measure the existing execution/review layout in the same native font/DPI.
+    # An absolute pixel cutoff would mistake host scaling for a regression.
+    window.tabs.removeTab(index)
+    from PySide6.QtWidgets import QApplication
+    QApplication.processEvents()
+    baseline = window.minimumSizeHint().width()
+    window.tabs.insertTab(index, window.configuration_panel, 'Configurations')
     window.tabs.setCurrentIndex(index)
+    QApplication.processEvents()
     assert window.configuration_save.isVisible()
-    widths = {name: widget.minimumSizeHint().width() for name, widget in {
-        'window': window, 'tabs': window.tabs, 'tab_bar': window.tabs.tabBar(),
-        'configuration_panel': window.configuration_panel, 'history_panel': window.history.parentWidget(),
-    }.items()}
-    assert widths['window'] <= 1100, widths
+    widths = {'existing_layout': baseline, 'with_configurations': window.minimumSizeHint().width()}
+    assert widths['with_configurations'] <= baseline, widths
     window._start('backend_configurations', {'action': 'list', 'root': str(window.data_root / 'configurations')})
     controller.finish({'entries': [], 'limit': 200, 'execution_performed': False})
     assert window.tabs.currentWidget() is window.configuration_panel

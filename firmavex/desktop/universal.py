@@ -170,7 +170,7 @@ class UniversalWindow(QMainWindow):
         configuration_buttons = QGridLayout()
         self.configuration_save = self._button('Save named snapshot', self.save_named_configuration)
         self.configuration_list = self._button('List configurations', self.list_configurations)
-        self.configuration_open = self._button('Open selected configuration', self.open_named_configuration)
+        self.configuration_open = self._button('Open configuration', self.open_named_configuration)
         self.configuration_clear = self._button('Use unsaved form', self._configuration_edited)
         self.configuration_clear.setToolTip('Detach the saved selection, clear consent and show ordinary workspace history.')
         self.configuration_revision = self._button('Import new revision…', self.import_revision)
