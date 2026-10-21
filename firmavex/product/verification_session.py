@@ -95,8 +95,11 @@ def review(session, *, output_dir=None, cancel_event=None):
     result = {'freshness': freshness(session, cancel_event=cancel_event)}
     if output_dir is None:
         return result
-    root = checked_path(root, directory=True, exists=False)
-    destination = checked_path(output_dir, directory=True, exists=False)
+    # Validate before resolving so symlinks remain forbidden. Resolve spelling
+    # aliases (notably Windows short names) before testing archive overlap.
+    root = checked_path(checked_path(root, directory=True, exists=False).resolve(), directory=True, exists=False)
+    destination = checked_path(checked_path(output_dir, directory=True, exists=False).resolve(),
+                               directory=True, exists=False)
     # Reject overlap in either direction before creating anything.
     if destination == root or root in destination.parents or destination in root.parents:
         raise ValueError('Verification reports must be outside original evidence storage')

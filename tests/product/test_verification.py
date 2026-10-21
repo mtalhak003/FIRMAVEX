@@ -2,6 +2,7 @@
 import hashlib
 import io
 import json
+import sys
 import threading
 
 import pytest
@@ -323,3 +324,23 @@ def test_report_rejects_symlink_destination_and_traversing_archive(tmp_path):
     with pytest.raises(ValueError, match='non-traversing'):
         review(session, output_dir=str(tmp_path / 'report'))
     assert archive(tmp_path / 'run') == before
+
+
+@pytest.mark.skipif(sys.platform != 'win32', reason='Windows short-path aliases')
+def test_report_rejects_windows_short_name_archive_overlap(tmp_path):
+    import ctypes
+    from pathlib import Path
+    from firmavex.product.verification_session import review
+    root = tmp_path / 'long archive directory name'
+    session = verify(saved(root))
+    api = ctypes.WinDLL('kernel32', use_last_error=True)
+    api.GetShortPathNameW.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_uint32]
+    api.GetShortPathNameW.restype = ctypes.c_uint32
+    buffer = ctypes.create_unicode_buffer(32768)
+    count = api.GetShortPathNameW(str(root), buffer, len(buffer))
+    if not count or count >= len(buffer) or Path(buffer.value) == root:
+        pytest.skip('Volume does not provide an alternate short path')
+    before = archive(root)
+    with pytest.raises(ValueError, match='outside original'):
+        review(session, output_dir=str(Path(buffer.value) / 'report'))
+    assert archive(root) == before
