@@ -46,9 +46,11 @@ def checked_path(path, *, directory=False, exists=True):
     return path
 
 
-def read_bytes(path, maximum):
+def read_bytes(path, maximum, *, cancel_event=None):
     """Read a bounded regular file while checking path and handle metadata."""
     path = checked_path(path)
+    from firmavex.product.verification import check_cancel
+    check_cancel(cancel_event)
     before = path_state(path)
     if path.stat().st_size > maximum:
         raise ValueError("File exceeds byte limit")
@@ -61,6 +63,7 @@ def read_bytes(path, maximum):
         opened = handle_state(stream.fileno())
         data = bytearray()
         while chunk := stream.read(min(1024 * 1024, maximum + 1 - len(data))):
+            check_cancel(cancel_event)
             data.extend(chunk)
             if len(data) > maximum:
                 raise ValueError("File exceeds byte limit")
@@ -70,6 +73,7 @@ def read_bytes(path, maximum):
         stream.seek(0)
         offset = 0
         while chunk := stream.read(min(1024 * 1024, maximum + 1 - offset)):
+            check_cancel(cancel_event)
             if chunk != data[offset:offset + len(chunk)]:
                 raise ValueError("File changed during capture")
             offset += len(chunk)
@@ -79,6 +83,7 @@ def read_bytes(path, maximum):
             raise ValueError("File changed during capture")
     if not (before == opened == finished == path_state(checked_path(path))):
         raise ValueError("File changed during capture")
+    check_cancel(cancel_event)
     return bytes(data)
 
 

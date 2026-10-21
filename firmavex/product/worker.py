@@ -28,6 +28,7 @@ _FIELDS = {
     "backend_inspect": ({"run_dir"}, set()),
     "backend_history": ({"run_dirs"}, set()),
     "backend_compare": ({"left", "right"}, set()),
+    "backend_verify": ({"run_dir"}, set()),
     "backend_reproduce": ({"run_dir", "output_dir", "trust"}, set()),
     "backend_export": ({"run_dir", "output_dir"}, set()),
     "cancel": (set(), {"job_request_id"}), "shutdown": (set(), set()),
@@ -181,6 +182,9 @@ class Worker:
                 elif command == "backend_compare":
                     from .run_review import compare
                     result = compare(payload['left'], payload['right'], cancel_event=cancel)
+                elif command == 'backend_verify':
+                    from .verification import verify
+                    result = verify(payload['run_dir'], cancel_event=cancel, event_callback=callback)
                 elif command == "backend_reproduce":
                     result = backend.reproduce(payload["run_dir"],payload["output_dir"],trust=payload["trust"],cancel_event=cancel,event_callback=callback)
                 elif command == "backend_export":

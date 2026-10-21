@@ -215,6 +215,56 @@ def test_comparison_folder_navigation_and_bounded_read_only_table(view, monkeypa
     assert window.record is None and not window.trust_box.isChecked()
 
 
+def test_live_verification_progress_cancel_and_partial_results_preserve_other_views(view):
+    window, controller = view
+    root = window.data_root / 'runs'
+    (root / 'saved').mkdir(parents=True)
+    window.refresh_history()
+    window.history.setCurrentItem(window.history.item(0))
+    window.active_run = root / 'saved'
+    window.record = {'status': 'passed', 'evidence': {}}
+    window.result_view.setPlainText('Retained evidence')
+    window.comparison_view.setRowCount(1)
+    window.verify_button.click()
+    assert controller.calls[-1] == ('backend_verify', {'run_dir': str(root / 'saved')})
+    assert window.verification_progress.maximum() == 0
+    assert window.tabs.currentWidget() is window.verification_panel
+    rows = [{'name': 'a.bin', 'state': 'pending'}, {'name': '<unsafe>\x00' + 'x' * 1000, 'state': 'pending'}]
+    controller.event.emit({'payload': {'type': 'verification_progress', 'phase': 'inventory',
+                                      'items': rows, 'completed': 0, 'total': 2}})
+    assert window.verification_progress.maximum() == 2 and window.verification_progress.value() == 0
+    assert len(window.verification_table.item(1, 0).text()) <= 161
+    assert '\x00' not in window.verification_table.item(1, 0).text()
+    controller.event.emit({'payload': {'type': 'verification_progress', 'phase': 'artifact', 'index': 0,
+                                      'item': {'name': 'a.bin', 'state': 'hash_match'}, 'completed': 1, 'total': 2}})
+    assert window.verification_progress.value() == 1
+    window.cancel_button.click()
+    assert controller.cancelled and not window.cancel_button.isEnabled()
+    controller.finish({'status': 'cancelled', 'success': False, 'read_only': True,
+                       'items': [{'name': 'a.bin', 'state': 'hash_match'}, {'name': 'b.bin', 'state': 'cancelled'}],
+                       'completed': 1, 'total': 2, 'diagnostic': 'Completed checks retained; no overall verification.'})
+    assert window.verification_table.item(0, 1).text() == 'hash_match'
+    assert window.verification_table.item(1, 1).text() == 'cancelled'
+    assert 'cancelled' in window.verification_label.text()
+    assert window.result_view.toPlainText() == 'Retained evidence'
+    assert window.comparison_view.rowCount() == 1 and window.active_run == root / 'saved'
+    assert window.history.currentItem().data(Qt.ItemDataRole.UserRole) == str(root / 'saved')
+    assert not window.trust_box.isChecked()
+
+
+def test_verification_worker_error_preserves_completed_rows_as_partial(view, monkeypatch):
+    window, controller = view
+    monkeypatch.setattr('firmavex.desktop.universal.QFileDialog.getExistingDirectory', lambda *a: '/saved')
+    window.verify_folder_button.click()
+    assert controller.calls[-1] == ('backend_verify', {'run_dir': '/saved'})
+    controller.event.emit({'payload': {'type': 'verification_progress', 'phase': 'inventory', 'completed': 0, 'total': 2,
+        'items': [{'name': 'a', 'state': 'hash_match'}, {'name': 'b', 'state': 'checking'}]}})
+    controller.finish(error={'category': 'worker_failure', 'message': 'Worker interrupted'})
+    assert window.verification_table.item(0, 1).text() == 'hash_match'
+    assert window.verification_table.item(1, 1).text() == 'not_checked'
+    assert 'no overall verification result' in window.verification_label.text()
+
+
 @pytest.mark.parametrize('profile', ['cortex-m3-mps2', 'riscv32-virt', 'verilog-icarus'])
 def test_saved_context_and_evidence_survive_administrative_operations(view, tmp_path, profile):
     window, controller = view

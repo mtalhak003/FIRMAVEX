@@ -103,14 +103,17 @@ def _windows_job(child, limits):
         raise
 
 
-def inspect_artifacts(cwd, maximum):
+def inspect_artifacts(cwd, maximum, *, cancel_event=None):
     """Bounded inventory; links, special files and hardlinks fail closed."""
     total, count = 0, 0
     pending = [Path(cwd)]
+    from firmavex.product.verification import check_cancel
     while pending:
+        check_cancel(cancel_event)
         directory = pending.pop()
         with os.scandir(directory) as entries:
             for entry in entries:
+                check_cancel(cancel_event)
                 count += 1
                 if count > 10000:
                     raise RuntimeError("Artifact count limit exceeded")

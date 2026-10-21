@@ -90,8 +90,8 @@ def test_legacy_arm_review_reuses_hash_verification_and_preserves_exact_outcome(
     assert archive_bytes(root) == before
     cancel = threading.Event()
     original_inspect = services.inspect_run
-    def cancel_after_inspection(path):
-        result = original_inspect(path)
+    def cancel_after_inspection(path, **kwargs):
+        result = original_inspect(path, **kwargs)
         cancel.set()
         return result
     with monkeypatch.context() as patch:

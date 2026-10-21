@@ -212,6 +212,12 @@ class UniversalWindow(QMainWindow):
         for button in (self.history_summary_button, self.pin_button, self.compare_button):
             review_actions.addWidget(button)
         history_layout.addLayout(review_actions)
+        verification_actions = QHBoxLayout()
+        self.verify_button = self._button('Verify selected evidence', self.verify_selected)
+        self.verify_folder_button = self._button('Verify folder…', self.verify_folder)
+        verification_actions.addWidget(self.verify_button)
+        verification_actions.addWidget(self.verify_folder_button)
+        history_layout.addLayout(verification_actions)
         self.comparison_hint = QLabel('Select two different saved runs: mark the left, then select the right. Comparison never executes them.')
         self.comparison_hint.setTextFormat(Qt.TextFormat.PlainText)
         self.comparison_hint.setWordWrap(True)
@@ -263,6 +269,28 @@ class UniversalWindow(QMainWindow):
         comparison_layout.addWidget(self.comparison_view)
         self.comparison_panel = comparison_panel
         self.tabs.addTab(comparison_panel, 'Compare saved runs')
+        self.verification_panel = QWidget()
+        verification_layout = QVBoxLayout(self.verification_panel)
+        self.verification_target = QLabel('No verification folder selected')
+        self.verification_target.setTextFormat(Qt.TextFormat.PlainText)
+        self.verification_target.setWordWrap(True)
+        verification_layout.addWidget(self.verification_target)
+        self.verification_label = QLabel('Select a run or choose a folder to check its supported artifacts without execution. Hash matches are not authenticity or execution proof.')
+        self.verification_label.setTextFormat(Qt.TextFormat.PlainText)
+        self.verification_label.setWordWrap(True)
+        verification_layout.addWidget(self.verification_label)
+        self.verification_progress = QProgressBar()
+        self.verification_progress.setRange(0, 1)
+        self.verification_progress.setValue(0)
+        self.verification_progress.setAccessibleName('Artifact verification progress')
+        verification_layout.addWidget(self.verification_progress)
+        self.verification_table = QTableWidget(0, 2)
+        self.verification_table.setHorizontalHeaderLabels(['Artifact', 'Check outcome'])
+        self.verification_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.verification_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.verification_table.setAccessibleName('Per-artifact evidence verification results')
+        verification_layout.addWidget(self.verification_table)
+        self.tabs.addTab(self.verification_panel, 'Verify evidence')
         self.summary_view.setPlaceholderText('Prepare a trusted example or open a saved run to review its outcome here.')
         split.addWidget(self.tabs)
         split.setStretchFactor(1, 2)
@@ -318,6 +346,13 @@ class UniversalWindow(QMainWindow):
         if self.busy or self._closing:
             return False
         self._job, self._output = command, output
+        if command == 'backend_verify':
+            self.verification_table.setRowCount(0)
+            self.verification_target.setText('Verification folder: ' + display_text(payload.get('run_dir', 'unavailable'), 500))
+            self.verification_label.setText('Inspecting archive; artifact count is not known yet. Cancel stops verification without changing saved files.')
+            self.verification_progress.setRange(0, 0)
+            self.verification_progress.setTextVisible(False)
+            self.tabs.setCurrentWidget(self.verification_panel)
         if command == 'backend_compare':
             self.comparison_view.setRowCount(0)
             self.comparison_scope.setText('Comparison in progress. Previous values cleared; cancellation does not produce a comparison.')
@@ -377,7 +412,7 @@ class UniversalWindow(QMainWindow):
     @Slot()
     def cancel(self):
         if self.controller.cancel():
-            self.status_label.setText("Cancellation requested; waiting for persistence and process-tree cleanup…")
+            self.status_label.setText('Cancellation requested; waiting for file checks to stop and worker cleanup. Saved evidence stays unchanged.' if self._job == 'backend_verify' else "Cancellation requested; waiting for persistence and process-tree cleanup…")
             self.cancel_button.setEnabled(False)
 
     @Slot()
@@ -443,6 +478,44 @@ class UniversalWindow(QMainWindow):
         right = item.data(Qt.ItemDataRole.UserRole) if item is not None and not item.isHidden() else None
         if self._comparison_left and right and right != self._comparison_left:
             self._start('backend_compare', {'left': self._comparison_left, 'right': right})
+
+    def verify_selected(self):
+        item = self.history.currentItem()
+        if item is not None and not item.isHidden():
+            self._start('backend_verify', {'run_dir': item.data(Qt.ItemDataRole.UserRole)})
+
+    def verify_folder(self):
+        if self.busy:
+            return
+        folder = QFileDialog.getExistingDirectory(self, 'Verify saved evidence without execution')
+        if folder:
+            self._start('backend_verify', {'run_dir': folder})
+
+    def _verification_update(self, payload):
+        if 'items' in payload:
+            rows = payload['items'][:256]
+            self.verification_table.setRowCount(len(rows))
+            for index, item in enumerate(rows):
+                self._verification_row(index, item)
+        elif type(payload.get('index')) is int and 0 <= payload['index'] < self.verification_table.rowCount():
+            self._verification_row(payload['index'], payload['item'])
+        total, completed = payload.get('total'), payload.get('completed', 0)
+        self.verification_progress.setTextVisible(type(total) is int and total > 0)
+        if type(total) is int and total > 0:
+            self.verification_progress.setRange(0, total)
+            self.verification_progress.setValue(completed)
+        elif payload.get('status') is None:
+            self.verification_progress.setRange(0, 0)
+        else:
+            self.verification_progress.setRange(0, 1)
+            self.verification_progress.setValue(0)
+        phase = display_text(payload.get('status') or payload.get('phase', 'verification'), 80)
+        count = f'{completed} of {total} artifact checks finished' if type(total) is int else 'Artifact total unavailable'
+        self.verification_label.setText(phase + ' — ' + count + '. ' + display_text(payload.get('diagnostic', 'Pending and cancelled work is not verified.'), 600))
+
+    def _verification_row(self, index, row):
+        for column, key in enumerate(('name', 'state')):
+            self.verification_table.setItem(index, column, QTableWidgetItem(display_text(row.get(key, 'unavailable'), 160)))
 
     @Slot()
     def _filter_history(self):
@@ -520,6 +593,10 @@ class UniversalWindow(QMainWindow):
 
     @Slot(dict)
     def _progress(self, envelope):
+        payload = envelope.get('payload', {})
+        if self._job == 'backend_verify' and type(payload) is dict and payload.get('type') == 'verification_progress':
+            self._verification_update(payload)
+            return
         self.log_view.appendPlainText(_preview(envelope)[:8192])
         payload = envelope.get("payload", {})
         if type(payload) is dict:
@@ -542,12 +619,16 @@ class UniversalWindow(QMainWindow):
     def _result(self, record):
         command = self._job
         self._job = None
-        administrative = command in {'backend_check', 'backend_prepare', 'backend_export', 'backend_history', 'backend_compare'}
+        administrative = command in {'backend_check', 'backend_prepare', 'backend_export', 'backend_history', 'backend_compare', 'backend_verify'}
         target = self.operation_view if administrative else self.result_view
         target.setPlainText(_preview(record))
         if administrative:
             self.tabs.setCurrentWidget(self.operation_view)
-        if command == 'backend_history':
+        if command == 'backend_verify':
+            self._verification_update(record)
+            self.tabs.setCurrentWidget(self.verification_panel)
+            self.status_label.setText('Evidence verification: ' + display_text(record.get('status', 'unavailable'), 80) + '. Review per-artifact outcomes and scope.')
+        elif command == 'backend_history':
             entries = {entry['run_dir']: entry for entry in record.get('entries', [])}
             self._history_summaries.update(entries)
             for index in range(self.history.count()):
@@ -617,7 +698,16 @@ class UniversalWindow(QMainWindow):
     def _error(self, record):
         command = self._job
         self._job = None
-        if command in {'backend_check', 'backend_prepare', 'backend_export', 'backend_history', 'backend_compare'}:
+        if command in {'backend_check', 'backend_prepare', 'backend_export', 'backend_history', 'backend_compare', 'backend_verify'}:
+            if command == 'backend_verify':
+                for index in range(self.verification_table.rowCount()):
+                    state = self.verification_table.item(index, 1)
+                    if state.text() in {'pending', 'checking'}:
+                        state.setText('not_checked')
+                self.verification_progress.setRange(0, 1)
+                self.verification_progress.setValue(0)
+                self.verification_progress.setTextVisible(False)
+                self.verification_label.setText('Verification interrupted. Completed checks retained; no overall verification result is available.')
             if command == 'backend_compare':
                 self.comparison_scope.setText('Comparison unavailable: ' + display_text(record.get('message', 'Review operation details.'), 500))
             self.operation_view.setPlainText(_preview(record))
@@ -677,6 +767,8 @@ class UniversalWindow(QMainWindow):
                                        self._comparison_left is not None and selected.data(Qt.ItemDataRole.UserRole) != self._comparison_left)
         self.history_summary_button.setEnabled(idle and any(self.history_filter.text().casefold() in Path(self.history.item(i).data(Qt.ItemDataRole.UserRole)).name.casefold() for i in range(self.history.count())))
         self.right_folder_button.setEnabled(idle and self._comparison_left is not None)
+        self.verify_button.setEnabled(idle and selected is not None and not selected.isHidden())
+        self.verify_folder_button.setEnabled(idle)
         self.cancel_button.setEnabled(self.busy and not self._closing)
         self.reproduce_button.setEnabled(idle and self.active_run is not None and self.record is not None and self.record.get("status") in {"passed", "triggered"} and self.trust_box.isChecked())
         self.export_button.setEnabled(idle and self.active_run is not None and self.record is not None)

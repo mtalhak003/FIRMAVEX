@@ -303,10 +303,10 @@ def run_project(config_or_path, output_dir, *, cancel_event=None, event_callback
                             event_callback=event_callback, _executor_factory=_executor_factory)
 
 
-def _read_run(run_dir):
+def _read_run(run_dir, *, cancel_event=None):
     with RunStore(Path(run_dir)) as store:
         snapshot = store.snapshot()
-        artifacts = store.verify_artifacts()
+        artifacts = store.verify_artifacts(cancel_event=cancel_event) if cancel_event is not None else store.verify_artifacts()
         result = snapshot["result"]
         if result is not None and result.get("kind") == "firmavex_product_result" and (store.root / "result.json").is_file():
             saved = json.loads((store.root / "result.json").read_text(encoding="utf-8"))
@@ -315,7 +315,7 @@ def _read_run(run_dir):
         if snapshot["state"] == "completed" and result is None:
             raise ProductError("evidence_incomplete", "Completed run has no result.")
         if result is not None and result.get("kind") == "firmavex_product_result":
-            snapshot["accounting_verification"] = _verify_product_result(snapshot, artifacts)
+            snapshot["accounting_verification"] = _verify_product_result(snapshot, artifacts, cancel_event=cancel_event)
             if "project.json" in artifacts:
                 project = load_config(store.root / "project.json").to_dict()
                 declared = dict(snapshot["metadata"]["configuration"])
@@ -328,8 +328,9 @@ def _read_run(run_dir):
         return snapshot, artifacts
 
 
-def _verify_product_result(snapshot, artifacts):
+def _verify_product_result(snapshot, artifacts, *, cancel_event=None):
     """Cross-check retained receipts against evaluator counters, never invent them."""
+    from .verification import check_cancel
     result, metadata = snapshot["result"], snapshot["metadata"]
 
     def require(condition, message):
@@ -368,6 +369,7 @@ def _verify_product_result(snapshot, artifacts):
     first_trigger = None
     first_values = None
     for index, item in enumerate(snapshot["attempts"], 1):
+        check_cancel(cancel_event)
         record = item["record"]
         require(config.input_space.accepts(tuple(record["input"])), "Retained input is outside its configured input space.")
         feedback, evidence = record.get("feedback"), record.get("evidence", {})
@@ -424,8 +426,8 @@ def _verify_product_result(snapshot, artifacts):
             "inspection_is_not_independent_execution_verification": True}
 
 
-def inspect_run(run_dir):
-    snapshot, artifacts = _read_run(run_dir)
+def inspect_run(run_dir, *, cancel_event=None):
+    snapshot, artifacts = _read_run(run_dir, cancel_event=cancel_event) if cancel_event is not None else _read_run(run_dir)
     return {
         "schema_version": 1, "run_directory": str(Path(run_dir).absolute()),
         "state": snapshot["state"], "metadata": snapshot["metadata"],

@@ -500,30 +500,56 @@ class RunStore:
                 raise
             raise _error("Cannot capture artifact source", exc) from exc
 
-    def verify_artifacts(self) -> dict:
+    def verify_artifacts(self, *, cancel_event=None, event_callback=None) -> dict:
         """Verify registered identities and reject unregistered files, read-only.
 
         The check observes filesystem consistency, not an atomic snapshot.
         An interrupted artifact/database write is rejected rather than treated
         as a complete authoritative inventory.
         """
+        from .verification import check_cancel, digest
+        report = event_callback or (lambda *args, **kwargs: None)
         try:
             result = {}
-            for name, expected, size in self._db().execute(
+            inventory = self._db().execute(
                 "SELECT name, sha256, size_bytes FROM artifacts ORDER BY name"
-            ):
+            )
+            # The explicit desktop path is preflight-bounded; legacy default
+            # readers retain their established streaming inventory behavior.
+            if event_callback is not None:
+                inventory = inventory.fetchmany(257)
+                if len(inventory) > 256:
+                    raise _error('Desktop verification artifact count limit exceeded')
+                report('inventory', names=[item[0] for item in inventory])
+            for index, (name, expected, size) in enumerate(inventory):
+                check_cancel(cancel_event)
+                report('artifact', index=index, state='checking')
                 if type(size) is not int or size < 0 or type(expected) is not str or len(expected) != 64:
+                    report('artifact', index=index, state='unavailable_metadata')
                     raise _error("Artifact manifest contains malformed identities")
-                path = self._artifact_path(name)
+                try:
+                    path = self._artifact_path(name)
+                except ProductError:
+                    report('artifact', index=index, state='unavailable_metadata')
+                    raise
                 if not path.is_file():
+                    report('artifact', index=index, state='missing_artifact')
                     raise _error(f"Artifact is missing or is not a regular file: {name}")
-                data = _read_consistent(path)
-                if len(data) != size or hashlib.sha256(data).hexdigest() != expected:
+                if cancel_event is not None:
+                    from firmavex.backends.security import read_bytes, EXPORT_BYTES
+                    data = read_bytes(path, EXPORT_BYTES, cancel_event=cancel_event)
+                else:
+                    data = _read_consistent(path)
+                if len(data) != size or digest(data, cancel_event) != expected:
+                    report('artifact', index=index, state='hash_mismatch')
                     raise _error(f"Artifact identity mismatch: {name}")
                 result[name] = {"sha256": expected, "size_bytes": size}
+                report('artifact', index=index, state='hash_match')
+            report('checking_archive_inventory')
             own_files = {"run.sqlite3", ".writer.lock", "run.sqlite3-journal",
                          "run.sqlite3-wal", "run.sqlite3-shm"}
             for path in self.root.rglob("*"):
+                check_cancel(cancel_event)
                 name = path.relative_to(self.root).as_posix()
                 if path.is_symlink():
                     raise _error(f"Unexpected symbolic link in archive: {name}")

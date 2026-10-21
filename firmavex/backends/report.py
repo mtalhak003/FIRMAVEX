@@ -15,32 +15,46 @@ def _safe_text(value, maximum=1024):
     return "".join(c if ord(c) >= 32 else " " for c in str(value))[:maximum].replace("`", "'").replace("<", "&lt;")
 
 
-def _saved_artifacts(output, record):
+def _saved_artifacts(output, record, *, cancel_event=None, event_callback=None):
+    from firmavex.product.verification import check_cancel, digest
+    report = event_callback or (lambda *args, **kwargs: None)
     items = record["evidence"].get("artifacts", [])
     if type(items) is not list or len(items) > EXPORT_FILES - 16:
         raise ValueError("Invalid artifact inventory")
+    report('inventory', names=[item.get('name', '[invalid metadata]') if type(item) is dict else '[invalid metadata]' for item in items])
     collected = {}
     total = 0
-    for item in items:
+    for index, item in enumerate(items):
+        check_cancel(cancel_event)
+        report('artifact', index=index, state='checking')
         if type(item) is not dict:
+            report('artifact', index=index, state='unavailable_metadata')
             raise ValueError("Invalid artifact metadata")
-        name = artifact_name(item.get("name"))
+        try:
+            name = artifact_name(item.get("name"))
+        except ValueError:
+            report('artifact', index=index, state='unavailable_metadata')
+            raise
         key = name.casefold()
         if key in {n.casefold() for n in collected} or key in {"result.json", "report.md", "checksums.json"}:
+            report('artifact', index=index, state='unavailable_metadata')
             raise ValueError("Artifact name collision")
         expected = item.get("sha256")
         size = item.get("size_bytes")
         if (type(expected) is not str or len(expected) != 64
                 or any(c not in "0123456789abcdef" for c in expected)
                 or type(size) is not int or not 0 <= size <= EXPORT_BYTES):
+            report('artifact', index=index, state='unavailable_metadata')
             raise ValueError("Invalid artifact digest/size")
-        data = read_bytes(output / name, EXPORT_BYTES)
-        if len(data) != size or hashlib.sha256(data).hexdigest() != expected:
+        data = read_bytes(output / name, EXPORT_BYTES, cancel_event=cancel_event) if cancel_event is not None else read_bytes(output / name, EXPORT_BYTES)
+        if len(data) != size or digest(data, cancel_event) != expected:
+            report('artifact', index=index, state='hash_mismatch')
             raise ValueError("Saved artifact no longer matches execution evidence")
         total += len(data)
         if total > EXPORT_BYTES:
             raise ValueError("Export artifact byte limit exceeded")
         collected[name] = data
+        report('artifact', index=index, state='hash_match')
     return collected
 
 

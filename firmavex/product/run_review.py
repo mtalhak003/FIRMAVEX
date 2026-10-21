@@ -63,13 +63,13 @@ def _integrity(state, scope, count=0):
     return {'state': state, 'scope': scope, 'artifacts_checked': count}
 
 
-def _legacy(path):
+def _legacy(path, *, cancel_event=None):
     from firmavex.backends.process import inspect_artifacts
     from firmavex.product.services import inspect_run as inspect_arm
     from firmavex.product.config import ProductConfig
     # Reuse the existing ARM export preflight before its hash/SQLite inspector.
-    inspect_artifacts(path, EXPORT_BYTES)
-    inspected = inspect_arm(path)
+    inspect_artifacts(path, EXPORT_BYTES, cancel_event=cancel_event)
+    inspected = inspect_arm(path, cancel_event=cancel_event) if cancel_event is not None else inspect_arm(path)
     metadata = inspected['metadata']
     ProductConfig.from_dict(metadata['configuration'])
     result = inspected['result']
@@ -91,7 +91,7 @@ def _legacy(path):
             'evidence_reference': str(Path(path) / 'run.sqlite3')}
 
 
-def _review(path):
+def _review(path, *, cancel_event=None):
     legacy = False
     try:
         root = checked_path(path, directory=True)
@@ -99,7 +99,7 @@ def _review(path):
         if legacy:
             if (root / 'admission.json').exists() or (root / 'admission.json').is_symlink():
                 raise ValueError('Ambiguous archive format')
-            return _legacy(path)
+            return _legacy(path, cancel_event=cancel_event)
         record = inspect_run(path)
         values = fields(record)
         status = values['status']
@@ -110,7 +110,7 @@ def _review(path):
         if record['evidence'].get('artifacts'):
             from firmavex.backends.report import _saved_artifacts
             try:
-                artifacts = _saved_artifacts(root, record)
+                artifacts = _saved_artifacts(root, record, cancel_event=cancel_event) if cancel_event is not None else _saved_artifacts(root, record)
                 if inspect_run(path) != record:
                     raise ValueError('Record changed during verification')
                 integrity = _integrity('verified', 'Listed backend artifact SHA-256/size checks passed; not authenticity, ARM receipt or execution verification.', len(artifacts))
@@ -136,7 +136,7 @@ def history(run_dirs, *, cancel_event=None):
     entries = []
     for path in paths:
         _cancel(cancel_event)
-        entries.append(_review(path))
+        entries.append(_review(path, cancel_event=cancel_event))
     _cancel(cancel_event)
     return {'entries': entries, 'read_only': True,
             'scope': 'Saved metadata inspection with explicitly scoped artifact checks; not execution verification. Refresh to inspect changed files.'}
