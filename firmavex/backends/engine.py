@@ -219,7 +219,9 @@ def _execute(request, output, cancel=None, trust=None):
     output = fresh_directory(output)
     cancel = cancel or threading.Event()
     started = time.monotonic()
+    from firmavex.product.provenance import declaration
     admission = {
+        "execution_provenance": declaration(request.profile),
         "schema_version": 1,
         "attempt_id": uuid.uuid4().hex,
         "profile": profiles[request.profile].to_dict(),

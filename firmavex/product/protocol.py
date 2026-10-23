@@ -13,7 +13,7 @@ SCHEMA_VERSION = 1
 MAX_LINE_BYTES = 1_048_576
 COMMANDS = frozenset({"capabilities", "doctor", "validate", "run", "reproduce", "inspect", "export", "recover", "restart", "cancel", "shutdown", "demo", "build_example", "prepare_example", "setup_runtime", "runtime_history", "rollback_runtime", "demo_builtin", "backend_check", "backend_prepare", "backend_execute", "backend_inspect", "backend_reproduce", "backend_export"})
 EVENT_KINDS = frozenset({"accepted", "progress", "result", "error", "cancelling", "shutdown"})
-COMMANDS = COMMANDS | {'backend_history', 'backend_compare', 'backend_verify', 'backend_verification_review', 'backend_preflight', 'backend_configurations', 'backend_configuration_execute'}
+COMMANDS = COMMANDS | {'backend_history', 'backend_compare', 'backend_verify', 'backend_verification_review', 'backend_preflight', 'backend_configurations', 'backend_configuration_execute', 'backend_regression'}
 _REQUEST_ID = re.compile(r"[A-Za-z0-9_.:-]{1,128}\Z")
 
 

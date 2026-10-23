@@ -117,7 +117,7 @@ def open_configuration(directory, *, cancel_event=None):
     findings = _check(request, data)
     check_cancel(cancel_event)
     return {'configuration': str(directory), 'name': value['name'], 'identity': directory.name,
-            'parent': value['parent'], 'origin': value['origin'], 'request': request_to_dict(request), 'findings': findings,
+            'created_at': value['saved_at'], 'parent': value['parent'], 'origin': value['origin'], 'request': request_to_dict(request), 'findings': findings,
             'input_sha256': value['input_sha256'], 'execution_performed': False,
             'note': 'Uses the verified imported snapshot. Original build files are not consulted; import a new revision explicitly.'}
 
@@ -169,7 +169,7 @@ def save(root, name, record, *, parent=None, cancel_event=None):
         directory.rmdir()
         raise
     return {'configuration': str(directory), 'name': name.strip(), 'identity': directory.name,
-            'parent': parent, 'origin': str(source), 'request': request_to_dict(replace(request, source=directory / 'input')),
+            'created_at': value['saved_at'], 'parent': parent, 'origin': str(source), 'request': request_to_dict(replace(request, source=directory / 'input')),
             'input_sha256': digest, 'findings': findings, 'execution_performed': False,
             'note': 'Imported snapshot selected. Previous configurations and evidence remain unchanged.'}
 
@@ -197,7 +197,10 @@ def execute_saved(directory, output_dir, *, trust, cancel_event=None, event_call
     if output.parent != directory / 'runs':
         raise ValueError('Named configuration runs must use its own runs folder')
     _, data, _ = _capture(request, cancel_event, value['input_sha256'])
-    return execute_captured(request, output, data, trust=trust, cancel_event=cancel_event, event_callback=event_callback)
+    _check(request, data)
+    from .provenance import execution_context
+    with execution_context(configuration_revision=directory.name, configuration_created_at=value['saved_at'], input_sha256=value['input_sha256']):
+        return execute_captured(request, output, data, trust=trust, cancel_event=cancel_event, event_callback=event_callback)
 
 
 def execute_captured(request, output, data, *, trust, cancel_event=None, event_callback=None, expected_firmware=None):

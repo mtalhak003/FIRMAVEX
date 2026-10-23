@@ -151,3 +151,14 @@ Future profiling should target demonstrated orchestration or artifact bottleneck
 before considering native code. Raw pilot records remain separate from research
 campaigns; the qualification script allows independent reproduction with new
 outputs and records the actual host/revision/tool identities.
+
+## Batch 19 regression workflow capabilities
+
+| Backend | Named regression sets | Configuration revisions | Execution and provenance limits |
+|---|---|---|---|
+| ARM Cortex-M3 MPS2 | Not included; existing search/reproduction remains | Existing ARM project snapshots | New shared admissions declare environment assumptions; no new hardware guarantee |
+| RISC-V RV32 virt | 1–16 ordered entries; explicit two-uint32 vectors | Pinned immutable Batch 17 snapshots | Sequential admitted QEMU/GDB observations, cancellation, partial summaries, explicit rerun parent |
+| Verilog / Icarus | 1–16 ordered entries; single-file testbenches | Pinned immutable Batch 17 snapshots | Existing fixed-top simulation boundary; no multi-file HDL or physical FPGA validation |
+
+See [Batch 19 workflow, bounds and provenance](batch19-regression-workflows.md).
+These workflow additions do not change platform qualification or release gates.

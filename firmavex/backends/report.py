@@ -204,8 +204,10 @@ def reproduce(output, destination, cancel=None, *, trust=None):
         source.write_bytes(data)
         request = Request(profile, source, tuple(evidence["admission"]["values"]),
                           Limits(**evidence["admission"]["limits"]))
-        result = (execute(request, Path(destination), cancel) if trust is None else
-                  execute_trusted(request, Path(destination), cancel, trust=trust))
+        from firmavex.product.provenance import execution_context
+        with execution_context(rerun_of=record["evidence"]["admission"]["attempt_id"]):
+            result = (execute(request, Path(destination), cancel) if trust is None else
+                      execute_trusted(request, Path(destination), cancel, trust=trust))
     except BaseException as exc:
         primary = exc
         raise

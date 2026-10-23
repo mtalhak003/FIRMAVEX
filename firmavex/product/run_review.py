@@ -59,6 +59,9 @@ def comparison_fields(record):
     admission = admission if type(admission) is dict else {}
     legacy = evidence.get('legacy_result', {})
     legacy = legacy if type(legacy) is dict else {}
+    from .provenance import recorded
+    provenance = recorded(admission) or {}
+    environment = {key: provenance[key] for key in ('host_os', 'host_architecture', 'python_version', 'target_assumptions') if key in provenance}
     result = {
         'project_configuration': admission.get('configuration'),
         'declared_source_path': admission.get('source'),
@@ -67,6 +70,13 @@ def comparison_fields(record):
         'execution_limits': admission.get('limits'),
         'tool_runtime_identity': evidence.get('tools'),
         'replay_metadata': legacy.get('reproduction', admission.get('reproduction_of')),
+        'execution_provenance': provenance,
+        'environment_assumptions': environment,
+        'test_set_identity': provenance.get('test_set_id'),
+        'test_set_revision': provenance.get('test_set_revision'),
+        'entry_identity': provenance.get('entry_id'),
+        'configuration_revision': provenance.get('configuration_revision'),
+        'rerun_relationship': provenance.get('rerun_of'),
         'failure_classification': classification(record.get('status', legacy.get('outcome'))),
     }
     if result['failure_classification'] == 'unavailable':
@@ -214,7 +224,7 @@ def compare(left, right, *, cancel_event=None):
     entries = history(paths, cancel_event=cancel_event)['entries']
     rows = []
     backend_specific = {'input_identity', 'execution_environment', 'execution_limits',
-                        'replay_metadata', 'project_configuration', 'input_values'}
+                        'replay_metadata', 'project_configuration', 'input_values', 'execution_provenance', 'configuration_revision'}
     same_backend = entries[0]['fields'].get('backend') == entries[1]['fields'].get('backend')
     for name in sorted(fields({'evidence': {}})):
         a, b = (entry['fields'].get(name) for entry in entries)

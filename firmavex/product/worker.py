@@ -22,6 +22,7 @@ _FIELDS = {
     "prepare_example": ({"output_dir"}, set()), "setup_runtime": (set(), set()),
     "runtime_history": (set(), set()), "rollback_runtime": ({"generation"}, set()),
     "demo_builtin": ({"output_dir"}, set()),
+    "backend_regression": ({"action"}, {"root", "name", "entries", "parent", "directory", "output_dir", "trust", "previous_run", "left", "right"}),
     "backend_preflight": ({"request"}, {"configuration", "input_sha256", "firmware_sha256"}),
     "backend_configurations": ({"action"}, {"root", "configuration", "name", "request"}),
     "backend_configuration_execute": ({"configuration", "output_dir", "trust"}, set()),
@@ -174,7 +175,10 @@ class Worker:
                 result = describe()
             elif command.startswith("backend_"):
                 from . import backend_services as backend
-                if command == 'backend_preflight':
+                if command == 'backend_regression':
+                    from .regression import operation
+                    result = operation(payload, cancel_event=cancel, event_callback=callback)
+                elif command == 'backend_preflight':
                     from .workspace import preflight
                     result = preflight(payload['request'], cancel_event=cancel, configuration=payload.get('configuration'), expected=payload.get('input_sha256'), expected_firmware=payload.get('firmware_sha256'))
                 elif command == 'backend_configurations':
@@ -266,7 +270,11 @@ class Worker:
                 try:
                     if command.startswith("backend_"):
                         from .backend_services import inspect as inspect_backend
-                        details["partial_result"] = inspect_backend(output_dir)
+                        if command == "backend_regression":
+                            from .regression import inspect as inspect_regression
+                            details["partial_result"] = inspect_regression(output_dir)
+                        else:
+                            details["partial_result"] = inspect_backend(output_dir)
                     else:
                         details["partial_result"] = self.services.inspect_run(output_dir)
                 except Exception as inspection_error:
@@ -279,7 +287,7 @@ class Worker:
             self.emit(request_id, "error", ProductError("cancelled", description, details).to_dict())
         except (ValueError, OSError) as exc:
             self.failed = True
-            error = (ProductError("invalid_input", str(exc)[:600]) if command in {'backend_preflight', 'backend_configurations', 'backend_configuration_execute'} else
+            error = (ProductError("invalid_input", str(exc)[:600]) if command in {'backend_preflight', 'backend_configurations', 'backend_configuration_execute', 'backend_regression'} else
                      ProductError("worker_failure", "Execution service raised an unexpected exception.", {"exception_type": type(exc).__name__, "diagnostic": str(exc)}))
             self.emit(request_id, "error", error.to_dict())
         except Exception as exc:

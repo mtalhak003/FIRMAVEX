@@ -303,6 +303,9 @@ class UniversalWindow(QMainWindow):
         self.operation_view.setAccessibleName('Runtime, preparation and export details')
         self.operation_view.setPlaceholderText('Runtime checks, example preparation and export details appear here.')
         self.tabs.addTab(self.operation_view, 'Operation details')
+        from .regression import RegressionPanel
+        self.regression_panel = RegressionPanel(self)
+        self.tabs.addTab(self.regression_panel, 'Regression test sets')
         comparison_panel = QWidget()
         comparison_layout = QVBoxLayout(comparison_panel)
         self.comparison_scope = QLabel('Choose two saved backend or standalone ARM run folders. Comparison never executes them.')
@@ -843,7 +846,11 @@ class UniversalWindow(QMainWindow):
         target.setPlainText(_preview(record, session_only=command == 'backend_verify'))
         if administrative:
             self.tabs.setCurrentWidget(self.operation_view)
-        if command == 'backend_configurations':
+        if command == 'backend_regression':
+            self.regression_panel.receive(record)
+            self.tabs.setCurrentWidget(self.regression_panel)
+            self.status_label.setText('Regression operation finished. Review entry outcomes and retained evidence; no retries or automatic resumes.')
+        elif command == 'backend_configurations':
             self.tabs.setCurrentWidget(self.configuration_panel)
             if 'entries' in record:
                 self.configurations.clear()
@@ -937,6 +944,9 @@ class UniversalWindow(QMainWindow):
     def _error(self, record):
         command = self._job
         self._job = None
+        if command == 'backend_regression':
+            self.regression_panel.pending = None
+            self.regression_panel.report.setPlainText(_preview(record))
         if command in {'backend_check', 'backend_prepare', 'backend_export', 'backend_history', 'backend_compare', 'backend_verify', 'backend_verification_review', 'backend_preflight', 'backend_configurations'}:
             if command == 'backend_verify':
                 for index in range(self.verification_table.rowCount()):
@@ -1018,6 +1028,7 @@ class UniversalWindow(QMainWindow):
         self.right_folder_button.setEnabled(idle and self._comparison_left is not None)
         self.verify_button.setEnabled(idle and selected is not None and not selected.isHidden())
         self.verify_folder_button.setEnabled(idle)
+        self.regression_panel.refresh()
         self.preflight_button.setEnabled(idle and input_error is None)
         self.configuration_save.setEnabled(idle and self.profile != 'cortex-m3-mps2' and input_error is None)
         self.configuration_list.setEnabled(idle)

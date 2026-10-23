@@ -136,8 +136,12 @@ def reproduce(run_dir, output_dir, *, trust, cancel_event=None, event_callback=N
 
     output = fresh_directory(output_dir)
     start = time.monotonic()
+    from .provenance import declaration, execution_context
+    with execution_context(rerun_of=record["evidence"]["admission"]["attempt_id"]):
+        provenance = declaration(profile)
     admission = {
         **record["evidence"]["admission"],
+        "execution_provenance": provenance,
         "attempt_id": uuid.uuid4().hex,
         "started_at_utc": datetime.now(timezone.utc).isoformat(),
         "reproduction_of": str(Path(run_dir).resolve()),

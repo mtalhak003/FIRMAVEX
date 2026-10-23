@@ -73,9 +73,14 @@ def diagnosis(record):
              'Attempt/run identity: ' + text(admission.get('attempt_id', legacy.get('run_id')), 200),
              'Expected behavior: ' + text(evidence.get('expected'), 500),
              'Observed behavior: ' + text(evidence.get('observation'), 500)]
+    from .provenance import recorded
+    provenance = recorded(admission)
+    if type(provenance) is dict:
+        for field in ('configuration_revision', 'input_sha256', 'test_set_id', 'test_set_revision', 'entry_id', 'rerun_of', 'host_os', 'host_architecture', 'target_assumptions'):
+            lines.append(field.replace('_', ' ').capitalize() + ': ' + text(provenance.get(field), 200))
     observation = evidence.get('observation')
     if type(observation) is dict:
-        lines[-1] = 'Observed behavior: ' + text('; '.join(text(k, 40) + '=' + text(v, 80) for k, v in islice(observation.items(), 8)), 700)
+        lines[6] = 'Observed behavior: ' + text('; '.join(text(k, 40) + '=' + text(v, 80) for k, v in islice(observation.items(), 8)), 700)
     if type(legacy.get('error')) is dict:
         lines.append('Retained run diagnostic: ' + '; '.join(text(k, 40) + '=' + text(v, 160) for k, v in islice(legacy['error'].items(), 8)))
     for key in ('error', 'stderr', 'stdout', 'compile_stderr', 'compile_stdout'):

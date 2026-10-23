@@ -222,3 +222,7 @@ See [local worker interface](local-worker-interface.md) and
 Batch 18 adds [read-only failure diagnosis, bounded diagnostic file inspection,
 and richer saved-run comparison](batch18-diagnosis.md). The capability and replay
 limits described there apply independently of artifact hash matches.
+
+Batch 19 adds [named regression test sets and execution provenance](batch19-regression-workflows.md)
+for existing RV32 and single-file Verilog configurations. Test sets require
+explicit submission and consent; reopening never runs imported targets.
