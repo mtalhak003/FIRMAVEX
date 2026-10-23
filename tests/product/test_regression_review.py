@@ -189,7 +189,8 @@ def test_comparison_changed_missing_and_incomparable_definitions(tmp_path, monke
     assert result['rows'][0]['definition'] == 'changed'
 
 
-@pytest.mark.parametrize('data', [b'{}', b'not json', b'x' * (regression.SUMMARY_BYTES + 1)])
+@pytest.mark.parametrize('data', [b'{}', b'not json', b'x' * (regression.SUMMARY_BYTES + 1)],
+                         ids=['empty-object', 'invalid-json', 'over-byte-limit'])
 def test_malformed_sessions_rejected_without_repair(tmp_path, data):
     root = tmp_path / 'bad'; root.mkdir(); (root / 'regression.json').write_bytes(data)
     with pytest.raises(ValueError): review.review(root, verify_evidence=True)

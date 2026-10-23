@@ -328,6 +328,25 @@ def test_real_custom_configuration_workflow(qtbot, tmp_path, monkeypatch, profil
             window.close()
 
 
+def _regression_failure_details(result, presentation):
+    """Expose bounded retained errors when a native GUI assertion fails."""
+    from firmavex.backends.engine import inspect_run
+    rows = []
+    if type(result) is dict:
+        for entry in result.get('entries', [])[:16]:
+            if not entry.get('evidence'):
+                continue
+            try:
+                record = inspect_run(Path(result['directory']) / entry['evidence'])
+                evidence = record['evidence']
+                rows.append({'entry_id': entry['id'], 'status': record['status'],
+                             'error': str(evidence.get('error', 'unavailable'))[:4096],
+                             'cleanup_verified': evidence.get('cleanup_verified')})
+            except Exception as error:
+                rows.append({'entry_id': entry['id'], 'inspection_error': str(error)[:600]})
+    return json.dumps({'presentation': presentation[:4096], 'retained_errors': rows}, indent=2)
+
+
 @pytest.mark.parametrize('profile', ['riscv32-virt', 'verilog-icarus'])
 def test_real_regression_dashboard_verify_and_text_report(qtbot, tmp_path, monkeypatch, profile):
     """Native desktop: create/save/run/diagnose/rerun/compare/verify/export."""
@@ -362,7 +381,7 @@ def test_real_regression_dashboard_verify_and_text_report(qtbot, tmp_path, monke
         assert not panel.trust.isChecked()
         panel.trust.setChecked(True); panel.run(); done()
         first = panel.current_run
-        assert first and first['counts']['passed'] == first['counts']['failed'] == 1, panel.report.toPlainText()
+        assert first and first['counts']['passed'] == first['counts']['failed'] == 1, _regression_failure_details(first, panel.report.toPlainText())
         panel.open_entry(0, 0); done()
         assert 'Failure diagnosis' in window.summary_view.toPlainText()
         panel.previous_run = first

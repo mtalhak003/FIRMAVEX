@@ -136,3 +136,20 @@ def test_dashboard_verification_comparison_and_export_workflow(view, tmp_path, m
     assert 'Fresh verification: verified' in panel.report.toPlainText()
     assert sorted(p.name for p in Path(payload['output_dir']).iterdir()) == ['regression.txt']
     assert not panel.trust.isChecked()
+
+
+def test_native_failure_context_preserves_retained_launch_error(tmp_path, monkeypatch):
+    import json
+    from firmavex.backends.engine import _write
+    from tests.product.test_regression_review import session
+    from tests.desktop.test_real_universal import _regression_failure_details
+    _, run = session(tmp_path, monkeypatch)
+    record_path = Path(run['directory']) / run['entries'][0]['evidence'] / 'result.json'
+    record = json.loads(record_path.read_text())
+    record['status'] = 'infrastructure_failure'
+    record['evidence']['error'] = 'OSError: [WinError 267] The directory name is invalid'
+    _write(record_path, record)
+    details = json.loads(_regression_failure_details(run, 'native execution stopped'))
+    assert 'WinError 267' in details['retained_errors'][0]['error']
+    assert details['retained_errors'][0]['status'] == 'infrastructure_failure'
+    assert len(_regression_failure_details(run, 'x' * 100000)) < 10000
