@@ -822,6 +822,10 @@ class UniversalWindow(QMainWindow):
         self.log_view.appendPlainText(_preview(envelope)[:8192])
         payload = envelope.get("payload", {})
         if type(payload) is dict:
+            if payload.get('type') == 'regression_verification':
+                self.status_label.setText('Read-only evidence review: ' + display_text(str(payload.get('phase', 'pending')), 80) +
+                    ' · ' + str(payload.get('completed_entries', 0)) + ' of ' + str(payload.get('total_entries', '?')) + ' entries')
+                return
             phases = {
                 "validation": "Validating inputs, trust and compatibility",
                 "process_started": "Starting owned runtime process",

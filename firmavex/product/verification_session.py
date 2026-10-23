@@ -89,20 +89,25 @@ def freshness(session, *, cancel_event=None):
     return {'state': status, 'checked_at': now(), 'limitation': LIMITATION}
 
 
+def report_destination(output_dir, sources):
+    """Canonical non-overlap checks shared by text-only evidence reports."""
+    destination = checked_path(checked_path(output_dir, directory=True, exists=False).resolve(),
+                               directory=True, exists=False)
+    for source in sources:
+        root = checked_path(checked_path(source, directory=True, exists=False).resolve(),
+                            directory=True, exists=False)
+        if destination == root or root in destination.parents or destination in root.parents:
+            raise ValueError('Reports must be outside original evidence storage')
+    return destination
+
+
 def review(session, *, output_dir=None, cancel_event=None):
     root = validate(session)
     check_cancel(cancel_event)
     result = {'freshness': freshness(session, cancel_event=cancel_event)}
     if output_dir is None:
         return result
-    # Validate before resolving so symlinks remain forbidden. Resolve spelling
-    # aliases (notably Windows short names) before testing archive overlap.
-    root = checked_path(checked_path(root, directory=True, exists=False).resolve(), directory=True, exists=False)
-    destination = checked_path(checked_path(output_dir, directory=True, exists=False).resolve(),
-                               directory=True, exists=False)
-    # Reject overlap in either direction before creating anything.
-    if destination == root or root in destination.parents or destination in root.parents:
-        raise ValueError('Verification reports must be outside original evidence storage')
+    destination = report_destination(output_dir, [root])
     provenance = session['provenance']
     lines = ['FIRMAVEX verification observations', LIMITATION,
              'Display-limited paths and values; not a complete archive inventory.']

@@ -221,6 +221,11 @@ def inspect(directory, *, cancel_event=None):
 
 def compare(left, right, *, cancel_event=None):
     a, b = inspect(left, cancel_event=cancel_event), inspect(right, cancel_event=cancel_event)
+    return compare_records(a, b)
+
+
+def compare_records(a, b):
+    """Compare validated snapshots; shared by read-only review and report paths."""
     old = {e['id']: e for e in a['entries']}
     rows = []
     for entry in b['entries']:
@@ -317,7 +322,13 @@ def execute(directory, output_dir, *, trust, previous_run=None, cancel_event=Non
 
 def operation(payload, *, cancel_event=None, event_callback=None):
     action = payload.get('action')
-    fields = {'list': ({'action', 'root'}, set()), 'save': ({'action', 'root', 'name', 'entries'}, {'parent'}),
+    fields = {
+              'dashboard': ({'action', 'root'}, {'directory'}),
+              'review': ({'action', 'directory'}, {'previous_run'}),
+              'verify': ({'action', 'directory'}, {'previous_run'}),
+              'export': ({'action', 'directory', 'output_dir'}, {'previous_run'}),
+              'session_compare': ({'action', 'left', 'right'}, set()),
+              'list': ({'action', 'root'}, set()), 'save': ({'action', 'root', 'name', 'entries'}, {'parent'}),
               'open': ({'action', 'directory'}, set()), 'inspect': ({'action', 'directory'}, set()),
               'compare': ({'action', 'left', 'right'}, set()),
               'execute': ({'action', 'directory', 'output_dir', 'trust'}, {'previous_run'})}
@@ -327,6 +338,13 @@ def operation(payload, *, cancel_event=None, event_callback=None):
     if not required <= payload.keys() or not payload.keys() <= required | optional:
         raise ValueError('Invalid regression operation fields')
     args = {k: v for k, v in payload.items() if k != 'action'}
+    if action in {'dashboard', 'review', 'verify', 'export', 'session_compare'}:
+        from . import regression_review
+        if action in {'review', 'verify'}:
+            return regression_review.review(**args, verify_evidence=action == 'verify', cancel_event=cancel_event, event_callback=event_callback)
+        if action == 'export':
+            return regression_review.export(**args, cancel_event=cancel_event, event_callback=event_callback)
+        return {'dashboard': regression_review.dashboard, 'session_compare': regression_review.compare}[action](**args, cancel_event=cancel_event)
     if action == 'execute':
         return execute(**args, cancel_event=cancel_event, event_callback=event_callback)
     return {'list': listing, 'save': save, 'open': open_set, 'inspect': inspect, 'compare': compare}[action](**args, cancel_event=cancel_event)

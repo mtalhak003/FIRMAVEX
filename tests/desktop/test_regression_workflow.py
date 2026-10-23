@@ -94,3 +94,45 @@ def test_list_named_sets_and_clear_previous_without_execution(view, tmp_path):
     panel.trust.setChecked(True)
     panel.clear_previous()
     assert panel.previous_run is None and not panel.trust.isChecked()
+
+
+def test_dashboard_verification_comparison_and_export_workflow(view, tmp_path, monkeypatch):
+    from tests.product.test_regression_review import session
+    from firmavex.product import regression_review
+    from firmavex.desktop import regression as regression_ui
+    window, controller = view
+    saved, run = session(tmp_path, monkeypatch)
+    panel = window.regression_panel
+    panel.saved = saved
+    panel.refresh_dashboard()
+    payload = controller.calls[-1][1]
+    controller.finish(regression.operation(payload))
+    assert panel.sessions.rowCount() == 1
+    assert 'configuration' in panel.dashboard_revisions.accessibleName().lower()
+    panel.dashboard_search.setText('no-match')
+    assert panel.sessions.isRowHidden(0)
+    panel.dashboard_search.clear()
+    panel.open_dashboard_session(0, 0)
+    controller.finish(regression.inspect(run['directory']))
+    assert panel.current_run['run_id'] == run['run_id']
+    panel.verify_current()
+    assert not panel.verify_button.isEnabled()
+    assert panel.results.item(0, 4).text() == 'unverified'
+    controller.finish(regression.operation(controller.calls[-1][1]))
+    assert panel.aggregate_review['status'] == 'verified'
+    assert panel.artifacts.rowCount() == 6
+    assert panel.results.item(0, 4).text() == 'verified'
+    panel.previous_run = regression.inspect(run['directory'])
+    panel.compare()
+    assert panel.comparison.rowCount() == 0
+    controller.finish(regression.operation(controller.calls[-1][1]))
+    assert panel.comparison.item(0, 3).text() == 'same'
+    monkeypatch.setattr(regression_ui.QFileDialog, 'getExistingDirectory', lambda *a: str(tmp_path))
+    panel.export_report()
+    assert panel.results.item(0, 4).text() == 'unverified'
+    payload = controller.calls[-1][1]
+    assert payload['action'] == 'export'
+    controller.finish(regression.operation(payload))
+    assert 'Fresh verification: verified' in panel.report.toPlainText()
+    assert sorted(p.name for p in Path(payload['output_dir']).iterdir()) == ['regression.txt']
+    assert not panel.trust.isChecked()

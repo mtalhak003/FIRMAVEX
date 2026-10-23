@@ -162,3 +162,14 @@ outputs and records the actual host/revision/tool identities.
 
 See [Batch 19 workflow, bounds and provenance](batch19-regression-workflows.md).
 These workflow additions do not change platform qualification or release gates.
+
+## Batch 20 review and reporting
+
+| Workflow | Dashboard/session comparison | Artifact verification and reports |
+|---|---|---|
+| ARM Cortex-M3 | Existing individual history, diagnosis and run comparison | Existing scoped ARM verification and per-run reports; no ARM regression sets added |
+| RV32 regression sets | Bounded searchable revision/session dashboard, definition/outcome differences | Explicit aggregate retained-input/listed-artifact hashes and sanitized text reports |
+| Single-file Verilog regression sets | Same bounded regression dashboard | Same aggregate checks, including supported listed VCD bytes; no binary embedding or waveform execution |
+
+See [Batch 20 bounds, workflow and interpretation](batch20-regression-review.md).
+Matching digests do not establish authentic execution or physical validation.

@@ -52,6 +52,20 @@ def test_actual_native_regression_set_and_rerun(tmp_path, profile):
     assert rerun['rerun_of'] == result['run_id']
     assert all(row['comparison'] == 'same' for row in regression.compare(result['directory'], rerun['directory'])['rows'])
     assert before == {p.relative_to(Path(result['directory'])): p.read_bytes() for p in Path(result['directory']).rglob('*') if p.is_file()}
+    # Full review/compare/verify/export workflow over native evidence, never execute artifacts.
+    from firmavex.product import regression_review
+    verified = Supervisor().execute('backend_regression', {'action': 'verify', 'directory': result['directory'],
+                                                          'previous_run': rerun['directory']})
+    assert verified['status'] == 'verified', verified
+    assert all('Failure diagnosis' in entry['diagnostic'] for entry in verified['entries'])
+    assert all(row['comparison'] == 'same' for row in verified['comparison']['rows'])
+    exported = Supervisor().execute('backend_regression', {'action': 'export', 'directory': result['directory'],
+        'output_dir': str(tmp_path / 'regression-report'), 'previous_run': rerun['directory']})
+    assert exported['verification_status'] == 'verified'
+    report = Path(exported['report']).read_text()
+    assert result['run_id'] in report and 'Failure diagnosis' in report and 'Comparison:' in report
+    assert list(Path(exported['report']).parent.iterdir()) == [Path(exported['report'])]
+    assert before == {p.relative_to(Path(result['directory'])): p.read_bytes() for p in Path(result['directory']).rglob('*') if p.is_file()}
 
 
 def test_actual_native_hdl_regression_inflight_cancellation(tmp_path):

@@ -279,7 +279,9 @@ class Worker:
                         details["partial_result"] = self.services.inspect_run(output_dir)
                 except Exception as inspection_error:
                     details["inspection_error"] = str(inspection_error)
-            description = ('Configuration operation cancelled; no target execution started. Previous configurations and evidence were not changed.'
+            description = ('Regression review/export cancelled; original evidence was not modified.'
+                           if command == 'backend_regression' and payload.get('action') in {'dashboard', 'review', 'verify', 'export', 'session_compare'} else
+                           'Configuration operation cancelled; no target execution started. Previous configurations and evidence were not changed.'
                            if command == 'backend_configurations' else
                            'Read-only review cancelled; saved evidence was not modified.'
                            if command in {'backend_history', 'backend_compare', 'backend_preflight'} else

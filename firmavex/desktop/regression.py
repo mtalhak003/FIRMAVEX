@@ -21,6 +21,8 @@ class RegressionPanel(QWidget):
         self.pending = None
         self.loading = False
         self.buttons = []
+        self.aggregate_review = None
+        self.dashboard_data = None
         outer = QVBoxLayout(self)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -40,6 +42,25 @@ class RegressionPanel(QWidget):
         saved_row.addWidget(self.button('List saved sets', lambda: self.start('list', root=str(self.host.data_root / 'testsets'))))
         saved_row.addWidget(self.button('Open listed set', self.open_listed))
         layout.addLayout(saved_row)
+        self.dashboard_search = QLineEdit()
+        self.dashboard_search.setPlaceholderText('Search saved sets and recent session names or identities…')
+        self.dashboard_search.setMaxLength(128)
+        self.dashboard_search.setAccessibleName('Search regression dashboard')
+        layout.addWidget(self.dashboard_search)
+        layout.addWidget(self.button('Refresh dashboard', self.refresh_dashboard))
+        self.sessions = QTableWidget(0, 5)
+        self.sessions.setHorizontalHeaderLabels(['Session', 'Created', 'Recorded state', 'Outcome counts', 'Revision'])
+        self.sessions.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.sessions.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.sessions.setAccessibleName('Recent regression sessions; double-click to inspect')
+        self.sessions.cellDoubleClicked.connect(self.open_dashboard_session)
+        layout.addWidget(self.sessions)
+        self.dashboard_revisions = QPlainTextEdit()
+        self.dashboard_revisions.setReadOnly(True)
+        self.dashboard_revisions.setMaximumHeight(100)
+        self.dashboard_revisions.setAccessibleName('Recorded configuration revisions and input identities')
+        layout.addWidget(self.dashboard_revisions)
+        self.dashboard_search.textChanged.connect(self.filter_dashboard)
         self.name = QLineEdit()
         self.name.setMaxLength(80)
         self.name.setPlaceholderText('Test-set name')
@@ -75,14 +96,30 @@ class RegressionPanel(QWidget):
         self.compare_button = self.button('Compare with previous', self.compare)
         row.addWidget(self.compare_button, 1, 1)
         row.addWidget(self.button('Clear previous run', self.clear_previous), 2, 0)
+        self.verify_button = self.button('Verify selected session', self.verify_current)
+        row.addWidget(self.verify_button, 2, 1)
+        self.export_button = self.button('Export text report…', self.export_report)
+        row.addWidget(self.export_button, 3, 0)
         layout.addLayout(row)
-        self.results = QTableWidget(0, 4)
-        self.results.setHorizontalHeaderLabels(['Entry', 'Recorded outcome', 'Category', 'Evidence folder'])
+        self.results = QTableWidget(0, 6)
+        self.results.setHorizontalHeaderLabels(['Entry', 'Recorded outcome', 'Category', 'Evidence folder', 'Evidence state', 'Association'])
         self.results.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.results.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.results.setAccessibleName('Read-only regression outcomes and evidence references')
         self.results.cellDoubleClicked.connect(self.open_entry)
         layout.addWidget(self.results)
+        self.artifacts = QTableWidget(0, 3)
+        self.artifacts.setHorizontalHeaderLabels(['Entry identity', 'Artifact', 'Verification state'])
+        self.artifacts.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.artifacts.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.artifacts.setAccessibleName('Read-only per-artifact regression verification results')
+        layout.addWidget(self.artifacts)
+        self.comparison = QTableWidget(0, 5)
+        self.comparison.setHorizontalHeaderLabels(['Entry identity', 'Previous outcome', 'Selected outcome', 'Outcome comparison', 'Definition comparison'])
+        self.comparison.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.comparison.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.comparison.setAccessibleName('Read-only regression session comparison')
+        layout.addWidget(self.comparison)
         self.report = QPlainTextEdit()
         self.report.setReadOnly(True)
         self.report.setAccessibleName('Regression counts, revision identities and comparison')
@@ -181,6 +218,15 @@ class RegressionPanel(QWidget):
             self.host._local_error(error)
 
     def start(self, action, **payload):
+        if action in {'verify', 'export'}:
+            self.aggregate_review = None
+            self.artifacts.setRowCount(0)
+            for row in range(self.results.rowCount()):
+                self.results.setItem(row, 4, QTableWidgetItem('unverified' if self.current_run and self.current_run['entries'][row]['evidence'] else 'unavailable'))
+                self.results.setItem(row, 5, QTableWidgetItem('unavailable'))
+        if action == 'session_compare':
+            self.comparison.setRowCount(0)
+            self.report.setPlainText('Comparison in progress; previous observations cleared.')
         if action == 'execute':
             self.results.setRowCount(0)
             self.current_run = None
@@ -203,6 +249,7 @@ class RegressionPanel(QWidget):
             self.start('open', directory=self.saved_sets.currentData())
 
     def clear_previous(self):
+        self.comparison.setRowCount(0)
         self.previous_run = None
         self.trust.setChecked(False)
         self.report.setPlainText('Previous-run relationship cleared. The next explicit execution will be an original run.')
@@ -235,7 +282,56 @@ class RegressionPanel(QWidget):
 
     def compare(self):
         if self.previous_run and self.current_run:
-            self.start('compare', left=self.previous_run['directory'], right=self.current_run['directory'])
+            self.start('session_compare', left=self.previous_run['directory'], right=self.current_run['directory'])
+
+    def refresh_dashboard(self):
+        payload = {'root': str(self.host.data_root / 'testsets')}
+        if self.saved:
+            payload['directory'] = self.saved['directory']
+        self.start('dashboard', **payload)
+
+    def filter_dashboard(self, *_):
+        if not self.dashboard_data:
+            return
+        query = self.dashboard_search.text().casefold()
+        selected = self.saved_sets.currentData()
+        self.saved_sets.clear()
+        for entry in self.dashboard_data['sets']:
+            label = display_text(entry['name'], 80) + ' · ' + entry['revision'][:12]
+            if query in (entry['name'] + entry['revision']).casefold():
+                self.saved_sets.addItem(label, entry['directory'])
+        index = self.saved_sets.findData(selected)
+        if index >= 0:
+            self.saved_sets.setCurrentIndex(index)
+        for row in range(self.sessions.rowCount()):
+            value = self.sessions.item(row, 0).data(Qt.ItemDataRole.UserRole)
+            self.sessions.setRowHidden(row, query not in (value['name'] + value['run_id'] + value['revision']).casefold())
+
+    def open_dashboard_session(self, row, _column):
+        if not self.host.busy and self.sessions.item(row, 0):
+            value = self.sessions.item(row, 0).data(Qt.ItemDataRole.UserRole)
+            self.start('inspect', directory=value['directory'])
+
+    def verify_current(self):
+        if self.current_run:
+            self.aggregate_review = None
+            self.artifacts.setRowCount(0)
+            self.report.setPlainText('Verification in progress; previous hash observations cleared.')
+            payload = {'directory': self.current_run['directory']}
+            if self.previous_run:
+                payload['previous_run'] = self.previous_run['directory']
+            self.start('verify', **payload)
+
+    def export_report(self):
+        if not self.current_run:
+            return
+        parent = QFileDialog.getExistingDirectory(self, 'Choose a report parent outside original evidence storage')
+        if parent:
+            payload = {'directory': self.current_run['directory'],
+                       'output_dir': str(Path(parent) / ('regression-report-' + uuid4().hex))}
+            if self.previous_run:
+                payload['previous_run'] = self.previous_run['directory']
+            self.start('export', **payload)
 
     def receive(self, record):
         action, self.pending = self.pending, None
@@ -257,24 +353,67 @@ class RegressionPanel(QWidget):
             self.trust.setChecked(False)
             self.context.setText(display_text('Test set ' + record['set_id'] + '\nRevision ' + record['revision'] + '\nCreated ' + record['created_at'] + '\nFolder ' + record['directory'], 500))
         elif action == 'previous':
+            self.comparison.setRowCount(0)
             self.previous_run = record
             self.trust.setChecked(False)
             self.report.setPlainText('Previous run selected: ' + record['run_id'] + '\n' + record['directory'])
         elif action in ('execute', 'inspect'):
-            self.current_run = record
-            self.results.setRowCount(len(record['entries']))
+            self.show_session(record)
+        elif action == 'dashboard':
+            self.dashboard_data = record
+            self.sessions.setRowCount(len(record['sessions']))
+            for row, value in enumerate(record['sessions']):
+                for column, content in enumerate((value['name'], value['created_at'], value['state'], json.dumps(value['counts']), value['revision'])):
+                    item = QTableWidgetItem(display_text(content, 600))
+                    item.setData(Qt.ItemDataRole.UserRole, value)
+                    item.setToolTip(display_text(value['run_id'] + ' · ' + value['directory'], 500))
+                    self.sessions.setItem(row, column, item)
+            self.dashboard_revisions.setPlainText(display_text(json.dumps(record['configurations'], indent=2), 12000))
+            self.filter_dashboard()
+            self.report.setPlainText('Up to 50 recent sessions within the bounded scan. ' + record['scope'])
+        elif action in ('review', 'verify'):
+            self.show_session(record['summary'])
+            self.aggregate_review = record
+            artifact_rows = []
             for index, entry in enumerate(record['entries']):
-                evidence = str(Path(record['directory']) / entry['evidence']) if entry['evidence'] else 'unavailable'
-                for column, value in enumerate((entry['name'], entry['status'], entry['category'], evidence)):
-                    item = QTableWidgetItem(display_text(value, 500))
-                    item.setToolTip(display_text(entry['diagnostic'], 4096))
-                    self.results.setItem(index, column, item)
-            self.report.setPlainText(display_text('Test set ' + record['set_id'] + '\nRevision ' + record['revision'] +
-                '\nRun ' + record['run_id'] + '\nFolder ' + record['directory'] + '\nRecorded state: ' + record['state'] + '\n' + json.dumps(record['counts']) +
-                '\nDouble-click an entry to inspect retained evidence.\n' + record['scope'], 2000))
+                for column, key in ((4, 'state'), (5, 'association')):
+                    self.results.setItem(index, column, QTableWidgetItem(entry[key]))
+                self.results.item(index, 0).setToolTip(display_text(entry['diagnostic'], 4096))
+                artifact_rows += [(entry['id'], item['name'], item['state']) for item in entry['artifacts']]
+            self.artifacts.setRowCount(len(artifact_rows))
+            for row, values in enumerate(artifact_rows):
+                for column, value in enumerate(values):
+                    self.artifacts.setItem(row, column, QTableWidgetItem(display_text(value, 200)))
+            self.report.setPlainText('Verification: ' + record['status'] + '\n' + json.dumps(record['counts']) +
+                '\nSummary observation: ' + record['summary_observation'] + '\n' + record['scope'])
+        elif action == 'export':
+            self.report.setPlainText('Report: ' + display_text(record['report'], 4096) + '\nFresh verification: ' + record['verification_status'] + '\n' + record['scope'])
+        elif action == 'session_compare':
+            self.comparison.setRowCount(len(record['rows']))
+            for row, value in enumerate(record['rows']):
+                for column, key in enumerate(('id', 'left', 'right', 'comparison', 'definition')):
+                    self.comparison.setItem(row, column, QTableWidgetItem(display_text(str(value[key]) if value[key] is not None else 'missing', 160)))
+            self.report.setPlainText('Revision comparison: ' + record['revision_comparison'] + '\n' + record['scope'])
         elif action == 'compare':
             self.report.setPlainText(display_text(json.dumps(record, indent=2), 16000))
         self.refresh()
+
+    def show_session(self, record):
+        self.aggregate_review = None
+        self.artifacts.setRowCount(0)
+        self.comparison.setRowCount(0)
+        self.results.clearContents()
+        self.current_run = record
+        self.results.setRowCount(len(record['entries']))
+        for index, entry in enumerate(record['entries']):
+            evidence = str(Path(record['directory']) / entry['evidence']) if entry['evidence'] else 'unavailable'
+            for column, value in enumerate((entry['name'], entry['status'], entry['category'], evidence, 'unverified' if entry['evidence'] else 'unavailable', 'unavailable')):
+                item = QTableWidgetItem(display_text(value, 500))
+                item.setToolTip(display_text(entry['diagnostic'], 4096))
+                self.results.setItem(index, column, item)
+        self.report.setPlainText(display_text('Test set ' + record['set_id'] + '\nRevision ' + record['revision'] +
+            '\nRun ' + record['run_id'] + '\nFolder ' + record['directory'] + '\nRecorded state: ' + record['state'] + '\n' + json.dumps(record['counts']) +
+            '\nDouble-click an entry to inspect retained evidence.\n' + record['scope'], 2000))
 
     def open_entry(self, row, _column):
         if self.current_run and not self.host.busy:
@@ -286,6 +425,10 @@ class RegressionPanel(QWidget):
         idle = not self.host.busy and not self.host._closing
         for button in self.buttons:
             button.setEnabled(idle)
+        self.verify_button.setEnabled(idle and self.current_run is not None)
+        self.export_button.setEnabled(idle and self.current_run is not None)
+        self.dashboard_search.setEnabled(idle)
+        self.sessions.setEnabled(idle)
         self.saved_sets.setEnabled(idle)
         self.name.setEnabled(idle); self.entries.setEnabled(idle); self.trust.setEnabled(idle)
         self.run_button.setEnabled(idle and self.saved is not None and not self.dirty and self.trust.isChecked())

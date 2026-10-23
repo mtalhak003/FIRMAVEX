@@ -326,3 +326,67 @@ def test_real_custom_configuration_workflow(qtbot, tmp_path, monkeypatch, profil
                 window.controller.cancel()
                 qtbot.waitUntil(lambda: not window.busy, timeout=20000)
             window.close()
+
+
+@pytest.mark.parametrize('profile', ['riscv32-virt', 'verilog-icarus'])
+def test_real_regression_dashboard_verify_and_text_report(qtbot, tmp_path, monkeypatch, profile):
+    """Native desktop: create/save/run/diagnose/rerun/compare/verify/export."""
+    from firmavex.backends.api import Request, request_to_dict
+    from firmavex.backends.bundled import catalog
+    from firmavex.desktop.universal import UniversalWindow
+    from firmavex.desktop import regression as regression_ui
+    from firmavex.product import workspace
+    _require(profile)
+    source = tmp_path / ('firmware.elf' if profile == 'riscv32-virt' else 'testbench.v')
+    if profile == 'riscv32-virt':
+        source.write_bytes(catalog()[1])
+    else:
+        source.write_text('module testbench; initial begin $display("FIRMAVEX_TEST_RESULT=PASS"); $finish; end endmodule')
+    window = UniversalWindow(data_root=tmp_path / 'desktop-data')
+    qtbot.addWidget(window)
+    window.show()
+    panel = window.regression_panel
+    def done():
+        qtbot.waitUntil(lambda: not window.busy, timeout=120000)
+    try:
+        panel.name.setText('native regression dashboard')
+        for index in range(2):
+            if profile == 'verilog-icarus' and index:
+                source.write_text(source.read_text().replace('PASS', 'FAIL'))
+            values = ((0, 0) if index == 0 else (2, 1)) if profile == 'riscv32-virt' else ()
+            config = workspace.save(tmp_path / 'configs', str(index), request_to_dict(Request(profile, source, values)))
+            window._saved_configuration = config
+            panel.add()
+        panel.save(); done()
+        assert panel.saved is not None, panel.report.toPlainText()
+        assert not panel.trust.isChecked()
+        panel.trust.setChecked(True); panel.run(); done()
+        first = panel.current_run
+        assert first and first['counts']['passed'] == first['counts']['failed'] == 1, panel.report.toPlainText()
+        panel.open_entry(0, 0); done()
+        assert 'Failure diagnosis' in window.summary_view.toPlainText()
+        panel.previous_run = first
+        panel.trust.setChecked(True); panel.run(); done()
+        second = panel.current_run
+        assert second and second['rerun_of'] == first['run_id']
+        panel.compare(); done()
+        assert panel.comparison.item(0, 3).text() == 'same'
+        before = {p.relative_to(Path(second['directory'])): p.read_bytes() for p in Path(second['directory']).rglob('*') if p.is_file()}
+        panel.verify_current(); done()
+        assert panel.aggregate_review and panel.aggregate_review['status'] == 'verified', panel.report.toPlainText()
+        assert panel.artifacts.rowCount() >= 2
+        panel.refresh_dashboard(); done()
+        assert panel.sessions.rowCount() == 2
+        report_parent = tmp_path / 'reports'; report_parent.mkdir()
+        monkeypatch.setattr(regression_ui.QFileDialog, 'getExistingDirectory', lambda *a: str(report_parent))
+        panel.export_report(); done()
+        reports = list(report_parent.glob('*/regression.txt'))
+        assert len(reports) == 1, panel.report.toPlainText()
+        report = reports[0].read_text()
+        assert second['run_id'] in report and 'Comparison:' in report
+        assert 'Fresh verification: verified' in panel.report.toPlainText()
+        assert before == {p.relative_to(Path(second['directory'])): p.read_bytes() for p in Path(second['directory']).rglob('*') if p.is_file()}
+        assert not panel.trust.isChecked()
+    finally:
+        window.close()
+        qtbot.waitUntil(lambda: not window.busy, timeout=120000)

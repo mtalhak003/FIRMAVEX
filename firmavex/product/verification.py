@@ -20,7 +20,7 @@ def digest(data, cancel_event=None):
     return result.hexdigest()
 
 
-def verify(run_dir, *, cancel_event=None, event_callback=None):
+def verify(run_dir, *, cancel_event=None, event_callback=None, include_input=False):
     from firmavex.backends.security import checked_path, EXPORT_BYTES, EXPORT_FILES
     from firmavex.backends.engine import inspect_run
     from firmavex.product.errors import ProductError
@@ -81,10 +81,23 @@ def verify(run_dir, *, cancel_event=None, event_callback=None):
                     raise ValueError('Archive metadata changed during verification')
             diagnostic = 'Registered ARM artifact hashes and inventory checked; not receipt/accounting, authenticity or execution verification.'
         else:
-            scope = 'Listed backend artifacts'
+            scope = 'Recorded backend input and listed artifacts' if include_input else 'Listed backend artifacts'
             from firmavex.backends.report import _saved_artifacts
             before = inspect_run(root)
-            _saved_artifacts(root, before, cancel_event=cancel, event_callback=report)
+            inspected = before
+            if include_input:
+                profile = before['evidence']['admission']['profile']['id']
+                key, name = {'riscv32-virt': ('firmware', 'firmware.elf'),
+                             'verilog-icarus': ('source', 'testbench.v')}.get(profile, (None, None))
+                identity = before['evidence'].get(key) if key else None
+                if key:
+                    identity = identity if type(identity) is dict else {}
+                    inventory = before['evidence'].get('artifacts', [])
+                    if type(inventory) is not list:
+                        raise ValueError('Invalid artifact inventory')
+                    inspected = {**before, 'evidence': {**before['evidence'], 'artifacts': [
+                        {'name': name, 'sha256': identity.get('sha256'), 'size_bytes': identity.get('size_bytes')}, *inventory]}}
+            _saved_artifacts(root, inspected, cancel_event=cancel, event_callback=report)
             check_cancel(cancel)
             report('checking_archive_record')
             if inspect_run(root) != before:

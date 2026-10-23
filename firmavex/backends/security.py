@@ -4,6 +4,8 @@ Checks detect observable races. They neither lock hostile writers out nor provid
 an atomic filesystem snapshot. Product execution requires explicit trust.
 """
 
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import replace
 import hashlib
 from importlib.resources import files
@@ -20,6 +22,24 @@ PROJECT_BYTES = 1024 * 1024
 EXPORT_BYTES = 128 * 1024 * 1024
 EXPORT_FILES = 256
 TRUST_MODES = frozenset({"trusted_example", "trusted_project"})
+
+
+_read_budget = ContextVar('firmavex_read_budget', default=None)
+
+
+@contextmanager
+def bounded_reads(maximum, *, calls=1024, cancel_event=None):
+    """Optional aggregate byte/read budget, including consistency rereads."""
+    if type(maximum) is not int or maximum <= 0 or type(calls) is not int or calls <= 0:
+        raise ValueError('Invalid aggregate read budget')
+    if _read_budget.get() is not None:
+        raise ValueError('Nested read budgets are unsupported')
+    budget = {'remaining': maximum, 'consumed': 0, 'calls': 0}
+    token = _read_budget.set((budget, calls, cancel_event))
+    try:
+        yield budget
+    finally:
+        _read_budget.reset(token)
 
 
 def checked_path(path, *, directory=False, exists=True):
@@ -48,6 +68,26 @@ def checked_path(path, *, directory=False, exists=True):
 
 def read_bytes(path, maximum, *, cancel_event=None):
     """Read a bounded regular file while checking path and handle metadata."""
+    budget_context = _read_budget.get()
+    budget = budget_context[0] if budget_context else None
+    if budget is not None:
+        if cancel_event is None:
+            cancel_event = budget_context[2]
+        budget['calls'] += 1
+        if budget['calls'] > budget_context[1]:
+            raise ValueError('Aggregate read count exceeded')
+        maximum = min(maximum, budget['remaining'] // 2)
+
+    def read(stream, count):
+        if budget is None:
+            return stream.read(count)
+        if budget['remaining'] <= 0:
+            raise ValueError('Aggregate read byte limit exceeded')
+        chunk = stream.read(min(count, budget['remaining']))
+        budget['remaining'] -= len(chunk)
+        budget['consumed'] += len(chunk)
+        return chunk
+
     path = checked_path(path)
     from firmavex.product.verification import check_cancel
     check_cancel(cancel_event)
@@ -62,7 +102,7 @@ def read_bytes(path, maximum, *, cancel_event=None):
             raise ValueError("Expected a regular file")
         opened = handle_state(stream.fileno())
         data = bytearray()
-        while chunk := stream.read(min(1024 * 1024, maximum + 1 - len(data))):
+        while chunk := read(stream, min(1024 * 1024, maximum + 1 - len(data))):
             check_cancel(cancel_event)
             data.extend(chunk)
             if len(data) > maximum:
@@ -72,7 +112,7 @@ def read_bytes(path, maximum, *, cancel_event=None):
         # Verify the actual bounded bytes too, including same-size rewrites.
         stream.seek(0)
         offset = 0
-        while chunk := stream.read(min(1024 * 1024, maximum + 1 - offset)):
+        while chunk := read(stream, min(1024 * 1024, maximum + 1 - offset)):
             check_cancel(cancel_event)
             if chunk != data[offset:offset + len(chunk)]:
                 raise ValueError("File changed during capture")

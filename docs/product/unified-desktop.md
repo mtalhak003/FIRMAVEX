@@ -226,3 +226,8 @@ limits described there apply independently of artifact hash matches.
 Batch 19 adds [named regression test sets and execution provenance](batch19-regression-workflows.md)
 for existing RV32 and single-file Verilog configurations. Test sets require
 explicit submission and consent; reopening never runs imported targets.
+
+Batch 20 adds the [regression dashboard, aggregate evidence checks and portable
+text reports](batch20-regression-review.md) inside the existing Regression test
+sets tab. Individual ARM/RV32/Verilog diagnosis and evidence services remain the
+navigation target for entry details.
