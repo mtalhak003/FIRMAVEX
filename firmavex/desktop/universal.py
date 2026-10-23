@@ -27,6 +27,7 @@ from firmavex.product.errors import ProductError
 from firmavex.product.presentation import summary, guidance
 from .controller import DesktopController
 from .diagnostics import arm_reproduction_summary, compiler_diagnostics
+from firmavex.product.diagnosis import diagnosis, inspect_artifact
 from .projects import _safe_root, application_data_directory
 from .workflow import display_text, execution_request, result_context
 from firmavex.product.run_review import outcome_category
@@ -291,6 +292,12 @@ class UniversalWindow(QMainWindow):
         self.tabs.addTab(self.summary_view, "Summary")
         self.tabs.addTab(self.result_view, "Result / evidence")
         self.tabs.addTab(self.log_view, "Progress / logs")
+        self.artifact_button = self._button('Inspect diagnostic file…', self.pick_diagnostic_artifact)
+        layout.addWidget(self.artifact_button)
+        self.artifact_view = QPlainTextEdit()
+        self.artifact_view.setReadOnly(True)
+        self.artifact_view.setAccessibleName('Bounded read-only diagnostic artifact metadata and excerpts')
+        self.tabs.addTab(self.artifact_view, 'Diagnostic artifact')
         self.operation_view = QPlainTextEdit()
         self.operation_view.setReadOnly(True)
         self.operation_view.setAccessibleName('Runtime, preparation and export details')
@@ -628,6 +635,13 @@ class UniversalWindow(QMainWindow):
         if paths:
             self._start('backend_history', {'run_dirs': paths})
 
+    def pick_diagnostic_artifact(self):
+        path, _ = QFileDialog.getOpenFileName(self, 'Inspect retained log or VCD without execution', '',
+                                             'Diagnostic artifacts (*.log *.txt *.out *.err *.vcd)')
+        if path:
+            self.artifact_view.setPlainText(inspect_artifact(path))
+            self.tabs.setCurrentWidget(self.artifact_view)
+
     def pin_comparison(self):
         item = self.history.currentItem()
         if not self.busy and item is not None and not item.isHidden():
@@ -875,7 +889,7 @@ class UniversalWindow(QMainWindow):
                     item.setToolTip(display_text(text, 1000))
                     self.comparison_view.setItem(index, column, item)
             self.comparison_view.resizeRowsToContents()
-            self.comparison_scope.setText(display_text(record.get('scope', ''), 1000))
+            self.comparison_scope.setText(display_text(record.get('scope', '') + '\n' + '\n'.join(record.get('replay_explanations', [])), 3000))
             self.tabs.setCurrentWidget(self.comparison_panel)
             self.status_label.setText('Read-only comparison complete. Unavailable fields are not evidence of equality.')
         elif command == "backend_check":
@@ -901,7 +915,7 @@ class UniversalWindow(QMainWindow):
             status = self.record.get("status", "unknown")
             prefix = "Saved record" if command == "backend_inspect" else "Observed outcome"
             self.status_label.setText(f"{prefix}: {status}. Review completion, evidence and cleanup fields; receipt arrival alone is not success.")
-            explanation = summary(self.record)
+            explanation = summary(self.record) + "\n\n" + diagnosis(self.record)
             diagnostics = compiler_diagnostics(self.record)
             if diagnostics:
                 explanation += "\n\n" + diagnostics

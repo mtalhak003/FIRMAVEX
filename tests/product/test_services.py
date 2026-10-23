@@ -108,8 +108,8 @@ def test_legacy_arm_review_reuses_hash_verification_and_preserves_exact_outcome(
     shared_before = archive_bytes(shared)
     mixed = compare(str(root), str(shared))
     rows = {r['field']: r for r in mixed['rows']}
-    assert rows['backend']['comparison'] == 'unchanged'
-    assert rows['status']['comparison'] == 'changed'  # Preserve both formats' exact recorded vocabulary.
+    assert rows['backend']['comparison'] == 'same'
+    assert rows['status']['comparison'] == 'different'  # Preserve both formats' exact recorded vocabulary.
     assert rows['cleanup_verified']['comparison'] == 'unavailable'
     assert mixed['right']['integrity']['state'] == 'unavailable'
     assert archive_bytes(root) == before and archive_bytes(shared) == shared_before

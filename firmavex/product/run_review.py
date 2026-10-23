@@ -2,6 +2,7 @@
 from pathlib import Path
 from datetime import datetime
 import json
+import math
 
 from firmavex.backends.api import profiles
 from firmavex.backends.engine import inspect_run, STATUSES
@@ -20,6 +21,67 @@ def _cancel(event):
         raise KeyboardInterrupt('Read-only review cancelled')
 
 
+def _metadata(value):
+    """Only small complete JSON values participate in identity comparisons."""
+    if type(value) in (dict, list, str) and not value:
+        return None
+    pending = [(value, 0)]
+    nodes, size = 0, 0
+    while pending:
+        item, depth = pending.pop()
+        nodes += 1
+        if depth > 5 or nodes > 128:
+            return None
+        if type(item) is str:
+            size += len(item)
+            if len(item) > 4096 or size > 16384:
+                return None
+        elif item is None or type(item) in (bool, int) or (type(item) is float and math.isfinite(item)):
+            pass
+        elif type(item) in (dict, list) and len(item) <= 32:
+            if type(item) is dict:
+                if any(type(k) is not str or len(k) > 100 for k in item):
+                    return None
+                size += sum(len(k) for k in item)
+            children = item.values() if type(item) is dict else item
+            pending.extend((child, depth + 1) for child in children)
+        else:
+            return None
+        if size > 16384:
+            return None
+    return value
+
+
+def comparison_fields(record):
+    from .diagnosis import classification
+    evidence = record.get('evidence', {})
+    admission = evidence.get('admission', {})
+    admission = admission if type(admission) is dict else {}
+    legacy = evidence.get('legacy_result', {})
+    legacy = legacy if type(legacy) is dict else {}
+    result = {
+        'project_configuration': admission.get('configuration'),
+        'declared_source_path': admission.get('source'),
+        'input_identity': evidence.get('firmware', evidence.get('source')),
+        'execution_environment': admission.get('profile'),
+        'execution_limits': admission.get('limits'),
+        'tool_runtime_identity': evidence.get('tools'),
+        'replay_metadata': legacy.get('reproduction', admission.get('reproduction_of')),
+        'failure_classification': classification(record.get('status', legacy.get('outcome'))),
+    }
+    if result['failure_classification'] == 'unavailable':
+        result['failure_classification'] = None
+    if result['input_identity'] is None:
+        result['input_identity'] = legacy.get('firmware_sha256')
+    identity = result['input_identity']
+    if type(identity) is dict:
+        result['input_identity'] = identity.get('sha256', identity.get('firmware_sha256'))
+    identity = result['input_identity']
+    if type(identity) is not str or len(identity) != 64 or any(c not in '0123456789abcdef' for c in identity):
+        result['input_identity'] = None
+    return {key: _metadata(value) for key, value in result.items()}
+
+
 def fields(record):
     evidence = record.get('evidence', {})
     admission = evidence.get('admission', {})
@@ -35,6 +97,7 @@ def fields(record):
     except ValueError:
         started = None
     return {
+        **comparison_fields(record),
         'backend': profile if type(profile) is str and profile in profiles else None,
         'status': status if type(status) is str and (status in STATUSES or status == 'incomplete') else None,
         'measurement': mode if type(mode) is str and mode in {'real_firmware', 'real_simulation', 'synthetic_test', 'unverified', 'unverified_runtime_observation'} else None,
@@ -83,6 +146,10 @@ def _legacy(path, *, cancel_event=None):
     if supported and result.get('measurement_mode') in {'real_firmware', 'synthetic_test'}:
         values['measurement'] = result['measurement_mode']
     # Do not infer cleanup from an overall outcome or evidence-completeness flag.
+    values.update(comparison_fields({'status': outcome, 'evidence': {
+        'admission': {'configuration': metadata.get('configuration')},
+        'firmware': metadata.get('firmware'), 'tools': metadata.get('tools'),
+        'legacy_result': result}}))
     artifacts = inspected['artifact_verification']
     integrity = (_integrity('verified', 'Registered ARM artifact SHA-256/size checks passed; not authenticity or execution verification.', len(artifacts))
                  if artifacts else _integrity('unavailable', 'No registered artifacts were available for hash verification.'))
@@ -146,9 +213,18 @@ def compare(left, right, *, cancel_event=None):
     paths = [_path(left), _path(right)]
     entries = history(paths, cancel_event=cancel_event)['entries']
     rows = []
-    for name in ('backend', 'status', 'measurement', 'cleanup_verified', 'started_at_utc', 'input_values'):
+    backend_specific = {'input_identity', 'execution_environment', 'execution_limits',
+                        'replay_metadata', 'project_configuration', 'input_values'}
+    same_backend = entries[0]['fields'].get('backend') == entries[1]['fields'].get('backend')
+    for name in sorted(fields({'evidence': {}})):
         a, b = (entry['fields'].get(name) for entry in entries)
-        rows.append({'field': name, 'left': a, 'right': b,
-                     'comparison': 'unavailable' if a is None or b is None else 'unchanged' if a == b else 'changed'})
-    return {'left': entries[0], 'right': entries[1], 'rows': rows, 'read_only': True,
+        if a is None or b is None:
+            state = 'unavailable'
+        elif name in backend_specific and not same_backend:
+            state = 'not comparable'
+        else:
+            state = 'same' if a == b else 'different'
+        rows.append({'field': name, 'left': a, 'right': b, 'comparison': state})
+    from .diagnosis import replay_explanation
+    return {'replay_explanations': [replay_explanation(entry['fields'].get('backend')) for entry in entries], 'left': entries[0], 'right': entries[1], 'rows': rows, 'read_only': True,
             'scope': 'Sequential read-only review; no replay or atomic snapshot. Integrity states apply only to the named checks, not authenticity or execution validity. Evidence references alone prove no integrity.'}

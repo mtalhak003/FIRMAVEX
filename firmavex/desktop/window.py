@@ -27,6 +27,7 @@ from firmavex.product.errors import ProductError
 from firmavex.product.services import _report
 from .controller import DesktopController
 from .diagnostics import arm_reproduction_summary
+from firmavex.product.diagnosis import diagnosis
 from .projects import DesktopProject, application_data_directory, _safe_root
 
 
@@ -871,7 +872,7 @@ class MainWindow(QMainWindow):
                 + " • state: " + str(result.get("state", "unknown"))
             )
             self.result_text.setPlainText(_json(inspection or result))
-            self.report_view.setPlainText(_report(result))
+            self.report_view.setPlainText(_report(result) + "\n\n" + diagnosis(result))
             reproduction = arm_reproduction_summary(result)
             if reproduction:
                 self.report_view.appendPlainText("\n" + reproduction)

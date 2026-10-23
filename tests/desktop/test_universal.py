@@ -825,3 +825,32 @@ def test_configuration_controls_use_existing_tab_space_without_widening_window(v
     controller.finish({'entries': [], 'limit': 200, 'execution_performed': False})
     assert window.tabs.currentWidget() is window.configuration_panel
     assert all(command != 'backend_configuration_execute' for command, _ in controller.calls)
+
+
+@pytest.mark.parametrize('profile', ['cortex-m3-mps2', 'riscv32-virt', 'verilog-icarus'])
+def test_unified_diagnosis_uses_record_backend_and_preserves_evidence(view, profile):
+    import copy
+    window, controller = view
+    window._job = 'backend_inspect'
+    record = {'status': 'cancelled', 'evidence': {'admission': {'profile': {'id': profile},
+              'attempt_id': 'saved-attempt'}, 'stderr': 'retained\x1b diagnostic'}}
+    before = copy.deepcopy(record)
+    window._result(record)
+    shown = window.summary_view.toPlainText()
+    assert 'Failure category: cancellation' in shown and 'saved-attempt' in shown
+    assert '\x1b' not in shown and record == before
+    assert window.summary_view.isReadOnly()
+
+
+def test_diagnostic_artifact_picker_never_dispatches(view, tmp_path, monkeypatch):
+    from firmavex.desktop import universal
+    window, controller = view
+    path = tmp_path / 'trace.vcd'
+    path.write_text('$timescale 1 ns $end\n$var wire 1 ! ready $end\n$enddefinitions $end\n#0\n#12\n')
+    original = path.read_bytes()
+    monkeypatch.setattr(universal.QFileDialog, 'getOpenFileName', lambda *a: (str(path), ''))
+    window.artifact_button.click()
+    assert 'ready' in window.artifact_view.toPlainText()
+    assert 'Last timestamp: 12' in window.artifact_view.toPlainText()
+    assert window.artifact_view.isReadOnly() and not controller.calls
+    assert path.read_bytes() == original

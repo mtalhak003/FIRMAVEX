@@ -32,8 +32,8 @@ def test_comparison_revalidates_saved_records_and_never_changes_evidence(tmp_pat
     before = archive(tmp_path)
     result = compare(left, right)
     rows = {row['field']: row for row in result['rows']}
-    assert result['read_only'] and rows['status']['comparison'] == 'changed'
-    assert rows['backend']['comparison'] == 'unchanged'
+    assert result['read_only'] and rows['status']['comparison'] == 'different'
+    assert rows['backend']['comparison'] == 'same'
     assert rows['started_at_utc']['comparison'] == 'unavailable'
     assert result['right']['state'] == 'cancelled'
     assert result['left']['evidence_reference'].endswith('result.json')

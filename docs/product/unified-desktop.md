@@ -218,3 +218,7 @@ is visible independently of tool availability.
 
 See [local worker interface](local-worker-interface.md) and
 [preview release policy](release-policy.md). No public remote endpoint is added.
+
+Batch 18 adds [read-only failure diagnosis, bounded diagnostic file inspection,
+and richer saved-run comparison](batch18-diagnosis.md). The capability and replay
+limits described there apply independently of artifact hash matches.
