@@ -66,6 +66,55 @@ def checked_path(path, *, directory=False, exists=True):
     return path
 
 
+# Leave space for the fixed native input/script/artifact basenames. Python can
+# retain evidence at longer paths, but CreateProcessW's cwd cannot use them.
+_NATIVE_DIRECTORY_UNITS = 240
+_WINDOWS = os.name == 'nt'
+
+
+def _windows_short_directory(path):
+    import ctypes
+    api = ctypes.WinDLL('kernel32', use_last_error=True).GetShortPathNameW
+    api.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_uint32]
+    api.restype = ctypes.c_uint32
+    size = api(str(path), None, 0)
+    if not 0 < size <= 32768:
+        raise ctypes.WinError(ctypes.get_last_error())
+    buffer = ctypes.create_unicode_buffer(size)
+    count = api(str(path), buffer, size)
+    if not 0 < count < size:
+        raise ctypes.WinError(ctypes.get_last_error())
+    return buffer.value
+
+
+def native_directory(path):
+    """Use an existing same-directory Windows alias; never create a link/copy.
+
+    Native tools receive this spelling before their paths are constructed. All
+    evidence remains in the original owned directory. Unsupported volumes fail
+    closed with guidance; they do not receive weaker process admission.
+    """
+    path = checked_path(path, directory=True)
+    units = lambda value: len(str(value).encode('utf-16-le')) // 2
+    if not _WINDOWS or units(path) <= _NATIVE_DIRECTORY_UNITS:
+        return path
+    message = ('Native Windows execution path is too long. Use a shorter project/data directory; '
+               'this volume must provide a short path to the same directory.')
+    try:
+        alias = Path(_windows_short_directory(path))
+        if not alias.is_absolute():
+            raise ValueError(message)
+        alias = checked_path(alias, directory=True)
+        if units(alias) > _NATIVE_DIRECTORY_UNITS or not os.path.samefile(path, alias):
+            raise ValueError(message)
+        # Reject any observable link/reparse-point substitution in either spelling.
+        checked_path(path, directory=True)
+        checked_path(alias, directory=True)
+        return alias
+    except (OSError, ValueError) as error:
+        raise ValueError(message) from error
+
+
 def read_bytes(path, maximum, *, cancel_event=None):
     """Read a bounded regular file while checking path and handle metadata."""
     budget_context = _read_budget.get()

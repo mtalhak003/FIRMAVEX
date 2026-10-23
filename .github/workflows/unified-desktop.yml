@@ -81,7 +81,7 @@ jobs:
       - name: Native ownership, path and resource regression tests
         run: |
           set -o pipefail
-          "$FIRMAVEX_PYTHON" tools/product_ci_tests.py -q tests/backends/test_qualification.py tests/backends/test_records_security.py tests/backends/test_process_security.py tests/product/test_backend_services.py 2>&1 | tee "$RUNNER_TEMP/native-security-regressions.log"
+          "$FIRMAVEX_PYTHON" tools/product_ci_tests.py -q tests/backends/test_qualification.py tests/backends/test_native_paths.py tests/backends/test_records_security.py tests/backends/test_process_security.py tests/product/test_backend_services.py 2>&1 | tee "$RUNNER_TEMP/native-security-regressions.log"
       - name: Real source backend execution, reproduction, cancellation, export
         run: '"$FIRMAVEX_PYTHON" -m tools.universal_desktop_ci --output "${{ runner.temp }}/unified-source"'
       - name: Real local job interface examples and cancellation

@@ -43,7 +43,7 @@ jobs:
         # subprocesses. They do not establish native firmware support.
         run: >-
           python tools/product_ci_tests.py --ci-watchdog -q
-          tests/backends/test_qualification.py
+          tests/backends/test_qualification.py tests/backends/test_native_paths.py
           tests/product/test_local_interface.py
           tests/product/test_ci_diagnostics.py
           tests/product/test_compiler_diagnostics.py

@@ -14,7 +14,7 @@ import time
 import uuid
 from .api import Request, Result, profiles
 from .process import Cancelled
-from .security import JSON_BYTES, checked_path, fresh_directory, read_json
+from .security import JSON_BYTES, checked_path, fresh_directory, read_json, native_directory
 from firmavex.product.file_state import path_state
 
 STATUSES = frozenset({"passed", "triggered", "not_discovered", "invalid_input",
@@ -242,6 +242,8 @@ def _execute(request, output, cancel=None, trust=None):
         backend = {"cortex-m3-mps2": ArmBackend, "riscv32-virt": RiscvBackend,
                    "verilog-icarus": IcarusBackend}[request.profile]()
         try:
+            if request.profile in {"riscv32-virt", "verilog-icarus"}:
+                output = native_directory(output)
             if trust is not None:
                 from .security import prepare_trusted_request
                 request = prepare_trusted_request(request, output, trust)
