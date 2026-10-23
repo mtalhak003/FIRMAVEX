@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineE
     QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView, QCheckBox,
     QPlainTextEdit, QFileDialog, QPushButton, QGridLayout, QScrollArea, QComboBox)
 
-from .workflow import display_text
+from .workflow import display_text, input_vector
 
 
 class RegressionPanel(QWidget):
@@ -194,9 +194,12 @@ class RegressionPanel(QWidget):
         for row in range(self.entries.rowCount()):
             metadata = self.entries.item(row, 0).data(Qt.ItemDataRole.UserRole)
             value = self.entries.item(row, 2).text().strip()
-            if len(value) > 100:
-                raise ValueError('Use two bounded uint32 values for RV32, or leave HDL values empty')
-            values = [] if not value else [int(v.strip(), 0) for v in value.split(',')]
+            if metadata['values']:
+                values = list(input_vector(value))
+            else:
+                if value:
+                    raise ValueError('Verilog entries do not accept input vectors; leave the values cell empty.')
+                values = []
             entries.append({'id': metadata['id'], 'name': self.entries.item(row, 0).text(),
                             'configuration': metadata['configuration'], 'values': values})
         return entries
@@ -215,7 +218,7 @@ class RegressionPanel(QWidget):
             self.entries.selectRow(target)
             self.edited()
         except ValueError as error:
-            self.host._local_error(error)
+            self.local_error(error)
 
     def start(self, action, **payload):
         if action in {'verify', 'export'}:
@@ -242,7 +245,7 @@ class RegressionPanel(QWidget):
                 payload['parent'] = self.saved['directory']
             self.start('save', **payload)
         except ValueError as error:
-            self.host._local_error(error)
+            self.local_error(error)
 
     def open_listed(self):
         if self.saved_sets.currentData():
@@ -396,6 +399,47 @@ class RegressionPanel(QWidget):
             self.report.setPlainText('Revision comparison: ' + record['revision_comparison'] + '\n' + record['scope'])
         elif action == 'compare':
             self.report.setPlainText(display_text(json.dumps(record, indent=2), 16000))
+        self.refresh()
+
+    def local_error(self, error):
+        self.failed({'category': 'invalid_input', 'message': str(error), 'details': {}}, action='save')
+        self.host.tabs.setCurrentWidget(self)
+        self.host._refresh()
+
+    def failed(self, error, *, action=None):
+        """Keep editor/results in context; only display worker-inspected partial data."""
+        action = action or self.pending
+        self.pending = None
+        self.trust.setChecked(False)
+        details = error.get('details')
+        partial = details.get('partial_result') if type(details) is dict else None
+        fields = {'set_id', 'revision', 'name', 'run_id', 'state', 'directory', 'entries', 'counts', 'scope'}
+        row_fields = {'name', 'status', 'category', 'evidence', 'diagnostic'}
+        recovered = False
+        if (action == 'execute' and type(partial) is dict and partial.get('kind') == 'firmavex_regression_run'
+                and fields <= partial.keys() and type(partial['entries']) is list and 1 <= len(partial['entries']) <= 16
+                and all(type(partial[k]) is str for k in fields - {'entries', 'counts'})
+                and type(partial['counts']) is dict and all(type(row) is dict and row_fields <= row.keys()
+                    and all(type(row[k]) is str for k in row_fields - {'evidence'})
+                    and (row['evidence'] is None or type(row['evidence']) is str) for row in partial['entries'])):
+            self.show_session(partial)
+            recovered = True
+        next_step = {
+            'save': 'Correct the entries, then Save a new revision.',
+            'open': 'Choose an intact test-set revision and check its referenced saved configurations.',
+            'execute': 'Inspect retained partial entries and confirmed cleanup before explicitly starting a new run.',
+            'verify': 'Inspect the selected session and its artifact references before explicitly verifying again.',
+            'export': 'Choose a new report folder outside original evidence storage.',
+            'session_compare': 'Select two readable regression sessions.',
+            'dashboard': 'Check the selected revision/data location, then Refresh dashboard.',
+            'inspect': 'Choose a readable regression session folder.'
+        }.get(action, 'Review the selected configuration and session before another operation.')
+        message = display_text(str(error.get('category', 'worker_error')) + ': ' + str(error.get('message', 'Review operation details.')), 2000)
+        prefix = self.report.toPlainText() + '\n\n' if recovered else ''
+        if action == 'execute' and not recovered and self.host._output is not None:
+            message += '\nRequested session folder: ' + display_text(self.host._output, 1024) + '\nNo validated partial summary is available.'
+        self.report.setPlainText(prefix + message + '\n' + next_step)
+        self.host.status_label.setText(message + ' ' + next_step)
         self.refresh()
 
     def show_session(self, record):

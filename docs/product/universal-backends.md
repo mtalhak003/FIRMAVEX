@@ -173,3 +173,10 @@ These workflow additions do not change platform qualification or release gates.
 
 See [Batch 20 bounds, workflow and interpretation](batch20-regression-review.md).
 Matching digests do not establish authentic execution or physical validation.
+
+## Batch 21 acceptance scope
+
+The [backend-by-backend acceptance matrix](batch21-acceptance.md) records native
+Qt journeys separately from synthetic/service tests and unsupported/environment
+cases. Individual RV32 verification remains narrower than regression retained-input
+verification. No new target, HDL trust boundary or platform qualification is added.

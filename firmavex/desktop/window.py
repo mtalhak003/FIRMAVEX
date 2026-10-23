@@ -278,6 +278,7 @@ class MainWindow(QMainWindow):
         form = QFormLayout(content)
         self.firmware_edit = QLineEdit()
         self.firmware_edit.setPlaceholderText("Choose a Cortex-M3 ELF image; raw BIN images are not supported")
+        self.firmware_edit.setToolTip("Import uses the selected ELF. An open project keeps its pinned imported image for Save, Validate and Run.")
         self.firmware_button = self._button("Browse ELF…", self._pick_firmware)
         row = QHBoxLayout()
         row.addWidget(self.firmware_edit)
@@ -637,6 +638,10 @@ class MainWindow(QMainWindow):
             return
         try:
             config = self.configuration()
+            source = self.firmware_edit.text().strip()
+            if not source:
+                raise ProductError("invalid_configuration", "Choose the ELF image for the new project.")
+            config = replace(config, firmware=Path(source))
             directory_text = self.project_dir_edit.text().strip()
             if not directory_text:
                 raise ProductError("project_error", "Choose a new project folder.")

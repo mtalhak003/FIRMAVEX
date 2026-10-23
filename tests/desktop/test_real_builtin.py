@@ -121,3 +121,67 @@ def test_real_desktop_builtin_search_reproduction_export_and_cancel(qtbot,tmp_pa
             w.controller.cancel()
             qtbot.waitUntil(lambda:not w.busy,timeout=20000)
         w.close()
+
+
+def test_real_arm_import_preflight_execute_and_project_reopen(qtbot, tmp_path, monkeypatch):
+    """Actual ARM GUI import and static validation; no synthetic worker."""
+    from firmavex.product.tools import discover
+    try:
+        discover()
+    except Exception as error:
+        if os.environ.get('FIRMAVEX_REQUIRE_RUNTIME') == '1': pytest.fail(str(error))
+        pytest.skip('Real ARM runtime required; no synthetic substitute')
+    from firmavex.desktop.window import MainWindow
+    import tempfile
+    with tempfile.TemporaryDirectory(prefix='fx21-') as temporary:
+        root = Path(temporary)
+        window = MainWindow(data_root=root / 'data')
+        qtbot.addWidget(window); window.show()
+        def done(): qtbot.waitUntil(lambda: not window.busy, timeout=120000)
+        try:
+            window.prepare_builtin_example(); done()
+            original = window.project
+            source = root / 'custom.elf'
+            source.write_bytes(original.firmware_path.read_bytes() + b'Batch 21 custom import fixture')
+            retained = {p.relative_to(original.root): p.read_bytes() for p in original.root.rglob('*') if p.is_file()}
+            imported_bytes = source.read_bytes()
+            parent = root / 'projects'; parent.mkdir()
+            monkeypatch.setattr('firmavex.desktop.window.QFileDialog.getOpenFileName', lambda *a: (str(source), ''))
+            monkeypatch.setattr('firmavex.desktop.window.QFileDialog.getExistingDirectory', lambda *a: str(parent))
+            window.revision_button.click(); done()
+            assert window.project and window.project.root.parent == parent
+            assert window.project.root != original.root
+            assert window.project.firmware_path.read_bytes() == imported_bytes
+            revision = window.project.root
+            revision_files = {p.relative_to(revision): p.read_bytes() for p in revision.rglob('*') if p.is_file()}
+            # The new-project form must honor its selected ELF even while a
+            # different managed image remains pinned in the current project.
+            second_source = root / 'second-custom.elf'
+            second_bytes = imported_bytes + b'new-project form selection'
+            second_source.write_bytes(second_bytes)
+            window.firmware_edit.setText(str(second_source))
+            window.project_dir_edit.setText(str(root / 'imported-from-form'))
+            assert window.configuration().firmware == window.project.firmware_path
+            window.create_button.click(); done()
+            assert window.project.root == root / 'imported-from-form'
+            assert window.project.firmware_path.read_bytes() == second_bytes
+            assert {p.relative_to(revision): p.read_bytes() for p in revision.rglob('*') if p.is_file()} == revision_files
+            assert window.active_run is None
+            window.validate_configuration(); done()
+            assert '"success": true' in window.validation_text.toPlainText(), window.validation_text.toPlainText()
+            source.unlink()
+            window.start_run(); done()
+            assert window.result_record and window.result_record['outcome'] == 'configured_failure_observed'
+            result = window.active_run
+            evidence = {p.relative_to(result): p.read_bytes() for p in result.rglob('*') if p.is_file()}
+            imported = window.project.root
+            window.open_project(imported); done()
+            assert window.project.root == imported
+            window.open_run(result); done()
+            assert window.result_record['measurement_mode'] == 'real_firmware'
+            assert {p.relative_to(result): p.read_bytes() for p in result.rglob('*') if p.is_file()} == evidence
+            assert {p.relative_to(original.root): p.read_bytes() for p in original.root.rglob('*') if p.is_file()} == retained
+        finally:
+            if window.busy:
+                window.controller.cancel(); done()
+            window.close()

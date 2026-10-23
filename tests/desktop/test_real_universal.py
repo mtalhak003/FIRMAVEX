@@ -129,6 +129,7 @@ def test_real_unified_example_execution_reproduction_history_export(qtbot, tmp_p
         first = window.active_run
         assert window.record["status"] == status, window.result_view.toPlainText()
         assert window.record["evidence"]["measurement_mode"] == mode
+        assert "Failure diagnosis" in window.summary_view.toPlainText()
         _assert_cleanup(window.record)
         if profile == "cortex-m3-mps2":
             accounting = window.record["evidence"]["legacy_result"]["accounting"]
@@ -183,6 +184,46 @@ def test_real_unified_example_execution_reproduction_history_export(qtbot, tmp_p
         assert (exports[0] / "checksums.json").is_file()
         if profile == "verilog-icarus":
             assert list(exports[0].rglob("*.vcd"))
+        # Actual UI comparison and verification complete the individual-run audit.
+        from PySide6.QtCore import Qt
+        before_review = {p.relative_to(second): p.read_bytes() for p in second.rglob('*') if p.is_file()}
+        first_item = next(window.history.item(i) for i in range(window.history.count())
+                          if window.history.item(i).data(Qt.ItemDataRole.UserRole) == str(first))
+        second_item = next(window.history.item(i) for i in range(window.history.count())
+                           if window.history.item(i).data(Qt.ItemDataRole.UserRole) == str(second))
+        window.history.setCurrentItem(first_item); window.pin_button.click()
+        window.history.setCurrentItem(second_item); window.compare_button.click()
+        qtbot.waitUntil(lambda: not window.busy, timeout=30000)
+        assert window.comparison_view.rowCount() > 6
+        assert window.tabs.currentWidget() is window.comparison_panel
+        target = second / 'arm-run' if profile == 'cortex-m3-mps2' else second
+        monkeypatch.setattr('firmavex.desktop.universal.QFileDialog.getExistingDirectory', lambda *a: str(target))
+        window.verify_folder()
+        qtbot.waitUntil(lambda: not window.busy, timeout=30000)
+        expected_verification = 'unavailable' if profile == 'riscv32-virt' else 'verified'
+        assert window._verification_session['status'] == expected_verification, window.verification_label.text()
+        # RV32's default individual verifier lacks a listed artifact inventory;
+        # aggregate regression verification separately checks the retained input.
+        monkeypatch.setattr('firmavex.desktop.universal.QFileDialog.getExistingDirectory', lambda *a: str(tmp_path))
+        window.export_verification_report()
+        qtbot.waitUntil(lambda: not window.busy, timeout=30000)
+        assert len(list(tmp_path.glob('firmavex-verification-*/verification.txt'))) == 1
+        assert {p.relative_to(second): p.read_bytes() for p in second.rglob('*') if p.is_file()} == before_review
+        if profile == 'verilog-icarus':
+            import shutil
+            damaged = tmp_path / 'damaged-evidence-copy'
+            shutil.copytree(second, damaged)
+            (damaged / 'waveform.vcd').unlink()
+            monkeypatch.setattr('firmavex.desktop.universal.QFileDialog.getExistingDirectory', lambda *a: str(damaged))
+            window.verify_folder()
+            qtbot.waitUntil(lambda: not window.busy, timeout=30000)
+            assert window._verification_session['status'] == 'failed'
+            assert any(item['state'] == 'missing_artifact' for item in window._verification_session['items'])
+            assert {p.relative_to(second): p.read_bytes() for p in second.rglob('*') if p.is_file()} == before_review
+        displayed = (window.result_view.toPlainText(), window.result_context_label.text(), window.record)
+        window.regression_panel.refresh_dashboard()
+        qtbot.waitUntil(lambda: not window.busy, timeout=30000)
+        assert displayed == (window.result_view.toPlainText(), window.result_context_label.text(), window.record)
         # Reopening uses a read-only worker request, not another execution.
         snapshot = (first / "result.json").read_bytes()
         window.inspect(first)
@@ -278,7 +319,7 @@ def test_real_custom_configuration_workflow(qtbot, tmp_path, monkeypatch, profil
             else:
                 window.source_edit.setText(str(source))
             if profile == 'riscv32-virt':
-                window.values_edit.setText('0, 0')
+                window.values_edit.setText('00, 00')
             window.configuration_name.setText('Native custom fixture')
             window.preflight()
             qtbot.waitUntil(lambda: not window.busy, timeout=30000)
@@ -295,6 +336,15 @@ def test_real_custom_configuration_workflow(qtbot, tmp_path, monkeypatch, profil
             manifest = manifest_path.read_bytes()
             expected = 'triggered' if profile == 'cortex-m3-mps2' else 'passed'
             source.unlink()
+            if profile != 'cortex-m3-mps2':
+                window.configuration_clear.click()
+                window.list_configurations()
+                qtbot.waitUntil(lambda: not window.busy, timeout=30000)
+                window.configurations.setCurrentIndex(window.configurations.findData(str(root)))
+                window.open_named_configuration()
+                qtbot.waitUntil(lambda: not window.busy, timeout=30000)
+                assert window._saved_configuration['identity'] == saved['identity']
+                assert not window.trust_box.isChecked()
             window.check_runtime()
             qtbot.waitUntil(lambda: not window.busy, timeout=120000)
             assert window._ready and not window.trust_box.isChecked()
@@ -376,6 +426,8 @@ def test_real_regression_dashboard_verify_and_text_report(qtbot, tmp_path, monke
             config = workspace.save(tmp_path / 'configs', str(index), request_to_dict(Request(profile, source, values)))
             window._saved_configuration = config
             panel.add()
+        if profile == 'riscv32-virt':
+            panel.entries.item(0, 2).setText('00, 00')
         panel.save(); done()
         assert panel.saved is not None, panel.report.toPlainText()
         assert not panel.trust.isChecked()
@@ -384,6 +436,7 @@ def test_real_regression_dashboard_verify_and_text_report(qtbot, tmp_path, monke
         assert first and first['counts']['passed'] == first['counts']['failed'] == 1, _regression_failure_details(first, panel.report.toPlainText())
         panel.open_entry(0, 0); done()
         assert 'Failure diagnosis' in window.summary_view.toPlainText()
+        individual = (window.active_run, window.record, window.result_view.toPlainText(), window.result_context_label.text())
         panel.previous_run = first
         panel.trust.setChecked(True); panel.run(); done()
         second = panel.current_run
@@ -406,6 +459,16 @@ def test_real_regression_dashboard_verify_and_text_report(qtbot, tmp_path, monke
         assert 'Fresh verification: verified' in panel.report.toPlainText()
         assert before == {p.relative_to(Path(second['directory'])): p.read_bytes() for p in Path(second['directory']).rglob('*') if p.is_file()}
         assert not panel.trust.isChecked()
+        assert individual == (window.active_run, window.record, window.result_view.toPlainText(), window.result_context_label.text())
+        # Actual worker rejection stays in the regression panel and leaves
+        # evidence untouched, with actionable export recovery guidance.
+        monkeypatch.setattr(regression_ui.QFileDialog, 'getExistingDirectory', lambda *a: second['directory'])
+        panel.export_report(); done()
+        assert window.tabs.currentWidget() is panel
+        assert 'new report folder outside original evidence' in panel.report.toPlainText()
+        assert panel.current_run['run_id'] == second['run_id']
+        assert individual == (window.active_run, window.record, window.result_view.toPlainText(), window.result_context_label.text())
+        assert before == {p.relative_to(Path(second['directory'])): p.read_bytes() for p in Path(second['directory']).rglob('*') if p.is_file()}
     finally:
         window.close()
         qtbot.waitUntil(lambda: not window.busy, timeout=120000)

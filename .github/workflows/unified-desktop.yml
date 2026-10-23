@@ -91,7 +91,7 @@ jobs:
       - name: Explicit RV32 and Verilog regression sets and cancellation
         run: '"$FIRMAVEX_PYTHON" tools/product_ci_tests.py -q tests/backends/test_regression_sets.py'
       - name: Real source unified GUI workflows
-        run: '"$FIRMAVEX_PYTHON" tools/product_ci_tests.py -q tests/desktop/test_real_universal.py'
+        run: '"$FIRMAVEX_PYTHON" tools/product_ci_tests.py -q tests/desktop/test_real_universal.py tests/desktop/test_real_builtin.py::test_real_arm_import_preflight_execute_and_project_reopen'
       - name: Freeze application, console worker, backend launchers and assets
         run: '"$FIRMAVEX_PYTHON" -m PyInstaller --clean --noconfirm packaging/desktop.spec'
       - name: Real frozen backends without a child Python installation

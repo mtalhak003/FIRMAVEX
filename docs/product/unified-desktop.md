@@ -231,3 +231,8 @@ Batch 20 adds the [regression dashboard, aggregate evidence checks and portable
 text reports](batch20-regression-review.md) inside the existing Regression test
 sets tab. Individual ARM/RV32/Verilog diagnosis and evidence services remain the
 navigation target for entry details.
+
+Batch 21's [acceptance matrix and usability corrections](batch21-acceptance.md)
+distinguish native GUI evidence from synthetic/service coverage. ARM new-project
+imports honor the selected ELF; regression administration preserves individual
+run context, provides in-context recovery guidance and shares RV32 vector parsing.

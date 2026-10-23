@@ -50,3 +50,10 @@ def test_saved_identity_comes_from_record_is_bounded_and_preserves_evidence():
     assert 'unknown backend' in result_context({'evidence': None}, '/saved')
     assert display_text('<tag>\x00\n' + 'x' * 10000, 20) == '<tag>  ' + 'x' * 13 + '…'
     assert len(result_context({'status': 'x' * 10000}, 'p' * 10000)) < 1250
+
+
+@pytest.mark.parametrize('text,values', [('08, 01', (8, 1)), ('0Xff 0002', (255, 2)), ('4294967295, 0', (4294967295, 0))])
+def test_shared_input_vector_contract(text, values):
+    from firmavex.desktop.workflow import input_vector
+    assert input_vector(text) == values
+    assert execution_request('riscv32-virt', 'input.elf', text, 10, 16).values == values

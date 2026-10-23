@@ -845,7 +845,7 @@ class UniversalWindow(QMainWindow):
     def _result(self, record):
         command = self._job
         self._job = None
-        administrative = command in {'backend_check', 'backend_prepare', 'backend_export', 'backend_history', 'backend_compare', 'backend_verify', 'backend_verification_review', 'backend_preflight', 'backend_configurations'}
+        administrative = command in {'backend_check', 'backend_prepare', 'backend_export', 'backend_history', 'backend_compare', 'backend_verify', 'backend_verification_review', 'backend_preflight', 'backend_configurations', 'backend_regression'}
         target = self.operation_view if administrative else self.result_view
         target.setPlainText(_preview(record, session_only=command == 'backend_verify'))
         if administrative:
@@ -949,8 +949,11 @@ class UniversalWindow(QMainWindow):
         command = self._job
         self._job = None
         if command == 'backend_regression':
-            self.regression_panel.pending = None
-            self.regression_panel.report.setPlainText(_preview(record))
+            self.operation_view.setPlainText(_preview(record))
+            self.regression_panel.failed(record)
+            self.tabs.setCurrentWidget(self.regression_panel)
+            self._refresh()
+            return
         if command in {'backend_check', 'backend_prepare', 'backend_export', 'backend_history', 'backend_compare', 'backend_verify', 'backend_verification_review', 'backend_preflight', 'backend_configurations'}:
             if command == 'backend_verify':
                 for index in range(self.verification_table.rowCount()):

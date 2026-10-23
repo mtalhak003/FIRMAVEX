@@ -113,3 +113,15 @@ def test_configuration_optional_nulls_and_finite_timeouts_remain_comparable():
               'input_symbols': ['a', 'b']}
     result = comparison_fields({'evidence': {'admission': {'configuration': config}}})
     assert result['project_configuration'] == config
+
+
+def test_failure_cause_remains_visible_in_bounded_excerpt():
+    from firmavex.product.provenance import declaration, execution_context
+    with execution_context(configuration_revision='a' * 64, configuration_created_at='2026-10-24T00:00:00+00:00',
+        input_sha256='b' * 64, test_set_id='c' * 32, test_set_revision='d' * 64, entry_id='e' * 32,
+        regression_run_id='f' * 32, rerun_of='0' * 32):
+        provenance = declaration('riscv32-virt')
+    record = {'status': 'infrastructure_failure', 'evidence': {'admission': {'attempt_id': '1' * 32,
+        'profile': {'id': 'riscv32-virt'}, 'execution_provenance': provenance},
+        'error': 'NotADirectoryError: [WinError 267] The directory name is invalid'}}
+    assert 'WinError 267' in diagnosis(record)[:1024]
