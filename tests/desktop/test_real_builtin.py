@@ -7,6 +7,7 @@ import pytest
 
 
 from tests.desktop.process_identity import assert_process_not_running
+from tests.desktop.path_identity import assert_same_path
 
 
 def test_real_desktop_builtin_search_reproduction_export_and_cancel(qtbot,tmp_path,monkeypatch):
@@ -149,8 +150,9 @@ def test_real_arm_import_preflight_execute_and_project_reopen(qtbot, tmp_path, m
             monkeypatch.setattr('firmavex.desktop.window.QFileDialog.getOpenFileName', lambda *a: (str(source), ''))
             monkeypatch.setattr('firmavex.desktop.window.QFileDialog.getExistingDirectory', lambda *a: str(parent))
             window.revision_button.click(); done()
-            assert window.project and window.project.root.parent == parent
-            assert window.project.root != original.root
+            assert window.project
+            assert_same_path(window.project.root.parent, parent)
+            assert not window.project.root.samefile(original.root)
             assert window.project.firmware_path.read_bytes() == imported_bytes
             revision = window.project.root
             revision_files = {p.relative_to(revision): p.read_bytes() for p in revision.rglob('*') if p.is_file()}
@@ -163,7 +165,7 @@ def test_real_arm_import_preflight_execute_and_project_reopen(qtbot, tmp_path, m
             window.project_dir_edit.setText(str(root / 'imported-from-form'))
             assert window.configuration().firmware == window.project.firmware_path
             window.create_button.click(); done()
-            assert window.project.root == root / 'imported-from-form'
+            assert_same_path(window.project.root, root / 'imported-from-form')
             assert window.project.firmware_path.read_bytes() == second_bytes
             assert {p.relative_to(revision): p.read_bytes() for p in revision.rglob('*') if p.is_file()} == revision_files
             assert window.active_run is None
@@ -176,7 +178,7 @@ def test_real_arm_import_preflight_execute_and_project_reopen(qtbot, tmp_path, m
             evidence = {p.relative_to(result): p.read_bytes() for p in result.rglob('*') if p.is_file()}
             imported = window.project.root
             window.open_project(imported); done()
-            assert window.project.root == imported
+            assert_same_path(window.project.root, imported)
             window.open_run(result); done()
             assert window.result_record['measurement_mode'] == 'real_firmware'
             assert {p.relative_to(result): p.read_bytes() for p in result.rglob('*') if p.is_file()} == evidence

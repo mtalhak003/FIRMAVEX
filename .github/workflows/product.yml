@@ -98,7 +98,7 @@ jobs:
         run: python tools/product_ci_tests.py -q tests/product/test_packaging.py
       - name: Exercise desktop with synthetic workers
         # Qt and host-process tests are not native ARM runtime qualification.
-        run: python tools/product_ci_tests.py -q tests/desktop -k "not real_desktop"
+        run: python tools/product_ci_tests.py --ci-watchdog -q tests/desktop -k "not real_desktop" -o faulthandler_timeout=60
       - name: Smoke-test installed desktop without firmware dispatch
         run: firmavex-desktop --smoke-test
       - name: Publish bounded native timeout diagnostics
