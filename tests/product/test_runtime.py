@@ -375,6 +375,69 @@ def test_actual_arm_firmware_input_after_startup(actual_product_example, signatu
     assert receipt.evidence["observation"]["inputs_read_back"] == dict(zip(config.input_symbols, values))
 
 
+@pytest.fixture(scope="module")
+def actual_bundled_example(tmp_path_factory):
+    from firmavex.product.bundled_example import prepare_example
+    from firmavex.product.config import load_config
+    from firmavex.product.errors import ProductError
+    from firmavex.product.tools import discover
+
+    built = prepare_example(tmp_path_factory.mktemp("bundled_runtime") / "example")
+    config = load_config(built["config_file"])
+    try:
+        tools = discover(config)
+    except ProductError as error:
+        if error.category != "missing_dependency":
+            raise
+        if os.environ.get("FIRMAVEX_REQUIRE_RUNTIME") == "1":
+            pytest.fail(f"Required ARM runtime unavailable: {error}")
+        pytest.skip(f"Actual ARM runtime required: {error}")
+    return config, tools, built["provenance"]["image_sha256"]
+
+
+@pytest.mark.parametrize("values,expected_flag", [((2, 1), 1), ((2, 0), 0)])
+@pytest.mark.parametrize("observed_symbol", ["product_failure", "initialized_data"])
+def test_actual_bundled_mps2_startup_and_behavior(
+    actual_bundled_example, values, expected_flag, observed_symbol
+):
+    """Observe each scalar in a fresh run through the supported executor.
+
+    The runtime observes one configured scalar per execution. Initialized data
+    is therefore checked independently, not claimed as an extra field in the
+    failure-flag receipt. No search adapter or debugger script is replaced.
+    """
+    from dataclasses import replace
+
+    config, tools, image_sha256 = actual_bundled_example
+    expected = expected_flag if observed_symbol == "product_failure" else 0x13579bdf
+    configured = replace(
+        config, failure_symbol=observed_symbol,
+        failure_value=config.failure_value if observed_symbol == "product_failure" else expected,
+    )
+    receipt = FirmwareExecutor(configured, tools).execute(values)
+    evidence = receipt.evidence
+    assert receipt.observation.success, evidence
+    assert evidence["backend"] == "qemu-mps2-an385-gdb"
+    assert evidence["firmware"]["sha256"] == image_sha256
+    image = evidence["firmware_validation"]["elf"]
+    assert image["target"] == "mps2-an385"
+    assert image["initial_stack_pointer"] == 0x20400000
+    assert config.ready_breakpoint == "product_input_ready"
+    assert config.completion_breakpoint == "product_complete"
+    observation = evidence["observation"]
+    assert observation["ready_reached"] and observation["completion_reached"]
+    assert observation["inputs_read_back"] == dict(zip(config.input_symbols, values))
+    assert observation["observed_value"] == expected
+    assert receipt.observation.triggered is (expected == configured.failure_value)
+    assert evidence["observed_value"] == expected
+    assert evidence["measurement_mode"] == "real_firmware"
+    assert all(evidence[key] for key in (
+        "guest_dispatched", "input_injected", "completion_reached", "cleanup_verified"
+    ))
+    assert {process["name"] for process in evidence["cleanup"]["processes"]} == {"qemu", "gdb"}
+    assert all(process["reaped"] for process in evidence["cleanup"]["processes"])
+
+
 def test_actual_missing_completion_is_failure_despite_trigger(actual_product_example):
     from dataclasses import replace
     config, tools = actual_product_example
