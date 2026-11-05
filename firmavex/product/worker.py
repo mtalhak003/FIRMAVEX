@@ -32,7 +32,7 @@ _FIELDS = {
     "backend_inspect": ({"run_dir"}, set()),
     "backend_history": ({"run_dirs"}, set()),
     "backend_compare": ({"left", "right"}, set()),
-    "backend_verify": ({"run_dir"}, set()),
+    "backend_verify": ({"run_dir"}, {"include_input"}),
     "backend_verification_review": ({"session"}, {"output_dir"}),
     "backend_reproduce": ({"run_dir", "output_dir", "trust"}, set()),
     "backend_export": ({"run_dir", "output_dir"}, set()),
@@ -48,6 +48,8 @@ def validate_payload(command, payload):
     required, optional = _FIELDS[command]
     if not required <= payload.keys() or not payload.keys() <= required | optional:
         raise ProductError("protocol_error", "Invalid command payload fields.")
+    if command == 'backend_verify' and 'include_input' in payload and type(payload['include_input']) is not bool:
+        raise ProductError('protocol_error', 'include_input must be a boolean.')
 
 DIAGNOSTIC_PREVIEW_BYTES = 4096
 
@@ -210,7 +212,8 @@ class Worker:
                     result = review(payload['session'], output_dir=payload.get('output_dir'), cancel_event=cancel)
                 elif command == 'backend_verify':
                     from .verification import verify
-                    result = verify(payload['run_dir'], cancel_event=cancel, event_callback=callback)
+                    result = verify(payload['run_dir'], cancel_event=cancel, event_callback=callback,
+                                    include_input=payload.get('include_input', False))
                 elif command == "backend_reproduce":
                     result = backend.reproduce(payload["run_dir"],payload["output_dir"],trust=payload["trust"],cancel_event=cancel,event_callback=callback)
                 elif command == "backend_export":

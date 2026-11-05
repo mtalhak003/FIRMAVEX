@@ -29,6 +29,185 @@ def archive(root):
     return {p.relative_to(root).as_posix(): p.read_bytes() for p in root.rglob('*') if p.is_file()}
 
 
+def retained_input(root, profile):
+    saved(root)
+    name, key = ('firmware.elf', 'firmware') if profile == 'riscv32-virt' else ('testbench.v', 'source')
+    data = b'synthetic retained input'
+    (root / name).write_bytes(data)
+    admission = {'attempt_id': 'synthetic', 'profile': {'id': profile},
+                 'values': [0, 0] if profile == 'riscv32-virt' else []}
+    record = json.loads((root / 'result.json').read_text())
+    record['evidence'].update(admission=admission, artifacts=[], **{
+        key: {'sha256': hashlib.sha256(data).hexdigest(), 'size_bytes': len(data)}})
+    (root / 'admission.json').write_text(json.dumps(admission))
+    (root / 'result.json').write_text(json.dumps(record))
+    return name, key
+
+
+@pytest.mark.parametrize('profile', ['riscv32-virt', 'verilog-icarus'])
+def test_worker_retained_input_opt_in_preserves_defaults_and_never_dispatches(tmp_path, monkeypatch, profile):
+    from firmavex.product.worker import Worker
+    from firmavex.product.protocol import encode_command, decode_command, decode_event
+    import subprocess
+    root = tmp_path / 'run'
+    name, _ = retained_input(root, profile)
+    before = archive(root)
+    monkeypatch.setattr(subprocess, 'Popen', lambda *a, **kw: pytest.fail('Verification dispatched a workload'))
+    for option in ({}, {'include_input': False}, {'include_input': True}):
+        output = io.BytesIO()
+        worker = Worker(output)
+        worker.handle(decode_command(encode_command('verify', 'backend_verify', {'run_dir': str(root), **option})))
+        worker._thread.join(timeout=5)
+        assert not worker._thread.is_alive()
+        result = [decode_event(line) for line in output.getvalue().splitlines()][-1]
+        assert result['kind'] == 'result'
+        result = result['payload']
+        if option.get('include_input'):
+            assert result['status'] == 'verified'
+            assert result['items'] == [{'name': name, 'state': 'hash_match'}]
+            assert 'Recorded backend input and listed artifact hashes checked' in result['diagnostic']
+        else:
+            assert result['status'] == 'unavailable' and not result['items']
+        assert archive(root) == before
+
+
+@pytest.mark.parametrize('value', [None, 0, 1, 'true', [], {}])
+def test_worker_rejects_non_boolean_include_input(value):
+    from firmavex.product.worker import validate_payload
+    with pytest.raises(ProductError, match='boolean'):
+        validate_payload('backend_verify', {'run_dir': '/unused', 'include_input': value})
+
+
+@pytest.mark.parametrize('profile', ['riscv32-virt', 'verilog-icarus'])
+@pytest.mark.parametrize('damage', ['missing', 'corrupt', 'missing_identity', 'malformed_identity'])
+def test_retained_input_damage_cannot_verify(tmp_path, profile, damage):
+    root = tmp_path / 'run'
+    name, key = retained_input(root, profile)
+    if damage == 'missing':
+        (root / name).unlink()
+    elif damage == 'corrupt':
+        (root / name).write_bytes(b'corrupt')
+    else:
+        record = json.loads((root / 'result.json').read_text())
+        if damage == 'missing_identity':
+            del record['evidence'][key]
+        else:
+            record['evidence'][key]['size_bytes'] = True
+        (root / 'result.json').write_text(json.dumps(record))
+    before = archive(root)
+    result = verify(str(root), include_input=True)
+    assert result['status'] == 'failed' and not result['success']
+    assert archive(root) == before
+
+
+@pytest.mark.parametrize('profile', ['riscv32-virt', 'verilog-icarus'])
+def test_retained_input_cancellation_preserves_partial_checks(tmp_path, profile):
+    root = tmp_path / 'run'
+    name, _ = retained_input(root, profile)
+    record = json.loads((root / 'result.json').read_text())
+    record['evidence']['artifacts'] = [{'name': 'a.bin', 'size_bytes': 5,
+                                     'sha256': hashlib.sha256(b'first').hexdigest()}]
+    (root / 'result.json').write_text(json.dumps(record))
+    before = archive(root)
+    cancel = threading.Event()
+    def stop(event):
+        if event.get('item', {}).get('state') == 'hash_match':
+            cancel.set()
+    result = verify(str(root), include_input=True, cancel_event=cancel, event_callback=stop)
+    assert result['status'] == 'cancelled' and not result['success']
+    assert result['items'] == [{'name': name, 'state': 'hash_match'},
+                               {'name': 'a.bin', 'state': 'not_checked'}]
+    assert archive(root) == before
+
+
+def test_input_option_does_not_traverse_arm_wrapper(tmp_path):
+    root = tmp_path / 'run'
+    saved(root)
+    record = json.loads((root / 'result.json').read_text())
+    record['evidence']['admission']['profile']['id'] = 'cortex-m3-mps2'
+    record['evidence']['artifacts'] = []
+    (root / 'admission.json').write_text(json.dumps(record['evidence']['admission']))
+    (root / 'result.json').write_text(json.dumps(record))
+    (root / 'arm-run').mkdir()
+    (root / 'arm-run' / 'run.sqlite3').write_bytes(b'not a database')
+    result = verify(str(root), include_input=True)
+    assert result['status'] == 'unavailable'
+    assert result['provenance']['scope'] == 'Listed backend artifacts'
+
+
+@pytest.mark.parametrize('profile', ['riscv32-virt', 'verilog-icarus'])
+@pytest.mark.parametrize('extra_byte', [0, 1], ids=['at-limit', 'over-limit'])
+def test_retained_input_counts_toward_aggregate_byte_limit(tmp_path, monkeypatch, profile, extra_byte):
+    from firmavex.backends import report
+    root = tmp_path / 'run'
+    name, _ = retained_input(root, profile)
+    # Exercise the unchanged aggregate check with small files. Each individual
+    # file fits; only including the retained input can exceed the test budget.
+    limit = (root / name).stat().st_size + 5
+    monkeypatch.setattr(report, 'EXPORT_BYTES', limit)
+    data = b'x' * (5 + extra_byte)
+    (root / 'output.bin').write_bytes(data)
+    (root / 'later.bin').write_bytes(b'')
+    record = json.loads((root / 'result.json').read_text())
+    record['evidence']['artifacts'] = [{'name': 'output.bin', 'size_bytes': len(data),
+                                     'sha256': hashlib.sha256(data).hexdigest()},
+                                     {'name': 'later.bin', 'size_bytes': 0,
+                                      'sha256': hashlib.sha256(b'').hexdigest()}]
+    (root / 'result.json').write_text(json.dumps(record))
+    before = archive(root)
+    assert verify(str(root))['status'] == 'verified'  # Output alone fits.
+    events = []
+    result = verify(str(root), include_input=True, event_callback=events.append)
+    if extra_byte:
+        assert result['status'] == 'failed' and result['success'] is False
+        assert result['matched'] == 1
+        assert result['items'] == [{'name': name, 'state': 'hash_match'},
+                                   {'name': 'output.bin', 'state': 'read_error'},
+                                   {'name': 'later.bin', 'state': 'not_checked'}]
+        assert result['provenance']['partial'] is True
+        assert all(event['phase'] != 'verified' for event in events)
+    else:
+        assert result['status'] == 'verified' and result['success'] is True
+        assert result['matched'] == result['completed'] == result['total'] == 3
+    assert events[-1]['phase'] == result['status']
+    assert events[-1]['success'] is result['success']
+    assert archive(root) == before
+
+
+@pytest.mark.parametrize('profile', ['riscv32-virt', 'verilog-icarus'])
+@pytest.mark.parametrize('extra_item', [0, 1], ids=['at-limit', 'over-limit'])
+def test_retained_input_counts_toward_inventory_limit(tmp_path, profile, extra_item):
+    from firmavex.backends import report
+    root = tmp_path / 'run'
+    retained_input(root, profile)
+    # Use the real inventory limit, including the existing 16-row reserve.
+    limit = report.EXPORT_FILES - 16
+    outputs = []
+    for index in range(limit - 1 + extra_item):
+        name = f'output-{index:03d}.bin'
+        (root / name).write_bytes(b'')
+        outputs.append({'name': name, 'size_bytes': 0,
+                        'sha256': hashlib.sha256(b'').hexdigest()})
+    record = json.loads((root / 'result.json').read_text())
+    record['evidence']['artifacts'] = outputs
+    (root / 'result.json').write_text(json.dumps(record))
+    before = archive(root)
+    assert verify(str(root))['status'] == 'verified'  # Listed outputs fit.
+    events = []
+    result = verify(str(root), include_input=True, event_callback=events.append)
+    if extra_item:
+        assert result['status'] == 'failed' and result['success'] is False
+        assert result['matched'] == 0 and result['items'] == []
+        assert result['completed'] == 0 and result['total'] is None
+        assert all(event['phase'] not in {'inventory', 'artifact', 'verified'} for event in events)
+    else:
+        assert result['status'] == 'verified' and result['success'] is True
+        assert result['matched'] == result['completed'] == result['total'] == limit
+    assert events[-1]['phase'] == result['status']
+    assert events[-1]['success'] is result['success']
+    assert archive(root) == before
+
+
 def test_progress_and_results_only_claim_checks_actually_finished(tmp_path):
     path = saved(tmp_path / 'run')
     before = archive(tmp_path)

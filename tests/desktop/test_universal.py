@@ -61,6 +61,51 @@ def select(window, profile):
     window.profile_combo.setCurrentIndex(window.profile_combo.findData(profile))
 
 
+def test_verification_input_choice_is_explicit_and_disabled_during_job(view, monkeypatch):
+    window, controller = view
+    root = window.data_root / 'runs' / 'saved'
+    root.mkdir(parents=True)
+    window.refresh_history()
+    window.history.setCurrentItem(window.history.item(0))
+    assert not window.verification_include_input.isChecked()
+    window.verification_include_input.setChecked(True)
+    window.verify_selected()
+    assert controller.calls[-1] == ('backend_verify', {'run_dir': str(root), 'include_input': True})
+    assert not window.verification_include_input.isEnabled()
+    window.cancel_button.click()
+    assert controller.cancelled
+    controller.finish(error={'category': 'cancelled', 'message': 'Stopped'})
+    assert window.verification_include_input.isEnabled()
+    window.verification_include_input.setChecked(False)
+    monkeypatch.setattr('firmavex.desktop.universal.QFileDialog.getExistingDirectory', lambda *a: str(root))
+    window.verify_folder()
+    assert controller.calls[-1] == ('backend_verify', {'run_dir': str(root)})
+
+
+@pytest.mark.parametrize('profile', ['riscv32-virt', 'verilog-icarus'])
+def test_input_verification_through_real_desktop_worker(qtbot, tmp_path, monkeypatch, profile):
+    from tests.product.test_verification import retained_input, archive
+    window = UniversalWindow(data_root=tmp_path / 'user')
+    qtbot.addWidget(window)
+    window.show()
+    root = tmp_path / 'saved'
+    name, _ = retained_input(root, profile)
+    before = archive(root)
+    monkeypatch.setattr('firmavex.desktop.universal.QFileDialog.getExistingDirectory', lambda *a: str(root))
+    window.result_view.setPlainText('Original result')
+    try:
+        window.verification_include_input.setChecked(True)
+        window.verify_folder()
+        qtbot.waitUntil(lambda: not window.busy, timeout=20000)
+        assert window._verification_session['status'] == 'verified'
+        assert window.verification_table.item(0, 0).text() == name
+        assert 'Recorded backend input' in window.verification_provenance.text()
+        assert window.result_view.toPlainText() == 'Original result'
+        assert archive(root) == before
+    finally:
+        window.close()
+
+
 def ready(window, controller):
     window.check_runtime()
     controller.finish({"status": "tools_available", "measurement_mode": "synthetic_test"})

@@ -89,6 +89,8 @@ def verify(run_dir, *, cancel_event=None, event_callback=None, include_input=Fal
                 profile = before['evidence']['admission']['profile']['id']
                 key, name = {'riscv32-virt': ('firmware', 'firmware.elf'),
                              'verilog-icarus': ('source', 'testbench.v')}.get(profile, (None, None))
+                if key is None:
+                    scope = 'Listed backend artifacts'
                 identity = before['evidence'].get(key) if key else None
                 if key:
                     identity = identity if type(identity) is dict else {}
@@ -102,7 +104,8 @@ def verify(run_dir, *, cancel_event=None, event_callback=None, include_input=Fal
             report('checking_archive_record')
             if inspect_run(root) != before:
                 raise ValueError('Record changed during verification')
-            diagnostic = 'Listed backend artifact hashes checked; not nested ARM receipts, authenticity or execution verification.'
+            diagnostic = ('Recorded backend input and listed artifact hashes checked'
+                          if include_input and key else 'Listed backend artifact hashes checked') + '; not nested ARM receipts, authenticity or execution verification.'
         check_cancel(cancel)
         status = 'verified' if rows and all(row['state'] == 'hash_match' for row in rows) else 'unavailable'
         if not rows:

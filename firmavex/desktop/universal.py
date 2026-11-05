@@ -260,6 +260,12 @@ class UniversalWindow(QMainWindow):
         verification_actions.addWidget(self.verify_button)
         verification_actions.addWidget(self.verify_folder_button)
         history_layout.addLayout(verification_actions)
+        self.verification_include_input = QCheckBox('Include retained RV32/Verilog input')
+        self.verification_include_input.setToolTip('Also check retained firmware.elf or testbench.v against its recorded size and SHA-256. Applies only to RV32/Verilog archives; missing evidence cannot be verified.')
+        history_layout.addWidget(self.verification_include_input)
+        verification_hint = QLabel('Default: listed artifacts only. ARM wrapper checks do not inspect nested receipts. Use Verify folder to select arm-run manually for registered ARM artifact checks; this does not reconcile receipt/accounting records.')
+        verification_hint.setWordWrap(True)
+        history_layout.addWidget(verification_hint)
         self.comparison_hint = QLabel('Select two different saved runs: mark the left, then select the right. Comparison never executes them.')
         self.comparison_hint.setTextFormat(Qt.TextFormat.PlainText)
         self.comparison_hint.setWordWrap(True)
@@ -677,14 +683,20 @@ class UniversalWindow(QMainWindow):
     def verify_selected(self):
         item = self.history.currentItem()
         if item is not None and not item.isHidden():
-            self._start('backend_verify', {'run_dir': item.data(Qt.ItemDataRole.UserRole)})
+            self._start('backend_verify', self._verification_payload(item.data(Qt.ItemDataRole.UserRole)))
+
+    def _verification_payload(self, folder):
+        payload = {'run_dir': folder}
+        if self.verification_include_input.isChecked():
+            payload['include_input'] = True
+        return payload
 
     def verify_folder(self):
         if self.busy:
             return
         folder = QFileDialog.getExistingDirectory(self, 'Verify saved evidence without execution')
         if folder:
-            self._start('backend_verify', {'run_dir': folder})
+            self._start('backend_verify', self._verification_payload(folder))
 
     def _show_verification_provenance(self):
         session = self._verification_session or {}
@@ -1035,6 +1047,7 @@ class UniversalWindow(QMainWindow):
         self.right_folder_button.setEnabled(idle and self._comparison_left is not None)
         self.verify_button.setEnabled(idle and selected is not None and not selected.isHidden())
         self.verify_folder_button.setEnabled(idle)
+        self.verification_include_input.setEnabled(idle)
         self.regression_panel.refresh()
         self.preflight_button.setEnabled(idle and input_error is None)
         self.configuration_save.setEnabled(idle and self.profile != 'cortex-m3-mps2' and input_error is None)
