@@ -16,13 +16,14 @@ jobs:
       QT_QPA_PLATFORM: offscreen
       FIRMAVEX_REQUIRE_RUNTIME: "1"
       FIRMAVEX_CANDIDATE_REVISION: ${{ inputs.expected_revision }}
-      FIRMAVEX_CANDIDATE_ROOT: ${{ runner.temp }}/FIRMAVEX-runtime-candidate
-      FIRMAVEX_CI_DIAGNOSTICS: ${{ runner.temp }}/FIRMAVEX-runtime-candidate/test-diagnostics
     steps:
       - name: Bind manual candidate run to reviewed source
         shell: pwsh
         run: |
           if ($env:FIRMAVEX_CANDIDATE_REVISION -cnotmatch '^[0-9a-f]{40}$' -or $env:FIRMAVEX_CANDIDATE_REVISION -cne $env:GITHUB_SHA) { throw 'Exact reviewed revision required' }
+          $env:FIRMAVEX_CANDIDATE_ROOT = Join-Path $env:RUNNER_TEMP 'FIRMAVEX-runtime-candidate'
+          "FIRMAVEX_CANDIDATE_ROOT=$env:FIRMAVEX_CANDIDATE_ROOT" >> $env:GITHUB_ENV
+          "FIRMAVEX_CI_DIAGNOSTICS=$env:FIRMAVEX_CANDIDATE_ROOT/test-diagnostics" >> $env:GITHUB_ENV
           New-Item -ItemType Directory -Path "$env:FIRMAVEX_CANDIDATE_ROOT/acquisition" -Force | Out-Null
           $env:LOCALAPPDATA = "$env:FIRMAVEX_CANDIDATE_ROOT/user-data"
           "LOCALAPPDATA=$env:LOCALAPPDATA" >> $env:GITHUB_ENV
