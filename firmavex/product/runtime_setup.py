@@ -233,7 +233,8 @@ def _remove_private_tree(work):
         operation(filename)
     shutil.rmtree(work, onerror=read_only)
 
-def _install_vendor_runtime(*, cancel_event=None, event_callback=None, root=None):
+def _install_vendor_runtime(*, cancel_event=None, event_callback=None, root=None,
+                            _qualification_failure=None):
     if host() != {'os': 'windows', 'arch': 'x86_64'}:
         raise ProductError('runtime_provider_unavailable', 'Automatic vendor setup currently supports native x86-64 Windows only. Use verified existing tools or a trusted offline runtime pack on this platform.')
     root = Path(root) if root is not None else runtime_root()
@@ -244,6 +245,7 @@ def _install_vendor_runtime(*, cancel_event=None, event_callback=None, root=None
     work = Path(tempfile.mkdtemp(prefix='vendor-setup-', dir=root))
     result = None
     environment = None
+    packages = None
     msys = work / 'msys64'
     try:
         _progress(event_callback, 'download', 'Downloading the checksum-pinned MSYS2 bootstrap directly from its publisher.')
@@ -277,6 +279,13 @@ def _install_vendor_runtime(*, cancel_event=None, event_callback=None, root=None
         result.update({'vendor': BOOTSTRAP, 'distribution_model': 'direct_vendor_installation', 'compiler_required': False, 'firmware_executed': False})
         _progress(event_callback, 'complete', 'Verified runtime activated. User projects and previous generations were preserved.')
         return result
+    except ProductError as exc:
+        if (exc.category == 'unsupported_platform' and 'qualification' in exc.details
+                and _qualification_failure is not None):
+            # The pack's rejected generation is already cleaned; its captured
+            # identities survive in the exception. Persist before vendor cleanup.
+            _qualification_failure(exc, packages)
+        raise
     finally:
         original = __import__('sys').exception()
         try:
@@ -320,9 +329,27 @@ def _write_diagnostic(root, record):
     return Path(name)
 
 
+def _package_identities(packages):
+    """Project only the two selected executable packages from pacman -Q."""
+    result = {name: None for name in PACKAGES[:2]}
+    if type(packages) is not str or len(packages) > 128 * 1024:
+        return result
+    for name in result:
+        candidates = [line.split() for line in packages.splitlines()
+                      if line.split()[:1] == [name]]
+        if len(candidates) == 1 and len(candidates[0]) == 2:
+            version = candidates[0][1]
+            if len(version) <= 64 and re.fullmatch(
+                r'(?:[0-9]{1,6}:)?[0-9]{1,6}(?:\.[0-9]{1,6}){1,4}-[0-9]{1,6}', version
+            ):
+                result[name] = version
+    return result
+
+
 def install_vendor_runtime(*, cancel_event=None, event_callback=None, root=None):
     """Save shareable diagnostics; vendor text passes a strict lossy allowlist."""
     stage = 'initialization'
+    retained = None
 
     def progress(event):
         nonlocal stage
@@ -331,9 +358,7 @@ def install_vendor_runtime(*, cancel_event=None, event_callback=None, root=None)
         if event_callback is not None:
             event_callback(event)
 
-    try:
-        return _install_vendor_runtime(cancel_event=cancel_event, event_callback=progress, root=root)
-    except Exception as exc:
+    def diagnose(exc, packages=None):
         if isinstance(exc, ProductError):
             category, message = exc.category, exc.message
         elif isinstance(exc, urllib.error.URLError):
@@ -356,6 +381,21 @@ def install_vendor_runtime(*, cancel_event=None, event_callback=None, root=None)
             'traceback': [{'file': Path(frame.filename).name, 'function': frame.name,
                            'line': frame.lineno} for frame in traceback.extract_tb(exc.__traceback__)[-20:]],
         }
+        if isinstance(exc, ProductError) and exc.category == 'unsupported_platform':
+            qualification = exc.details.get('qualification')
+            if type(qualification) is dict:
+                # Reproject at the publication boundary: never copy arbitrary
+                # ProductError details or trust supplied expected identities.
+                from .platform_support import _qualification_details
+                tools = qualification.get('tools')
+                tools = tools if type(tools) is dict else {}
+                identities = {}
+                for name in ('qemu', 'gdb'):
+                    row = tools.get(name)
+                    identities[name] = row.get('observed') if type(row) is dict else None
+                record['qualification'] = _qualification_details(
+                    identities, qualification.get('host_architecture'))
+                record['vendor_packages'] = _package_identities(packages)
         if isinstance(exc, ProductError) and type(exc.details.get('return_code')) is int:
             record['return_code'] = exc.details['return_code']
             if stage == 'signed runtime package installation':
@@ -386,4 +426,15 @@ def install_vendor_runtime(*, cancel_event=None, event_callback=None, root=None)
         except Exception:
             details['diagnostic_write_failed'] = True
             message += ' The installation diagnostic could not be saved; check application data folder permissions.'
-        raise ProductError(category, message, details) from exc
+        return ProductError(category, message, details)
+
+    def retain_qualification_failure(exc, packages):
+        nonlocal retained
+        retained = (exc, diagnose(exc, packages))
+
+    try:
+        return _install_vendor_runtime(cancel_event=cancel_event, event_callback=progress, root=root,
+                                       _qualification_failure=retain_qualification_failure)
+    except Exception as exc:
+        error = retained[1] if retained is not None and retained[0] is exc else diagnose(exc)
+        raise error from exc

@@ -420,3 +420,254 @@ def test_windows_workflow_collects_only_diagnostic_json_with_spaces(tmp_path):
     (directory / 'vendor-raw.log').write_text('secret')
     (directory.parent / 'bootstrap.exe').write_bytes(b'private')
     assert [Path(p) for p in glob.glob(pattern.replace('${{ runner.temp }}', str(tmp_path)))] == [diagnostic]
+
+
+@pytest.fixture
+def qualification_install(tmp_path, monkeypatch):
+    """Real pack/writer/cleanup with synthetic vendor bytes and discovery only.
+
+    This exercises failure ordering, not native Windows execution qualification.
+    """
+    import copy
+    import json
+    from types import SimpleNamespace
+    from firmavex.product import platform_support as support, runtime_pack, tools
+
+    state = {
+        'identities': {name: {'version': version, 'sha256': digest}
+                       for name, (version, digest) in support.WINDOWS_EXECUTABLES.items()},
+        'packages': 'mingw-w64-ucrt-x86_64-qemu 11.1.2-1\n'
+                    'mingw-w64-ucrt-x86_64-gdb-multiarch 18.1-1\n',
+        'interrupt': None, 'cleanup_records': [], 'stages': [],
+    }
+    root = tmp_path / 'User with spaces' / 'runtimes'
+    monkeypatch.setattr(setup, 'host', lambda: {'os': 'windows', 'arch': 'x86_64'})
+    monkeypatch.setattr(runtime_pack, 'host', setup.host)
+    monkeypatch.setattr(support, 'os', SimpleNamespace(name='nt'))
+    monkeypatch.setattr(support, 'platform', SimpleNamespace(machine=lambda: 'AMD64'))
+    monkeypatch.setattr(setup, '_download', lambda *a: None)
+
+    def vendor(command, *, stage, callback, **kwargs):
+        state['stages'].append(stage)
+        callback({'stage': stage})
+        if stage == 'bootstrap extraction':
+            msys = next(root.glob('vendor-setup-*')) / 'msys64'
+            for name in ('usr/bin/gpgconf.exe', 'ucrt64/bin/qemu-system-arm.exe',
+                         'ucrt64/bin/gdb-multiarch.exe', 'ucrt64/share/licenses/gdb/COPYING'):
+                path = msys / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b'synthetic fixture; never executed')
+        return state['packages'] if stage == 'vendor inventory' else ''
+
+    def discover(config, **kwargs):
+        assert kwargs == {'_managed': False}
+        assert root in Path(config.qemu).parents and root in Path(config.gdb).parents
+        if state['interrupt'] is not None:
+            raise state['interrupt']
+        return tools.Toolchain(config.qemu, config.gdb, identities=copy.deepcopy(state['identities']))
+
+    original_cleanup = setup._remove_private_tree
+    def cleanup(work):
+        # Observe the persisted file while vendor files STILL exist.
+        assert (work / 'msys64/ucrt64/bin/qemu-system-arm.exe').exists()
+        records = [json.loads(path.read_text()) for path in
+                   (root.parent / 'installation-diagnostics').glob('runtime-setup-*.json')]
+        state['cleanup_records'].append(records)
+        original_cleanup(work)
+
+    monkeypatch.setattr(setup, '_run', vendor)
+    monkeypatch.setattr(tools, 'discover', discover)
+    monkeypatch.setattr(setup, '_remove_private_tree', cleanup)
+    return root, state
+
+
+@pytest.mark.parametrize('mismatch', ['qemu', 'gdb', 'missing'])
+def test_qualification_failure_persists_before_vendor_cleanup_and_preserves_generation(
+    qualification_install, mismatch
+):
+    import json
+    from firmavex.product.runtime_pack import active_tools
+
+    root, state = qualification_install
+    first = setup.install_vendor_runtime(root=root)
+    before = {path.relative_to(root): path.read_bytes() for path in root.rglob('*') if path.is_file()}
+    state['cleanup_records'].clear()
+    if mismatch == 'missing':
+        state['identities'].clear()
+    else:
+        state['identities'][mismatch]['version'] = (
+            'QEMU emulator version 11.1.3' if mismatch == 'qemu' else 'GNU gdb (GDB) 18.2')
+        state['identities'][mismatch]['sha256'] = '0' * 64
+    state['packages'] = 'mingw-w64-ucrt-x86_64-qemu 11.1.3-1\n' \
+                        'mingw-w64-ucrt-x86_64-gdb-multiarch 18.1-1\n' \
+                        'unrelated-package token=secret\n'
+    with pytest.raises(ProductError) as caught:
+        setup.install_vendor_runtime(root=root)
+    assert caught.value.category == 'unsupported_platform'
+    assert caught.value.details['stage'] == 'verify'
+    record = json.loads(Path(caught.value.details['diagnostic_file']).read_text())
+    assert state['cleanup_records'] == [[record]]  # Not first written after cleanup.
+    assert len(list((root.parent / 'installation-diagnostics').glob('*.json'))) == 1
+    assert record['qualification']['tools']['qemu']['observed'] == (
+        {'version': None, 'sha256': None} if mismatch == 'missing' else state['identities']['qemu'])
+    assert record['qualification']['tools']['gdb']['observed'] == (
+        {'version': None, 'sha256': None} if mismatch == 'missing' else state['identities']['gdb'])
+    assert record['vendor_packages'] == {
+        'mingw-w64-ucrt-x86_64-qemu': '11.1.3-1',
+        'mingw-w64-ucrt-x86_64-gdb-multiarch': '18.1-1',
+    }
+    assert record['firmware_executed'] is False
+    assert 'secret' not in json.dumps(record)
+    assert {path.relative_to(root): path.read_bytes() for path in root.rglob('*') if path.is_file()} == before
+    assert first['generation'] in active_tools(root)['qemu']
+    assert not (root / 'install.lock').exists()
+    assert not list(root.glob('vendor-setup-*'))
+    assert state['stages'][-1] == 'private vendor agent cleanup'
+
+
+def test_successful_qualification_writes_no_failure_diagnostic(qualification_install, monkeypatch):
+    root, state = qualification_install
+    monkeypatch.setattr(setup, '_write_diagnostic', lambda *a: pytest.fail('success diagnostic'))
+    result = setup.install_vendor_runtime(root=root)
+    assert result['installed'] and result['firmware_executed'] is False
+    assert state['cleanup_records'] == [[]]
+    assert not (root.parent / 'installation-diagnostics').exists()
+    assert (root / 'active.json').exists()
+
+
+@pytest.mark.parametrize('exception', [KeyboardInterrupt, SystemExit])
+def test_qualification_cancellation_is_preserved_with_cleanup_and_previous_selection(
+    qualification_install, exception, monkeypatch
+):
+    root, state = qualification_install
+    setup.install_vendor_runtime(root=root)
+    before = {path.relative_to(root): path.read_bytes() for path in root.rglob('*') if path.is_file()}
+    state['cleanup_records'].clear()
+    original = exception('original control-flow exception')
+    state['interrupt'] = original
+    monkeypatch.setattr(setup, '_write_diagnostic', lambda *a: pytest.fail('cancellation diagnostic'))
+    with pytest.raises(exception) as caught:
+        setup.install_vendor_runtime(root=root)
+    assert caught.value is original
+    assert state['cleanup_records'] == [[]]
+    assert {path.relative_to(root): path.read_bytes() for path in root.rglob('*') if path.is_file()} == before
+    assert not (root / 'install.lock').exists()
+    assert not list(root.glob('vendor-setup-*'))
+
+
+def test_qualification_diagnostic_write_failure_keeps_rejection_and_cleanup(qualification_install, monkeypatch):
+    root, state = qualification_install
+    state['identities']['qemu']['sha256'] = '0' * 64
+    def denied(*args): raise PermissionError('private path secret')
+    monkeypatch.setattr(setup, '_write_diagnostic', denied)
+    with pytest.raises(ProductError) as caught:
+        setup.install_vendor_runtime(root=root)
+    assert caught.value.category == 'unsupported_platform'
+    assert caught.value.details['stage'] == 'verify'
+    assert caught.value.details['diagnostic_write_failed'] is True
+    assert 'secret' not in str(caught.value.to_dict())
+    assert state['cleanup_records'] == [[]]
+    assert not list(root.iterdir())
+
+
+@pytest.mark.parametrize('exception', [KeyboardInterrupt, SystemExit])
+def test_interruption_during_qualification_diagnostic_write_is_not_swallowed(
+    qualification_install, monkeypatch, exception
+):
+    root, state = qualification_install
+    setup.install_vendor_runtime(root=root)
+    before = {path.relative_to(root): path.read_bytes() for path in root.rglob('*') if path.is_file()}
+    state['cleanup_records'].clear()
+    state['identities']['qemu']['sha256'] = '0' * 64
+    original = exception('interrupted diagnostic persistence')
+    def interrupt(*args): raise original
+    monkeypatch.setattr(setup, '_write_diagnostic', interrupt)
+    with pytest.raises(exception) as caught:
+        setup.install_vendor_runtime(root=root)
+    assert caught.value is original
+    assert state['cleanup_records'] == [[]]
+    assert {path.relative_to(root): path.read_bytes() for path in root.rglob('*') if path.is_file()} == before
+    assert not (root / 'install.lock').exists()
+    assert not list(root.glob('vendor-setup-*'))
+
+
+def test_saved_qualification_failure_survives_cleanup_error_without_duplicate_record(
+    qualification_install, monkeypatch
+):
+    import json
+    root, state = qualification_install
+    state['identities']['qemu']['sha256'] = '0' * 64
+    cleanup = setup._remove_private_tree
+    def failed_cleanup(work):
+        cleanup(work)
+        raise OSError('controlled cleanup failure')
+    monkeypatch.setattr(setup, '_remove_private_tree', failed_cleanup)
+    with pytest.raises(ProductError) as caught:
+        setup.install_vendor_runtime(root=root)
+    assert caught.value.category == 'unsupported_platform'
+    assert caught.value.details['stage'] == 'verify'
+    record = json.loads(Path(caught.value.details['diagnostic_file']).read_text())
+    assert state['cleanup_records'] == [[record]]
+    assert any('Vendor temporary cleanup failed' in note for note in caught.value.__cause__.__notes__)
+    assert len(list((root.parent / 'installation-diagnostics').glob('*.json'))) == 1
+    assert not list(root.iterdir())
+
+
+@pytest.mark.parametrize('packages', [None, {}, 'x' * (128 * 1024 + 1),
+    'mingw-w64-ucrt-x86_64-qemu 11.1.3-1\nmingw-w64-ucrt-x86_64-qemu 11.1.3-2',
+    'mingw-w64-ucrt-x86_64-qemu https://user:secret@private.invalid',
+    'mingw-w64-ucrt-x86_64-qemu 11.1.3-1 token=secret',
+], ids=['missing', 'wrong-type', 'over-byte-limit', 'duplicate', 'url', 'extra-field'])
+def test_package_identity_projection_rejects_ambiguous_unsafe_or_oversized_data(packages):
+    assert setup._package_identities(packages) == {
+        'mingw-w64-ucrt-x86_64-qemu': None, 'mingw-w64-ucrt-x86_64-gdb-multiarch': None,
+    }
+
+
+@pytest.mark.parametrize('extra', [-1, 0, 1], ids=['below-limit', 'at-limit', 'above-limit'])
+def test_package_identity_projection_size_boundary(extra):
+    inventory = ('mingw-w64-ucrt-x86_64-qemu 11.1.3-1\n'
+                 'mingw-w64-ucrt-x86_64-gdb-multiarch 18.1-1\n')
+    maximum = 128 * 1024
+    inventory += '#' * (maximum + extra - len(inventory))
+    assert len(inventory) == len(inventory.encode('ascii')) == maximum + extra
+    assert setup._package_identities(inventory) == {
+        'mingw-w64-ucrt-x86_64-qemu': '11.1.3-1' if extra <= 0 else None,
+        'mingw-w64-ucrt-x86_64-gdb-multiarch': '18.1-1' if extra <= 0 else None,
+    }
+
+
+@pytest.mark.parametrize('qemu,gdb', [
+    ('1:11.1.3-2', '18.1-1'), ('11.1.3-1', '2:18.1-3'), ('1:11.1.3-2', '2:18.1-3'),
+], ids=['qemu-epoch', 'gdb-epoch', 'both-epochs'])
+def test_package_identity_projection_preserves_optional_epoch(qemu, gdb):
+    inventory = (f'mingw-w64-ucrt-x86_64-qemu {qemu}\n'
+                 f'mingw-w64-ucrt-x86_64-gdb-multiarch {gdb}\n')
+    assert setup._package_identities(inventory) == {
+        'mingw-w64-ucrt-x86_64-qemu': qemu,
+        'mingw-w64-ucrt-x86_64-gdb-multiarch': gdb,
+    }
+
+
+def test_diagnostic_publication_reprojects_qualification_instead_of_copying_details(tmp_path, monkeypatch):
+    import json
+    def failed(**kwargs):
+        raise ProductError('unsupported_platform', 'Runtime rejected.', {
+            'qualification': {'required_profile': 'secret', 'host_architecture': 'secret',
+                'environment': {'TOKEN': 'secret'}, 'tools': {
+                    'qemu': {'expected': {'version': 'secret'}, 'observed': {
+                        'version': 'QEMU emulator version 11.1.3\nsecret',
+                        'sha256': '/private/secret', 'path': '/private/secret'}},
+                    'gdb': [], 'compiler': {'secret': 'secret'}}},
+            'vendor_packages': 'secret',
+        })
+    monkeypatch.setattr(setup, '_install_vendor_runtime', failed)
+    with pytest.raises(ProductError) as caught:
+        setup.install_vendor_runtime(root=tmp_path / 'runtimes')
+    text = Path(caught.value.details['diagnostic_file']).read_text()
+    assert 'secret' not in text
+    record = json.loads(text)
+    assert record['qualification']['host_architecture'] == 'unknown'
+    assert record['qualification']['required_profile'] == 'msys2-ucrt64-qemu11.1.2-gdb18.1-v1'
+    assert all(row['observed'] == {'version': None, 'sha256': None}
+               for row in record['qualification']['tools'].values())
