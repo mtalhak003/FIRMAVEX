@@ -1,0 +1,94 @@
+name: Windows runtime candidate ONLY - no production approval
+on:
+  workflow_dispatch:
+    inputs:
+      expected_revision:
+        description: Exact reviewed candidate source commit (must equal this run SHA)
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  source-candidate:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    env:
+      QT_QPA_PLATFORM: offscreen
+      FIRMAVEX_REQUIRE_RUNTIME: "1"
+      FIRMAVEX_CANDIDATE_REVISION: ${{ inputs.expected_revision }}
+      FIRMAVEX_CANDIDATE_ROOT: ${{ runner.temp }}/FIRMAVEX-runtime-candidate
+      FIRMAVEX_CI_DIAGNOSTICS: ${{ runner.temp }}/FIRMAVEX-runtime-candidate/test-diagnostics
+    steps:
+      - name: Bind manual candidate run to reviewed source
+        shell: pwsh
+        run: |
+          if ($env:FIRMAVEX_CANDIDATE_REVISION -cnotmatch '^[0-9a-f]{40}$' -or $env:FIRMAVEX_CANDIDATE_REVISION -cne $env:GITHUB_SHA) { throw 'Exact reviewed revision required' }
+          New-Item -ItemType Directory -Path "$env:FIRMAVEX_CANDIDATE_ROOT/acquisition" -Force | Out-Null
+          $env:LOCALAPPDATA = "$env:FIRMAVEX_CANDIDATE_ROOT/user-data"
+          "LOCALAPPDATA=$env:LOCALAPPDATA" >> $env:GITHUB_ENV
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ inputs.expected_revision }}
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /*
+            !/evidence/
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        id: python
+        with:
+          python-version: "3.12"
+      - uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2
+        id: msys2
+        with:
+          msystem: UCRT64
+          update: true
+      - name: Acquire one fully upgraded signed vendor package set
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          output="$(cygpath -u "$FIRMAVEX_CANDIDATE_ROOT")/acquisition"
+          pacman-conf --repo ucrt64 SigLevel > "$output/signature-policy.txt"
+          for required in PackageRequired PackageTrustedOnly; do
+            tr '[:space:]' '\n' < "$output/signature-policy.txt" | grep -qx "$required"
+          done
+          if tr '[:space:]' '\n' < "$output/signature-policy.txt" | grep -Eq '^(PackageOptional|PackageNever|PackageTrustAll)$'; then exit 1; fi
+          pacman -Syu --needed --noconfirm mingw-w64-ucrt-x86_64-qemu mingw-w64-ucrt-x86_64-gdb-multiarch mingw-w64-ucrt-x86_64-arm-none-eabi-gcc 2>&1 | tee "$output/install.log"
+          pacman -Q > "$output/packages.txt"
+      - name: Install pinned application test dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --only-binary=:all: --require-hashes -r packaging/build-requirements.lock
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pip install --no-deps --no-build-isolation .
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m tools.check_build_inputs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Record candidate identities and dependency inventory - assert production rejection
+        shell: pwsh
+        env:
+          MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
+        run: |
+          $prefix = Join-Path $env:MSYS2_LOCATION 'ucrt64'
+          $env:PATH = (Join-Path $prefix 'bin') + ';' + $env:PATH
+          (Join-Path $prefix 'bin') >> $env:GITHUB_PATH
+          "FIRMAVEX_CANDIDATE_VENDOR=$prefix" >> $env:GITHUB_ENV
+          python -m tools.windows_runtime_candidate --vendor-root "$prefix" --package-inventory "$env:FIRMAVEX_CANDIDATE_ROOT/acquisition/packages.txt" --signature-policy "$env:FIRMAVEX_CANDIDATE_ROOT/acquisition/signature-policy.txt" --output "$env:FIRMAVEX_CANDIDATE_ROOT/source-probe"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Unmodified actual ARM runtime regressions - candidate results only
+        run: python tools/product_ci_tests.py -q tests/product/test_runtime.py -k actual_
+      - name: Native ownership and resource behavior - no admission override
+        run: python tools/product_ci_tests.py -q tests/product/test_windows_job.py tests/product/test_supervisor.py tests/backends/test_process_security.py
+      - name: Candidate-only source search replay cancellation timeout and evidence
+        env:
+          FIRMAVEX_RUN_WINDOWS_CANDIDATE: "1"
+        run: python tools/product_ci_tests.py --ci-watchdog -q tests/product/test_windows_runtime_candidate.py -k native_windows_candidate --firmavex-test-timeout=180
+      - name: Retain candidate evidence only - never a release artifact
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: Windows-UNQUALIFIED-runtime-candidate-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/FIRMAVEX-runtime-candidate/acquisition/
+            ${{ runner.temp }}/FIRMAVEX-runtime-candidate/source-probe/
+            ${{ runner.temp }}/FIRMAVEX-runtime-candidate/test-diagnostics/
+          if-no-files-found: warn
