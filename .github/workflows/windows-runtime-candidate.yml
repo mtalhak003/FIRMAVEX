@@ -48,7 +48,13 @@ jobs:
         run: |
           set -euo pipefail
           output="$(cygpath -u "$FIRMAVEX_CANDIDATE_ROOT")/acquisition"
-          pacman-conf --repo ucrt64 SigLevel > "$output/signature-policy.txt"
+          repo_policy="$(pacman-conf --repo ucrt64 SigLevel)"
+          printf '%s\n' "$repo_policy" > "$output/repository-signature-policy.txt"
+          if [[ "$repo_policy" =~ ^[[:space:]]*$ ]]; then
+            pacman-conf SigLevel > "$output/signature-policy.txt"
+          else
+            printf '%s\n' "$repo_policy" > "$output/signature-policy.txt"
+          fi
           for required in PackageRequired PackageTrustedOnly; do
             tr '[:space:]' '\n' < "$output/signature-policy.txt" | grep -qx "$required"
           done

@@ -3,7 +3,10 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import shutil
+import subprocess
 import sys
+import textwrap
 from types import SimpleNamespace
 
 import pytest
@@ -85,6 +88,67 @@ def test_required_trusted_publisher_signatures_and_exact_packages():
     assert candidate.package_inventory(data) == candidate.PACKAGES
     for changed in [data.replace('11.1.3-1', '11.1.4-1'), data+'\n'+data, data+'\nsecret https://user:password@host', 'x' * (1024**2+1)]:
         with pytest.raises(ValueError): candidate.package_inventory(changed)
+
+
+@pytest.mark.parametrize('repo_policy,global_policy,repo_exit,global_exit,allowed,inherit', [
+    ('', 'PackageRequired PackageTrustedOnly', 0, 0, True, True),
+    (' \t\r\n', 'PackageRequired\nPackageTrustedOnly\nDatabaseRequired\nDatabaseTrustedOnly', 0, 0, True, True),
+    ('PackageRequired PackageTrustedOnly', '', 0, 0, True, False),
+    ('PackageOptional PackageTrustedOnly', 'PackageRequired PackageTrustedOnly', 0, 0, False, False),
+    ('PackageRequired PackageTrustAll', 'PackageRequired PackageTrustedOnly', 0, 0, False, False),
+    ('PackageNever', 'PackageRequired PackageTrustedOnly', 0, 0, False, False),
+    ('PackageRequired', 'PackageRequired PackageTrustedOnly', 0, 0, False, False),
+    ('PackageRequired PackageTrustedOnly PackageOptional', '', 0, 0, False, False),
+    ('', 'PackageRequired PackageTrustedOnly', 1, 0, False, False),
+    ('PackageRequired PackageTrustedOnly', '', 1, 0, False, False),
+    ('', 'PackageRequired PackageTrustedOnly', 0, 1, False, True),
+    ('', '', 0, 0, False, True),
+    ('', 'PackageOptional PackageTrustedOnly', 0, 0, False, True),
+    ('', 'PackageRequired PackageTrustAll', 0, 0, False, True),
+    ('', 'PackageNever', 0, 0, False, True),
+    ('', 'PackageRequired', 0, 0, False, True),
+])
+def test_workflow_signature_preflight_enforces_effective_policy(
+        tmp_path, repo_policy, global_policy, repo_exit, global_exit, allowed, inherit):
+    """Run the exact acquisition shell block; package commands are synthetic stubs."""
+    bash = shutil.which('bash')
+    if bash is None:
+        pytest.skip('Bash required for workflow shell regression; no native qualification implied')
+    workflow = (Path(__file__).resolve().parents[2] / '.github/workflows/windows-runtime-candidate.yml').read_text()
+    step = workflow.split('      - name: Acquire one fully upgraded signed vendor package set\n', 1)[1]
+    script = textwrap.dedent(step.split('        run: |\n', 1)[1].split('\n      - ', 1)[0])
+    archive = tmp_path / 'candidate root' / 'acquisition'
+    archive.mkdir(parents=True)
+    stubs = '''
+pacman-conf() {
+  if [[ "$*" == '--repo ucrt64 SigLevel' ]]; then
+    printf '%s' "$TEST_REPO_POLICY"
+    return "$TEST_REPO_EXIT"
+  elif [[ "$*" == 'SigLevel' ]]; then
+    printf 'queried\n' >> global-query.txt
+    printf '%s' "$TEST_GLOBAL_POLICY"
+    return "$TEST_GLOBAL_EXIT"
+  fi
+  return 99
+}
+cygpath() { printf '%s\n' "$2"; }
+pacman() { printf '%s\n' "$*" >> pacman-calls.txt; }
+'''
+    result = subprocess.run([bash, '--noprofile', '--norc', '-c', stubs + script],
+        cwd=tmp_path, env={**os.environ, 'FIRMAVEX_CANDIDATE_ROOT': 'candidate root',
+            'TEST_REPO_POLICY': repo_policy, 'TEST_GLOBAL_POLICY': global_policy,
+            'TEST_REPO_EXIT': str(repo_exit), 'TEST_GLOBAL_EXIT': str(global_exit)},
+        capture_output=True, text=True, timeout=10)
+    assert (result.returncode == 0) is allowed, result.stderr
+    assert (tmp_path / 'global-query.txt').exists() is inherit
+    calls = tmp_path / 'pacman-calls.txt'
+    if allowed:
+        assert calls.read_text().splitlines() == [
+            '-Syu --needed --noconfirm mingw-w64-ucrt-x86_64-qemu mingw-w64-ucrt-x86_64-gdb-multiarch mingw-w64-ucrt-x86_64-arm-none-eabi-gcc', '-Q']
+        candidate.signature_policy((archive / 'signature-policy.txt').read_text())
+        assert (archive / 'repository-signature-policy.txt').read_text().split() == repo_policy.split()
+    else:
+        assert not calls.exists(), 'Rejected policy must never install packages'
 
 
 def test_vendor_inventory_includes_dependencies_not_only_executables(vendor):

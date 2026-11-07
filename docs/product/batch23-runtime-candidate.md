@@ -44,6 +44,13 @@ versions and the effective signature policy are retained. Acquisition is still
 rolling: this prepares an evidence-producing candidate run, not the immutable
 acquisition repair that Batch 23C could not establish.
 
+`pacman-conf --repo ucrt64 SigLevel` can succeed with no output when the
+repository inherits the global policy ([publisher implementation](https://github.com/msys2/msys2-pacman/blob/612777d1e6f196517c1db62454e952ddad14b260/src/pacman/pacman-conf.c#L182)).
+Only that successful empty/whitespace result falls back to `pacman-conf SigLevel`.
+Both raw repository and resolved policy are retained. Failed queries and explicit
+weak repository policies never fall back; resolved package signatures must still
+be required and trusted before any package installation.
+
 Preflight hashes the **entire UCRT64 prefix**, including libraries, modules, data,
 compiler files and license notices. Relative names, sizes and hashes are recorded;
 the source probe compares the full inventory again before and after execution.
