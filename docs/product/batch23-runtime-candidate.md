@@ -57,9 +57,21 @@ the source probe compares the full inventory again before and after execution.
 This is an observed file set, not a proven minimal dependency closure or atomic
 snapshot. Administrative bounds are 100,000 entries, 8 GiB total input bytes,
 512 MiB per file, 32 MiB per JSON record and 128 MiB of top-level metadata/log
-retention. These do not enlarge any firmware/worker resource limit. Links, reparse
-points, hardlinked files and exceeded bounds fail closed; a native run may expose
-such a blocker and must report it rather than relax the checks.
+retention. These do not enlarge any firmware/worker resource limit. Symlinks,
+reparse points, special files and exceeded bounds fail closed. Candidate inventory
+explicitly handles regular hardlinks used by publisher compiler packages: every
+alias must be inside the captured prefix, the alias count must match the stable
+link count, and each opened file identity/content must remain consistent. Every
+alias is hashed and recorded with its group and link count; outside or ambiguous
+aliases are rejected. Shared product `checked_path` still rejects hardlinked inputs.
+This detects observable changes, not every adversarial race or an atomic snapshot.
+
+Inventory entry failures retain a bounded printable relative path, reason,
+file-type bits, link count and reparse flag in `inventory_failure` when available.
+No absolute paths, link targets or environment values are included in that field.
+The original failure remains authoritative. Review even vendor filenames before
+publication. The precise rejected entry in run 42420701603 was not retrievable
+here; publisher GCC recipes establish the hardlink layout, not native success.
 
 Evidence is isolated under the runner temporary directory. The upload includes
 only acquisition logs/inventory, candidate JSON/receipts, the product-owned

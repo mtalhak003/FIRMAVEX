@@ -1,17 +1,20 @@
 """CI-only ARM source probe. Never installs, patches or qualifies a runtime."""
 import argparse
 from dataclasses import asdict, replace
+import hashlib
 import json
 import os
 from pathlib import Path
 import platform
 import re
+import stat
 import subprocess
 import sys
 import threading
 
 from firmavex.backends.security import checked_path, read_bytes
 from firmavex.product.errors import ProductError
+from firmavex.product.file_state import handle_state, path_state
 from firmavex.product.runtime_pack import _atomic_json
 from firmavex.product.tools import discover, file_identity
 
@@ -69,10 +72,65 @@ def signature_policy(data):
     return sorted(set(tokens))
 
 
+class VendorInventoryError(ValueError):
+    """Safe administrative diagnostics; never a path-security exemption."""
+    def __init__(self, root, path, reason):
+        super().__init__('Vendor inventory rejected an unsafe or inconsistent entry')
+        name = path.relative_to(root).as_posix()
+        self.details = {'reason': reason, 'relative_path': ''.join(
+            c if 32 <= ord(c) < 127 else '?' for c in name)[:512]}
+        try:
+            value = path.lstat()
+            self.details.update(file_type=stat.S_IFMT(value.st_mode), link_count=value.st_nlink,
+                                reparse_point=bool(getattr(value, 'st_file_attributes', 0) & 0x400))
+        except OSError:
+            self.details['metadata_available'] = False
+
+
+def _vendor_path(path, *, directory=False):
+    try:
+        return checked_path(path, directory=directory)
+    except ValueError:
+        # Candidate inventory only: shared execution/input validation stays strict.
+        # A regular multi-link file is admitted for a subsequent complete alias audit.
+        checked_path(path.parent, directory=True)
+        value = path.lstat()  # DirEntry.stat has zero file identities on Windows.
+        if (directory or '..' in path.parts or any(ord(c) < 32 for c in str(path))
+                or not stat.S_ISREG(value.st_mode) or value.st_nlink <= 1
+                or getattr(value, 'st_file_attributes', 0) & 0x400):
+            raise
+        return path
+
+
+def _hardlink_identity(path, expected, links):
+    """Check the opened object before reading; never resolve a link to its target."""
+    _vendor_path(path)
+    before = path.lstat()
+    if path_state(path, before) != expected or before.st_nlink != links:
+        raise ValueError('Hardlink identity changed')
+    flags = os.O_RDONLY | getattr(os, 'O_BINARY', 0) | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_NONBLOCK', 0)
+    digest, size = hashlib.sha256(), 0
+    with os.fdopen(os.open(path, flags), 'rb') as stream:
+        if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode) or handle_state(stream.fileno()) != expected:
+            raise ValueError('Opened hardlink identity changed')
+        while chunk := stream.read(1024**2):
+            size += len(chunk)
+            if size > expected[2]:
+                raise ValueError('Hardlink size changed')
+            digest.update(chunk)
+        if size != expected[2] or handle_state(stream.fileno()) != expected:
+            raise ValueError('Hardlink changed while hashing')
+    _vendor_path(path)
+    after = path.lstat()
+    if path_state(path, after) != expected or after.st_nlink != links:
+        raise ValueError('Hardlink changed after hashing')
+    return {'sha256': digest.hexdigest(), 'size_bytes': size}
+
+
 def inventory(root):
     """Hash the complete UCRT64 prefix, not just selected EXEs or guessed DLLs."""
     root = checked_path(root, directory=True)
-    pending, rows, total, entries = [root], {}, 0, 0
+    pending, rows, total, entries, groups = [root], {}, 0, 0, {}
     while pending:
         directory = pending.pop()
         with os.scandir(directory) as stream:
@@ -81,18 +139,47 @@ def inventory(root):
                 if entries > MAX_FILES:
                     raise ValueError('Vendor inventory entry limit exceeded')
                 is_directory = entry.is_dir(follow_symlinks=False)
-                path = checked_path(entry.path, directory=is_directory)
+                path = Path(entry.path)
+                try:
+                    path = _vendor_path(path, directory=is_directory)
+                except (OSError, ValueError):
+                    raise VendorInventoryError(root, path, 'unsupported_entry') from None
                 if is_directory:
                     pending.append(path)
                     continue
-                if path.stat().st_size > 512 * 1024**2:
+                value = path.lstat()
+                if value.st_size > 512 * 1024**2:
                     raise ValueError('Vendor file exceeds per-file inventory bound')
-                identity = file_identity(path)
-                total += identity['size_bytes']
+                total += value.st_size
                 if total > MAX_BYTES:
                     raise ValueError('Vendor inventory byte limit exceeded')
+                if value.st_nlink > 1:
+                    state = path_state(path, value)
+                    if state[1] == 0:
+                        raise VendorInventoryError(root, path, 'missing_file_identity')
+                    groups.setdefault(state[:2], []).append((path, state, value.st_nlink))
+                    continue
+                identity = file_identity(path)
+                if identity['size_bytes'] != value.st_size:
+                    raise VendorInventoryError(root, path, 'file_size_changed')
                 rows[path.relative_to(root).as_posix()] = {
                     key: identity[key] for key in ('sha256', 'size_bytes')}
+    for aliases in groups.values():
+        first, expected, links = aliases[0]
+        if len(aliases) != links or any(state != expected or count != links for _, state, count in aliases):
+            raise VendorInventoryError(root, first, 'incomplete_or_changed_hardlink_group')
+        group_name = min(path.relative_to(root).as_posix() for path, _, _ in aliases)
+        identities = []
+        for path, _, _ in aliases:
+            try:
+                identity = _hardlink_identity(path, expected, links)
+            except (OSError, ValueError):
+                raise VendorInventoryError(root, path, 'hardlink_changed') from None
+            identities.append(identity)
+            rows[path.relative_to(root).as_posix()] = {
+                **identity, 'hardlink_group': group_name, 'link_count': links}
+        if any(identity != identities[0] for identity in identities):
+            raise VendorInventoryError(root, first, 'hardlink_content_changed')
     if not any(name.startswith('share/licenses/') for name in rows):
         raise ValueError('Vendor license inventory missing')
     return rows
@@ -191,6 +278,8 @@ def preflight(root, packages, policy, output):
         report['status'] = 'candidate_preflight_only'
     except BaseException as error:
         report['error_type'] = type(error).__name__
+        if isinstance(error, VendorInventoryError):
+            report['inventory_failure'] = error.details
         raise
     finally:
         _save(output / 'candidate-report.json', report, sys.exception())
@@ -215,8 +304,15 @@ def source_probe(root, output):
     if file_identity(manifest)['sha256'] != report['vendor_inventory_sha256']:
         raise ValueError('Candidate vendor inventory changed')
     expected_files = json.loads(read_bytes(manifest, MAX_RECORD))
-    if inventory(root) != expected_files:
-        raise ValueError('Vendor prefix changed after preflight')
+    try:
+        if inventory(root) != expected_files:
+            raise ValueError('Vendor prefix changed after preflight')
+    except BaseException as error:
+        report.update(status='candidate_source_probe_failed', error_type=type(error).__name__)
+        if isinstance(error, VendorInventoryError):
+            report['inventory_failure'] = error.details
+        _save(output / 'candidate-report.json', report, error)
+        raise
     tools = candidate_tools(root)
     verify_tools(tools, root)
     production_rejection(tools)
@@ -307,6 +403,8 @@ def source_probe(root, output):
         report['status'] = 'candidate_source_probe_passed'
     except BaseException as error:
         report.update(status='candidate_source_probe_failed', error_type=type(error).__name__)
+        if isinstance(error, VendorInventoryError):
+            report['inventory_failure'] = error.details
         raise
     finally:
         _save(output / 'candidate-report.json', report, sys.exception())

@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import stat
 import subprocess
 import sys
 import textwrap
@@ -213,6 +214,181 @@ def test_inventory_rejects_links_before_reading_target(vendor, tmp_path):
     try: (root / 'alias').symlink_to(outside)
     except OSError: pytest.skip('Host cannot create symlinks')
     with pytest.raises(ValueError): candidate.inventory(root)
+
+
+def test_inventory_records_complete_vendor_hardlink_groups(vendor):
+    from firmavex.backends.security import checked_path
+    root, _ = vendor
+    original = root / 'bin/gcc.exe'; original.write_bytes(b'trusted compiler fixture')
+    aliases = [original, root / 'bin/cc.exe', root / 'bin/target-gcc.exe']
+    for path in aliases[1:]: os.link(original, path)
+    with pytest.raises(ValueError, match='Expected a regular file'):
+        checked_path(original)  # Shared product validation remains unchanged.
+    rows = candidate.inventory(root)
+    for path in aliases:
+        assert rows[path.relative_to(root).as_posix()] == {
+            'sha256': hashlib.sha256(original.read_bytes()).hexdigest(),
+            'size_bytes': original.stat().st_size, 'link_count': 3,
+            'hardlink_group': 'bin/cc.exe'}
+    assert rows == candidate.inventory(root)
+
+
+def test_inventory_rejects_hardlink_with_alias_outside_vendor_prefix(vendor, tmp_path, monkeypatch):
+    root, _ = vendor
+    source = root / 'bin/compiler.exe'; source.write_bytes(b'fixture')
+    os.link(source, tmp_path / 'outside.exe')
+    def forbidden(*args): pytest.fail('Incomplete hardlink group must not be read')
+    monkeypatch.setattr(candidate, '_hardlink_identity', forbidden)
+    with pytest.raises(candidate.VendorInventoryError) as raised:
+        candidate.inventory(root)
+    assert raised.value.details == {'reason': 'incomplete_or_changed_hardlink_group',
+        'relative_path': 'bin/compiler.exe', 'file_type': stat.S_IFREG,
+        'link_count': 2, 'reparse_point': False}
+
+
+def test_inventory_rejects_file_growth_between_budget_check_and_hash(vendor, monkeypatch):
+    root, _ = vendor
+    source = root / 'bin/growing.dll'; source.write_bytes(b'fixture')
+    original = candidate.file_identity
+    def changed(path):
+        if path == source: path.write_bytes(b'larger fixture')
+        return original(path)
+    monkeypatch.setattr(candidate, 'file_identity', changed)
+    with pytest.raises(candidate.VendorInventoryError) as raised:
+        candidate.inventory(root)
+    assert raised.value.details['reason'] == 'file_size_changed'
+
+
+@pytest.mark.parametrize('hardlink', [False, True])
+def test_inventory_rejects_windows_reparse_metadata_before_read(vendor, monkeypatch, hardlink):
+    root, _ = vendor
+    source = root / 'bin/unsafe.exe'; source.write_bytes(b'must not read')
+    if hardlink: os.link(source, root / 'bin/alias.exe')
+    original = Path.lstat
+    def metadata(path, *args, **kwargs):
+        value = original(path, *args, **kwargs)
+        if path == source:
+            fields = {name: getattr(value, name) for name in dir(value) if name.startswith('st_')}
+            fields['st_file_attributes'] = 0x400
+            return SimpleNamespace(**fields)
+        return value
+    monkeypatch.setattr(Path, 'lstat', metadata)
+    with pytest.raises(candidate.VendorInventoryError) as raised:
+        candidate.inventory(root)
+    assert raised.value.details['relative_path'] == 'bin/unsafe.exe'
+    assert raised.value.details['reparse_point'] is True
+
+
+@pytest.mark.parametrize('directory', [False, True])
+def test_inventory_rejects_vendor_symlinks_including_directory_links(vendor, tmp_path, directory):
+    root, _ = vendor
+    outside = tmp_path / 'outside'
+    if directory: outside.mkdir()
+    else: outside.write_bytes(b'outside fixture')
+    path = root / 'bin/unsafe-link'
+    try: path.symlink_to(outside, target_is_directory=directory)
+    except OSError: pytest.skip('Host cannot create symlinks')
+    with pytest.raises(candidate.VendorInventoryError) as raised:
+        candidate.inventory(root)
+    assert raised.value.details['relative_path'] == 'bin/unsafe-link'
+    assert raised.value.details['file_type'] == stat.S_IFLNK
+
+
+@pytest.mark.skipif(not hasattr(os, 'mkfifo'), reason='POSIX special-file regression')
+def test_inventory_rejects_special_files_without_opening(vendor):
+    root, _ = vendor
+    os.mkfifo(root / 'bin/pipe')
+    with pytest.raises(candidate.VendorInventoryError) as raised:
+        candidate.inventory(root)
+    assert raised.value.details['file_type'] == stat.S_IFIFO
+
+
+@pytest.mark.parametrize('change', ['outside-alias', 'content', 'replacement'])
+def test_inventory_rejects_hardlink_changes_before_hash(vendor, tmp_path, monkeypatch, change):
+    root, _ = vendor
+    source = root / 'bin/compiler.exe'; source.write_bytes(b'fixture')
+    os.link(source, root / 'bin/alias.exe')
+    original = candidate._hardlink_identity
+    def changed(path, expected, links):
+        if change == 'outside-alias': os.link(path, tmp_path / 'unexpected.exe')
+        elif change == 'content': path.write_bytes(b'changed')
+        else:
+            path.unlink()
+            path.write_bytes(b'fixture')
+        return original(path, expected, links)
+    monkeypatch.setattr(candidate, '_hardlink_identity', changed)
+    with pytest.raises(candidate.VendorInventoryError) as raised:
+        candidate.inventory(root)
+    assert raised.value.details['reason'] == 'hardlink_changed'
+
+
+def test_hardlink_hash_rejects_wrong_opened_object_before_reading(vendor, tmp_path, monkeypatch):
+    root, _ = vendor
+    source = root / 'bin/compiler.exe'; source.write_bytes(b'fixture')
+    os.link(source, root / 'bin/alias.exe')
+    outside = tmp_path / 'outside.exe'; outside.write_bytes(b'do not read')
+    expected = candidate.path_state(source)
+    original = os.open
+    def substituted(path, *args, **kwargs):
+        return original(outside if Path(path) == source else path, *args, **kwargs)
+    monkeypatch.setattr(os, 'open', substituted)
+    def unexpected_read(*args): pytest.fail('Wrong opened object must not be hashed')
+    monkeypatch.setattr(candidate.hashlib, 'sha256', lambda: SimpleNamespace(update=unexpected_read))
+    with pytest.raises(ValueError, match='Opened hardlink identity changed'):
+        candidate._hardlink_identity(source, expected, 2)
+
+
+@pytest.mark.parametrize('change', ['content', 'outside-alias'])
+def test_hardlink_hash_rejects_changes_during_read(vendor, tmp_path, monkeypatch, change):
+    root, _ = vendor
+    source = root / 'bin/compiler.exe'; source.write_bytes(b'fixture')
+    os.link(source, root / 'bin/alias.exe')
+    original = candidate.handle_state
+    calls = 0
+    def changed(fd):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            if change == 'content': source.write_bytes(b'changed')
+            else: os.link(source, tmp_path / 'unexpected.exe')
+        return original(fd)
+    monkeypatch.setattr(candidate, 'handle_state', changed)
+    with pytest.raises(candidate.VendorInventoryError): candidate.inventory(root)
+
+
+@pytest.mark.parametrize('control', [KeyboardInterrupt, SystemExit])
+def test_hardlink_hash_preserves_control_flow(vendor, monkeypatch, control):
+    root, _ = vendor
+    source = root / 'bin/compiler.exe'; source.write_bytes(b'fixture')
+    os.link(source, root / 'bin/alias.exe')
+    def interrupted(*args): raise control('original cancellation')
+    monkeypatch.setattr(candidate, 'handle_state', interrupted)
+    with pytest.raises(control, match='original cancellation'): candidate.inventory(root)
+
+
+@pytest.mark.parametrize('phase', ['preflight', 'source'])
+def test_inventory_failure_diagnostics_are_retained(vendor, tmp_path, monkeypatch, phase):
+    root, tools = vendor
+    output = tmp_path / 'failed-inventory'
+    packages = tmp_path / 'packages.txt'
+    packages.write_text('\n'.join(f'{n} {v}' for n, v in candidate.PACKAGES.items()))
+    policy = tmp_path / 'policy.txt'; policy.write_text('PackageRequired PackageTrustedOnly')
+    monkeypatch.setattr(candidate, '_environment', lambda *a: ({'source_revision': HEAD, 'run_id': '123'}, root, output))
+    monkeypatch.setattr(candidate, 'candidate_tools', lambda *a: tools)
+    monkeypatch.setattr(candidate, 'production_rejection', lambda *a: {'synthetic_test': True})
+    if phase == 'source': candidate.preflight(root, packages, policy, output)
+    source = root / 'bin/alias.exe'; source.write_bytes(b'fixture')
+    os.link(source, tmp_path / 'private-outside-name.exe')
+    with pytest.raises(candidate.VendorInventoryError):
+        if phase == 'preflight': candidate.preflight(root, packages, policy, output)
+        else: candidate.source_probe(root, output)
+    report = json.loads((output / 'candidate-report.json').read_text())
+    assert report['status'] == ('candidate_preflight_failed' if phase == 'preflight' else 'candidate_source_probe_failed')
+    assert report['production_qualified'] is False
+    details = report['inventory_failure']
+    assert details['relative_path'] == 'bin/alias.exe' and details['link_count'] == 2
+    assert str(tmp_path) not in json.dumps(details) and 'private-outside-name' not in json.dumps(details)
+    assert report['cases'] == []
 
 
 @pytest.mark.parametrize('control', [KeyboardInterrupt, SystemExit])
