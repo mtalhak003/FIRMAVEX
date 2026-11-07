@@ -90,6 +90,47 @@ def test_required_trusted_publisher_signatures_and_exact_packages():
         with pytest.raises(ValueError): candidate.package_inventory(changed)
 
 
+def test_pacman_inventory_accepts_case_sensitive_dependency_names():
+    # Publisher QEMU dependencies include SDL2 and SDL2_image, not lowercase names.
+    dependencies = {'mingw-w64-ucrt-x86_64-SDL2': '2.32.10-1',
+                    'mingw-w64-ucrt-x86_64-SDL2_image': '2.8.8-1',
+                    'Uppercase': '1:2.0-1', 'uppercase': '3.0-1'}
+    expected = {**candidate.PACKAGES, **dependencies}
+    data = '\r\n'.join(f'{name} {version}' for name, version in expected.items()) + '\r\n'
+    assert candidate.package_inventory(data) == expected
+
+
+@pytest.mark.parametrize('row', [
+    '', 'only-name', 'three fields here', '.hidden 1.0-1', '-option 1.0-1',
+    'mingw-w64-ucrt-x86_64-SDL2/other 1.0-1', 'SDL2:other 1.0-1',
+    'SDL2;command 1.0-1', 'SDL\u00e9 1.0-1', 'SDL2 https://user:password@host',
+    'SDL2 1.0-1;command', 'SDL2 ' + '1' * 129, 'A' * 161 + ' 1.0-1',
+])
+def test_pacman_inventory_still_rejects_malformed_rows(row):
+    data = '\n'.join(f'{name} {version}' for name, version in candidate.PACKAGES.items())
+    with pytest.raises(ValueError, match='Invalid or duplicate'):
+        candidate.package_inventory(data + '\n' + row + '\n')
+
+
+def test_pacman_inventory_rejects_exact_uppercase_duplicates():
+    data = '\n'.join(f'{name} {version}' for name, version in candidate.PACKAGES.items())
+    for version in ('2.32.10-1', '2.32.11-1'):
+        with pytest.raises(ValueError, match='Invalid or duplicate'):
+            candidate.package_inventory(data + '\nmingw-w64-ucrt-x86_64-SDL2 2.32.10-1'
+                                        + '\nmingw-w64-ucrt-x86_64-SDL2 ' + version)
+
+
+def test_pacman_inventory_retains_name_length_and_entry_count_bounds():
+    data = '\n'.join(f'{name} {version}' for name, version in candidate.PACKAGES.items())
+    maximum_name = 'A' * 160
+    data += '\n' + maximum_name + ' 1.0-1'
+    data += ''.join(f'\nDependency{i} 1.0-1' for i in range(4093))
+    record = candidate.package_inventory(data)
+    assert len(record) == 4096 and record[maximum_name] == '1.0-1'
+    with pytest.raises(ValueError, match='Invalid or duplicate'):
+        candidate.package_inventory(data + '\nOneMore 1.0-1')
+
+
 @pytest.mark.parametrize('repo_policy,global_policy,repo_exit,global_exit,allowed,inherit', [
     ('', 'PackageRequired PackageTrustedOnly', 0, 0, True, True),
     (' \t\r\n', 'PackageRequired\nPackageTrustedOnly\nDatabaseRequired\nDatabaseTrustedOnly', 0, 0, True, True),

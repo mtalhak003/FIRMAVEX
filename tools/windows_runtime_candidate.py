@@ -49,7 +49,7 @@ def package_inventory(data):
     result = {}
     for line in data.splitlines():
         fields = line.split()
-        if (len(fields) != 2 or not re.fullmatch(r'[a-z0-9][a-z0-9+_.-]{0,159}', fields[0])
+        if (len(fields) != 2 or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9+_.-]{0,159}', fields[0])
                 or not re.fullmatch(r'[0-9][A-Za-z0-9.+_:~-]{0,127}', fields[1])
                 or fields[0] in result or len(result) >= 4096):
             raise ValueError('Invalid or duplicate package inventory entry')
