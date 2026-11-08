@@ -95,6 +95,25 @@ jobs:
         shell: pwsh
         run: |
           & "${{ steps.python.outputs.python-path }}" -m tools.product_ci_tests --ci-watchdog -q tests/product/test_windows_runtime_candidate.py -k native_windows_candidate --firmavex-test-timeout=180
+      - name: Candidate production-entrypoint and GUI rejection - no admission override
+        env:
+          FIRMAVEX_RUN_WINDOWS_CANDIDATE: "1"
+        shell: pwsh
+        run: |
+          & "${{ steps.python.outputs.python-path }}" -m tools.product_ci_tests --ci-watchdog -q tests/product/test_windows_candidate_product.py tests/desktop/test_windows_candidate_rejection.py -k "native_windows_candidate and not frozen" --firmavex-test-timeout=225
+      - name: Build unsigned candidate application - never a release artifact
+        shell: pwsh
+        run: |
+          & "${{ steps.python.outputs.python-path }}" -m PyInstaller --clean --noconfirm packaging/desktop.spec
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Frozen candidate production rejection - no runtime approval
+        env:
+          FIRMAVEX_RUN_WINDOWS_CANDIDATE: "1"
+          FIRMAVEX_REQUIRE_CANDIDATE_FROZEN: "1"
+          FIRMAVEX_CANDIDATE_FROZEN: ${{ github.workspace }}/dist/FIRMAVEX/FIRMAVEX.exe
+        shell: pwsh
+        run: |
+          & "${{ steps.python.outputs.python-path }}" -m tools.product_ci_tests --ci-watchdog -q tests/product/test_windows_candidate_product.py -k native_windows_candidate_frozen --firmavex-test-timeout=225
       - name: Retain candidate evidence only - never a release artifact
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

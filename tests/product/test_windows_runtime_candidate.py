@@ -629,6 +629,9 @@ def test_candidate_workflow_is_manual_pinned_separate_and_never_approves():
     assert 'FIRMAVEX_QUALIFY_BACKENDS' not in workflow
     assert 'tools.windows_runtime_candidate' not in (repo / 'packaging/desktop.spec').read_text()
     assert 'tools/windows_runtime_candidate.py' not in (repo / 'MANIFEST.in').read_text()
+    for name in ('windows_candidate_evidence', 'windows_candidate_packages', 'windows_candidate_product'):
+        assert 'tools.' + name not in (repo / 'packaging/desktop.spec').read_text()
+        assert 'tools/' + name + '.py' not in (repo / 'MANIFEST.in').read_text()
 
 
 def test_candidate_python_commands_use_setup_interpreter_and_module_launcher():
@@ -640,7 +643,8 @@ def test_candidate_python_commands_use_setup_interpreter_and_module_launcher():
                 if line.strip().startswith(prefix)]
     assert [command.split()[0] for command in commands] == [
         'pip', 'pip', 'tools.check_build_inputs', 'tools.windows_runtime_candidate',
-        'tools.product_ci_tests', 'tools.product_ci_tests', 'tools.product_ci_tests']
+        'tools.product_ci_tests', 'tools.product_ci_tests', 'tools.product_ci_tests',
+        'tools.product_ci_tests', 'PyInstaller', 'tools.product_ci_tests']
     assert 'tools/product_ci_tests.py' not in workflow
     assert "(Join-Path $prefix 'bin') >> $env:GITHUB_PATH" in workflow
 
