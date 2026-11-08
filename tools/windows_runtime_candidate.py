@@ -242,7 +242,7 @@ def _environment(root, output):
     result = context(os.environ, sys.platform, platform.machine(), head)
     temporary = checked_path(os.environ['RUNNER_TEMP'], directory=True)
     root = checked_path(root, directory=True)
-    output = checked_path(output, exists=False)
+    output = checked_path(output, directory=True, exists=False)
     if temporary not in root.parents or temporary not in output.parents or root in output.parents:
         raise ValueError('Candidate vendor/output storage must be separate private runner paths')
     return result, root, output

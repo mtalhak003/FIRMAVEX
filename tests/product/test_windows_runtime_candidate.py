@@ -47,6 +47,101 @@ def test_explicit_context_is_bound_to_commit_and_run():
 
 
 @pytest.fixture
+def candidate_runner_paths(tmp_path, monkeypatch):
+    """Synthetic host context; use the real environment/path validation."""
+    temporary = tmp_path / 'runner temp'; temporary.mkdir()
+    root = temporary / 'vendor'; root.mkdir()
+    for key, value in {**environment(), 'RUNNER_TEMP': str(temporary)}.items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.setattr(candidate, 'sys', SimpleNamespace(platform='win32'))
+    monkeypatch.setattr(candidate, 'platform', SimpleNamespace(machine=lambda: 'AMD64'))
+    def revision(command, **kwargs):
+        assert command == ['git', 'rev-parse', 'HEAD']
+        assert kwargs == {'text': True, 'timeout': 10}
+        return HEAD + '\n'
+    monkeypatch.setattr(candidate.subprocess, 'check_output', revision)
+    return temporary, root, temporary / 'source-probe'
+
+
+@pytest.mark.parametrize('layout', ['existing', 'new', 'new-nested'])
+def test_environment_validates_output_as_directory_without_creating_or_overwriting(candidate_runner_paths, layout):
+    temporary, root, output = candidate_runner_paths
+    if layout == 'existing':
+        output.mkdir(); (output / 'sentinel').write_bytes(b'preserve')
+    elif layout == 'new-nested':
+        output = temporary / 'new-parent' / 'source-probe'
+    record, selected_root, selected_output = candidate._environment(root, output)
+    assert record['source_revision'] == HEAD and record['run_id'] == '123'
+    assert selected_root == root and selected_output == output
+    if layout == 'existing':
+        assert [path.name for path in output.iterdir()] == ['sentinel']
+        assert (output / 'sentinel').read_bytes() == b'preserve'
+    else:
+        assert not output.exists()
+        if layout == 'new-nested': assert not output.parent.exists()
+
+
+@pytest.mark.parametrize('kind', ['file', 'file-parent', 'traversal', 'control', 'outside-runner', 'inside-vendor'])
+def test_environment_rejects_unsafe_output_paths(candidate_runner_paths, kind):
+    temporary, root, output = candidate_runner_paths
+    if kind == 'file': output.write_bytes(b'preserve')
+    elif kind == 'file-parent':
+        output.write_bytes(b'preserve'); output = output / 'child'
+    elif kind == 'traversal': output = temporary / 'unused' / '..' / 'source-probe'
+    elif kind == 'control': output = temporary / 'bad\nname'
+    elif kind == 'outside-runner': output = temporary.parent / 'outside'
+    else: output = root / 'source-probe'
+    with pytest.raises(ValueError): candidate._environment(root, output)
+    if kind in {'file', 'file-parent'}:
+        assert (temporary / 'source-probe').read_bytes() == b'preserve'
+
+
+@pytest.mark.parametrize('kind', ['symlink', 'dangling', 'symlink-parent'])
+def test_environment_rejects_output_symlinks_and_linked_parents(candidate_runner_paths, kind):
+    temporary, root, output = candidate_runner_paths
+    target = temporary / 'other'
+    if kind != 'dangling': target.mkdir()
+    try: output.symlink_to(target, target_is_directory=True)
+    except OSError: pytest.skip('Host cannot create directory symlinks')
+    selected = output / 'child' if kind == 'symlink-parent' else output
+    with pytest.raises(ValueError, match='Symlink/reparse'):
+        candidate._environment(root, selected)
+
+
+@pytest.mark.parametrize('parent', [False, True])
+def test_environment_rejects_windows_output_reparse_metadata(candidate_runner_paths, monkeypatch, parent):
+    _, root, output = candidate_runner_paths
+    output.mkdir()
+    original = Path.lstat
+    def metadata(path, *args, **kwargs):
+        value = original(path, *args, **kwargs)
+        if path == output:
+            fields = {name: getattr(value, name) for name in dir(value) if name.startswith('st_')}
+            fields['st_file_attributes'] = 0x400
+            return SimpleNamespace(**fields)
+        return value
+    monkeypatch.setattr(Path, 'lstat', metadata)
+    with pytest.raises(ValueError, match='Symlink/reparse'):
+        candidate._environment(root, output / 'child' if parent else output)
+
+
+@pytest.mark.skipif(not hasattr(os, 'mkfifo'), reason='POSIX special-file regression')
+def test_environment_rejects_special_output_file(candidate_runner_paths):
+    _, root, output = candidate_runner_paths
+    os.mkfifo(output)
+    with pytest.raises(ValueError): candidate._environment(root, output)
+
+
+def test_preflight_still_rejects_existing_output_without_overwrite(candidate_runner_paths):
+    temporary, root, output = candidate_runner_paths
+    output.mkdir(); (output / 'sentinel').write_bytes(b'preserve')
+    with pytest.raises(FileExistsError, match='Candidate output must be new'):
+        candidate.preflight(root, temporary / 'not-read-packages', temporary / 'not-read-policy', output)
+    assert [path.name for path in output.iterdir()] == ['sentinel']
+    assert (output / 'sentinel').read_bytes() == b'preserve'
+
+
+@pytest.fixture
 def vendor(tmp_path, monkeypatch):
     root = tmp_path / 'vendor'
     identities, pins = {}, {}
