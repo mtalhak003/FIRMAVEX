@@ -64,11 +64,11 @@ jobs:
       - name: Install pinned application test dependencies
         shell: pwsh
         run: |
-          python -m pip install --only-binary=:all: --require-hashes -r packaging/build-requirements.lock
+          & "${{ steps.python.outputs.python-path }}" -m pip install --only-binary=:all: --require-hashes -r packaging/build-requirements.lock
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python -m pip install --no-deps --no-build-isolation .
+          & "${{ steps.python.outputs.python-path }}" -m pip install --no-deps --no-build-isolation .
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python -m tools.check_build_inputs
+          & "${{ steps.python.outputs.python-path }}" -m tools.check_build_inputs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Record candidate identities and dependency inventory - assert production rejection
         shell: pwsh
@@ -79,16 +79,22 @@ jobs:
           $env:PATH = (Join-Path $prefix 'bin') + ';' + $env:PATH
           (Join-Path $prefix 'bin') >> $env:GITHUB_PATH
           "FIRMAVEX_CANDIDATE_VENDOR=$prefix" >> $env:GITHUB_ENV
-          python -m tools.windows_runtime_candidate --vendor-root "$prefix" --package-inventory "$env:FIRMAVEX_CANDIDATE_ROOT/acquisition/packages.txt" --signature-policy "$env:FIRMAVEX_CANDIDATE_ROOT/acquisition/signature-policy.txt" --output "$env:FIRMAVEX_CANDIDATE_ROOT/source-probe"
+          & "${{ steps.python.outputs.python-path }}" -m tools.windows_runtime_candidate --vendor-root "$prefix" --package-inventory "$env:FIRMAVEX_CANDIDATE_ROOT/acquisition/packages.txt" --signature-policy "$env:FIRMAVEX_CANDIDATE_ROOT/acquisition/signature-policy.txt" --output "$env:FIRMAVEX_CANDIDATE_ROOT/source-probe"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Unmodified actual ARM runtime regressions - candidate results only
-        run: python tools/product_ci_tests.py -q tests/product/test_runtime.py -k actual_
+        shell: pwsh
+        run: |
+          & "${{ steps.python.outputs.python-path }}" -m tools.product_ci_tests -q tests/product/test_runtime.py -k actual_
       - name: Native ownership and resource behavior - no admission override
-        run: python tools/product_ci_tests.py -q tests/product/test_windows_job.py tests/product/test_supervisor.py tests/backends/test_process_security.py
+        shell: pwsh
+        run: |
+          & "${{ steps.python.outputs.python-path }}" -m tools.product_ci_tests -q tests/product/test_windows_job.py tests/product/test_supervisor.py tests/backends/test_process_security.py
       - name: Candidate-only source search replay cancellation timeout and evidence
         env:
           FIRMAVEX_RUN_WINDOWS_CANDIDATE: "1"
-        run: python tools/product_ci_tests.py --ci-watchdog -q tests/product/test_windows_runtime_candidate.py -k native_windows_candidate --firmavex-test-timeout=180
+        shell: pwsh
+        run: |
+          & "${{ steps.python.outputs.python-path }}" -m tools.product_ci_tests --ci-watchdog -q tests/product/test_windows_runtime_candidate.py -k native_windows_candidate --firmavex-test-timeout=180
       - name: Retain candidate evidence only - never a release artifact
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import stat
 import subprocess
@@ -533,6 +534,54 @@ def test_candidate_workflow_is_manual_pinned_separate_and_never_approves():
     assert 'FIRMAVEX_QUALIFY_BACKENDS' not in workflow
     assert 'tools.windows_runtime_candidate' not in (repo / 'packaging/desktop.spec').read_text()
     assert 'tools/windows_runtime_candidate.py' not in (repo / 'MANIFEST.in').read_text()
+
+
+def test_candidate_python_commands_use_setup_interpreter_and_module_launcher():
+    repo = Path(__file__).resolve().parents[2]
+    workflow = (repo / '.github/workflows/windows-runtime-candidate.yml').read_text()
+    assert not re.search(r'\bpython(?:\.exe)?\s+(?:-m|tools/)', workflow)
+    prefix = '& "${{ steps.python.outputs.python-path }}" -m '
+    commands = [line.strip()[len(prefix):] for line in workflow.splitlines()
+                if line.strip().startswith(prefix)]
+    assert [command.split()[0] for command in commands] == [
+        'pip', 'pip', 'tools.check_build_inputs', 'tools.windows_runtime_candidate',
+        'tools.product_ci_tests', 'tools.product_ci_tests', 'tools.product_ci_tests']
+    assert 'tools/product_ci_tests.py' not in workflow
+    assert "(Join-Path $prefix 'bin') >> $env:GITHUB_PATH" in workflow
+
+
+@pytest.mark.parametrize('failure', [False, True], ids=['pass', 'preserve-failure'])
+def test_candidate_module_launcher_without_site_imports_keeps_interpreter_and_status(tmp_path, failure):
+    """Real host launcher/pytest; no guest execution or native Windows claim."""
+    repo = Path(__file__).resolve().parents[2]
+    archive = tmp_path / 'diagnostics'
+    probe = tmp_path / 'test_candidate_import_probe.py'
+    probe.write_text('import sys\nfrom firmavex.product.windows_job import WindowsJob\n'
+                     'def test_interpreter_and_import():\n'
+                     f' assert sys.executable == {sys.executable!r}\n'
+                     f' assert {not failure!r}, "expected probe failure"\n', encoding='utf-8')
+    env = dict(os.environ, PYTEST_DISABLE_PLUGIN_AUTOLOAD='1', FIRMAVEX_CI_DIAGNOSTICS=str(archive))
+    for key in ('PYTHONPATH', 'PYTHONSAFEPATH', 'GITHUB_STEP_SUMMARY'):
+        env.pop(key, None)
+    # An unrelated Python earlier on PATH must not affect this launcher or child.
+    vendor = tmp_path / 'vendor-bin'; vendor.mkdir()
+    for name in ('python', 'python.exe'):
+        path = vendor / name
+        path.write_text('#!/bin/sh\nexit 99\n', encoding='utf-8'); path.chmod(0o700)
+    env['PATH'] = str(vendor) + os.pathsep + env.get('PATH', '')
+    direct = subprocess.run([sys.executable, '-S', 'tools/product_ci_tests.py', '-q', str(probe)],
+                            cwd=repo, env=env, capture_output=True, text=True, timeout=30)
+    assert direct.returncode != 0 and "No module named 'firmavex'" in direct.stderr
+    assert not list(archive.glob('firmavex-ci-*/pytest.xml'))
+    module = subprocess.run([sys.executable, '-S', '-m', 'tools.product_ci_tests',
+                             '--ci-watchdog', '-q', str(probe), '--firmavex-test-timeout=10'],
+                            cwd=repo, env=env, capture_output=True, text=True, timeout=30)
+    assert module.returncode == int(failure), module.stdout + module.stderr
+    assert ('1 failed' if failure else '1 passed') in module.stdout
+    assert 'FIRMAVEX TEST START' in module.stdout
+    reports = list(archive.glob('firmavex-ci-*/pytest.xml'))
+    assert len(reports) == 1
+    assert reports[0].with_name('launcher-state.log').read_text().strip() == f'completed: pytest status={int(failure)}'
 
 
 def _native_required():
