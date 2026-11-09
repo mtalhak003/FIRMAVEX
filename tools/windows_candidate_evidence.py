@@ -48,6 +48,8 @@ PRODUCT_PATHS = {
     'source-probe/product-gui/gui-admission.json': ('gui', 'test_native_windows_candidate_gui_rejection'),
     'source-probe/product-frozen/product-admission.json': ('frozen', 'test_native_windows_candidate_frozen_product_rejection'),
 }
+INSTALLED_ADMISSION = 'source-probe/product-installed/product-admission.json'
+INSTALLED_LIFECYCLE = 'source-probe/installed-lifecycle/installation-lifecycle.json'
 
 
 class EvidenceError(ValueError):
@@ -304,17 +306,65 @@ def _product_rejection(value):
                 and all(type(v) is bool for v in item['matches'].values()), 'product_rejection_mismatch')
 
 
-def _product_records(members, revision, run_id, required):
+def _installed_records(members, revision, run_id, required):
+    present = {INSTALLED_ADMISSION, INSTALLED_LIFECYCLE} & members.keys()
+    result = {'required': required, 'present': bool(present),
+              'scope': 'installer lifecycle and admission rejection; no positive execution or consumer acceptance',
+              'reviewed_paths': []}
+    if not present and not required:
+        return result
+    require(present == {INSTALLED_ADMISSION, INSTALLED_LIFECYCLE}, 'installed_lifecycle_records_missing')
+    value = _json(members[INSTALLED_LIFECYCLE]); _envelope(value)
+    require(type(value.get('schema_version')) is int and value['schema_version'] == 1
+            and value.get('kind') == 'firmavex_candidate_installed_lifecycle'
+            and value.get('source_revision') == revision and value.get('run_id') == run_id
+            and value.get('host') == {'os': 'Windows', 'architecture': 'x86_64'}
+            and value.get('status') == 'candidate_installed_lifecycle_passed'
+            and 'error_type' not in value and 'cleanup_error_type' not in value,
+            'installed_lifecycle_binding_or_outcome_mismatch')
+    require(all(value.get(key) is True for key in ('installed_bytes_match', 'gui_startup',
+            'same_package_reinstall', 'external_data_preserved', 'uninstalled_executables_absent')),
+            'installed_lifecycle_assertions_missing')
+    executables = value['executables']
+    require(type(executables) is dict and set(executables) == {'FIRMAVEX.exe', 'FIRMAVEX-Desktop.exe'},
+            'installed_executable_inventory_mismatch')
+    for identity in [value['installer'], *executables.values()]:
+        require(type(identity) is dict and set(identity) == {'sha256', 'size_bytes'}
+                and _sha(identity['sha256']) and _integer(identity['size_bytes'], 1, 512*1024**2),
+                'installed_identity_missing')
+    frozen = _json(members['source-probe/product-frozen/product-admission.json'])
+    installed = _json(members[INSTALLED_ADMISSION])
+    require(executables['FIRMAVEX.exe'] == installed.get('executable') == frozen.get('executable'),
+            'installed_frozen_identity_mismatch')
+    cases = value['cases']
+    require(type(cases) is list and len(cases) == 4
+            and [row.get('phase') for row in cases] == ['install', 'gui-smoke', 'same-package-reinstall', 'uninstall'],
+            'installed_lifecycle_case_inventory_mismatch')
+    for row in cases:
+        cleanup = row.get('owned_process_cleanup')
+        require(type(row.get('exit_code')) is int and row['exit_code'] == 0
+                and type(cleanup) is list and 0 < len(cleanup) <= 256
+                and all(item.get('reaped') is True and _integer(item.get('pid'), 1)
+                        and type(item.get('returncode')) is int and item['returncode'] == 0 for item in cleanup),
+                'installed_lifecycle_process_not_verified')
+    result['reviewed_paths'] = sorted(present)
+    return result
+
+
+def _product_records(members, revision, run_id, required, installed=False):
+    paths = dict(PRODUCT_PATHS)
+    if installed:
+        paths[INSTALLED_ADMISSION] = ('installed', 'test_native_windows_candidate_installed_lifecycle')
     terminal = {name for name in members if name.startswith('source-probe/product-')
                 and name.rsplit('/', 1)[-1] in {'product-admission.json', 'gui-admission.json'}}
-    present = terminal & PRODUCT_PATHS.keys()
-    unreviewed = terminal - PRODUCT_PATHS.keys()
+    present = terminal & paths.keys()
+    unreviewed = terminal - paths.keys()
     if required:
-        require(present == PRODUCT_PATHS.keys() and not unreviewed, 'required_product_records_missing_or_unsupported')
+        require(PRODUCT_PATHS.keys() <= present and not unreviewed, 'required_product_records_missing_or_unsupported')
     tests = {}
     for name in sorted(present):
         value = _json(members[name]); _envelope(value)
-        distribution, test = PRODUCT_PATHS[name]
+        distribution, test = paths[name]
         require(type(value.get('schema_version')) is int and value['schema_version'] == 1
                 and value.get('source_revision') == revision and value.get('run_id') == run_id
                 and value.get('host') == {'os': 'Windows', 'architecture': 'x86_64'}
@@ -345,9 +395,10 @@ def _product_records(members, revision, run_id, required):
         require(type(cleanup) is list and cleanup and all(row.get('reaped') is True
                 and _integer(row.get('pid'), 1) and type(row.get('returncode')) is int
                 and row['returncode'] == 1 for row in cleanup), 'product_cleanup_not_verified')
-        tests[test] = 'tests.product.test_windows_candidate_product'
+        tests[test] = ('tests.product.test_windows_candidate_installed' if distribution == 'installed'
+                       else 'tests.product.test_windows_candidate_product')
     return {'scope': 'admission rejection only; no positive execution or installation verification',
-            'required': required, 'complete': present == PRODUCT_PATHS.keys() and not unreviewed,
+            'required': required, 'complete': PRODUCT_PATHS.keys() <= present and not unreviewed,
             'reviewed_paths': sorted(present), 'unreviewed_paths': sorted(unreviewed)}, tests
 
 
@@ -391,7 +442,8 @@ def _junit(members, product_tests=None):
             'required_cases_passed': {name: passes[name] for name in required}}
 
 
-def verify_archive(path, *, expected_sha256, expected_revision, expected_run_id, require_product_paths=False):
+def verify_archive(path, *, expected_sha256, expected_revision, expected_run_id, require_product_paths=False,
+                   require_installed_path=False):
     """Return a safe report; control-flow exceptions propagate normally."""
     result = {'schema_version': 1, 'kind': 'firmavex_windows_candidate_archive_validation',
               'candidate_only': True, 'production_qualified': False, 'validation': 'failed',
@@ -401,7 +453,8 @@ def verify_archive(path, *, expected_sha256, expected_revision, expected_run_id,
                              'complete immutable dependency closure', 'product GUI/frozen/installed qualification'],
               'failures': []}
     try:
-        require(type(require_product_paths) is bool and _sha(expected_sha256) and type(expected_revision) is str
+        require(type(require_product_paths) is bool and type(require_installed_path) is bool
+                and _sha(expected_sha256) and type(expected_revision) is str
                 and re.fullmatch(r'[0-9a-f]{40}', expected_revision)
                 and type(expected_run_id) is str and re.fullmatch(r'[1-9][0-9]{0,19}', expected_run_id), 'invalid_expected_identity')
         data = read_bytes(path, MAX_ARCHIVE)
@@ -445,9 +498,12 @@ def verify_archive(path, *, expected_sha256, expected_revision, expected_run_id,
         require(type(resource.get('cleanup')) is list and resource['cleanup']
                 and all(row.get('reaped') is True and type(row.get('returncode')) is int for row in resource['cleanup']),
                 'resource_cleanup_not_verified')
-        product, product_tests = _product_records(members, expected_revision, expected_run_id, require_product_paths)
+        installed = _installed_records(members, expected_revision, expected_run_id, require_installed_path)
+        product, product_tests = _product_records(members, expected_revision, expected_run_id,
+            require_product_paths or require_installed_path or installed['present'], installed['present'])
         result['junit'] = _junit(members, product_tests)
         result['product_admission'] = product
+        result['installed_lifecycle'] = installed
         result['additional_product_records_reviewed'] = bool(product['reviewed_paths']) and not product['unreviewed_paths']
         result.update(validation='passed', source_revision=expected_revision, run_id=expected_run_id,
                       attempt_receipts=19, successful_observations=17, infrastructure_failures=2,
@@ -468,9 +524,12 @@ def main(argv=None):
     parser.add_argument('--run-id', required=True)
     parser.add_argument('--require-product-paths', action='store_true',
                         help='Require source, GUI and frozen rejection reports and their passing native tests; never approves execution.')
+    parser.add_argument('--require-installed-path', action='store_true',
+                        help='Also require installed lifecycle/rejection and its passed native test; never approves execution.')
     args = parser.parse_args(argv)
     result = verify_archive(args.archive, expected_sha256=args.sha256, expected_revision=args.revision,
-                            expected_run_id=args.run_id, require_product_paths=args.require_product_paths)
+                            expected_run_id=args.run_id, require_product_paths=args.require_product_paths,
+                            require_installed_path=args.require_installed_path)
     print(json.dumps(result, sort_keys=True, allow_nan=False))
     return 0 if result['validation'] == 'passed' else 1
 

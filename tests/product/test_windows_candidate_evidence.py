@@ -344,13 +344,111 @@ def test_product_evidence_contradictions_fail_even_in_optional_mode(tmp_path, pr
     assert result['production_qualified'] is False
 
 
-def test_installed_claim_is_unreviewed_and_cannot_satisfy_required_product_scope(tmp_path, product_records):
+def test_installed_claim_without_lifecycle_is_rejected_in_optional_mode(tmp_path, product_records):
     product_records['source-probe/product-installed/product-admission.json'] = encoded({'installation_verified': True})
     path = archive(tmp_path, product_records)
     result = verify(path)
-    assert result['validation'] == 'passed' and result['additional_product_records_reviewed'] is False
-    assert result['product_admission']['unreviewed_paths'] == ['source-probe/product-installed/product-admission.json']
+    assert result['validation'] == 'failed'
+    assert result['failures'][0]['code'] == 'installed_lifecycle_records_missing'
     assert verify(path, require_product_paths=True)['validation'] == 'failed'
+
+
+@pytest.fixture
+def installed_records(product_records):
+    """Synthetic installer records only; no installer or firmware is executed."""
+    installed = json.loads(product_records['source-probe/product-frozen/product-admission.json'])
+    installed['distribution'] = 'installed'
+    product_records[evidence.INSTALLED_ADMISSION] = encoded(installed)
+    lifecycle = {'schema_version': 1, 'kind': 'firmavex_candidate_installed_lifecycle',
+        'source_revision': REVISION, 'run_id': RUN, 'host': {'os': 'Windows', 'architecture': 'x86_64'},
+        'candidate_only': True, 'production_qualified': False, 'status': 'candidate_installed_lifecycle_passed',
+        'installer': {'sha256': 'e'*64, 'size_bytes': 200},
+        'executables': {'FIRMAVEX.exe': installed['executable'],
+                        'FIRMAVEX-Desktop.exe': {'sha256': 'f'*64, 'size_bytes': 100}},
+        'installed_bytes_match': True, 'gui_startup': True, 'same_package_reinstall': True,
+        'external_data_preserved': True, 'uninstalled_executables_absent': True,
+        'cases': [{'phase': name, 'exit_code': 0, 'owned_process_cleanup': [
+            {'pid': 123, 'returncode': 0, 'reaped': True}]} for name in
+            ('install', 'gui-smoke', 'same-package-reinstall', 'uninstall')]}
+    product_records[evidence.INSTALLED_LIFECYCLE] = encoded(lifecycle)
+    product_records['test-diagnostics/product-installed/pytest.xml'] = (
+        '<testsuite tests="1" failures="0" errors="0" skipped="0">'
+        '<testcase classname="tests.product.test_windows_candidate_installed" '
+        'name="test_native_windows_candidate_installed_lifecycle"/></testsuite>').encode()
+    return product_records
+
+
+def test_installed_lifecycle_links_frozen_product_and_passed_native_case_without_promotion(tmp_path, installed_records):
+    path = archive(tmp_path, installed_records)
+    before = path.read_bytes()
+    result = verify(path, require_installed_path=True)
+    assert result['validation'] == 'passed', result
+    assert result['installed_lifecycle']['present'] is True and result['installed_lifecycle']['required'] is True
+    assert result['product_admission']['required'] is True
+    assert evidence.INSTALLED_ADMISSION in result['product_admission']['reviewed_paths']
+    assert result['junit']['passed'] == 21
+    assert result['production_qualified'] is False and result['additional_product_records_reviewed'] is True
+    assert path.read_bytes() == before and list(tmp_path.iterdir()) == [path]
+
+
+@pytest.mark.parametrize('fixture', ['records', 'product_records'])
+def test_old_archives_remain_valid_without_new_installed_requirement(tmp_path, request, fixture):
+    path = archive(tmp_path, request.getfixturevalue(fixture))
+    assert verify(path)['validation'] == 'passed'
+    assert verify(path, require_installed_path=True)['validation'] == 'failed'
+    assert verify(path, require_installed_path=1)['failures'][0]['code'] == 'invalid_expected_identity'
+
+
+@pytest.mark.parametrize('fault', ['revision', 'run', 'host', 'schema-bool', 'approved', 'candidate-label', 'status',
+    'error', 'cleanup-error', 'assertion', 'bool-assertion', 'installer-digest', 'installer-size', 'gui-identity',
+    'frozen-identity', 'installed-identity', 'cases', 'order', 'exit', 'bool-exit', 'cleanup', 'cleanup-code',
+    'cleanup-bool', 'pid', 'missing-lifecycle', 'missing-installed', 'missing-frozen', 'missing-source',
+    'junit-missing', 'junit-module', 'junit-skipped', 'admission-approved'])
+def test_installed_contradictions_fail_even_without_required_flag(tmp_path, installed_records, fault):
+    def mutate(value):
+        if fault == 'revision': value['source_revision'] = 'b'*40
+        elif fault == 'run': value['run_id'] = '999'
+        elif fault == 'host': value['host']['os'] = 'Linux'
+        elif fault == 'schema-bool': value['schema_version'] = True
+        elif fault == 'approved': value['production_qualified'] = True
+        elif fault == 'candidate-label': value['candidate_only'] = False
+        elif fault == 'status': value['status'] = 'failed'
+        elif fault == 'error': value['error_type'] = 'OSError'
+        elif fault == 'cleanup-error': value['cleanup_error_type'] = 'OSError'
+        elif fault == 'assertion': value['uninstalled_executables_absent'] = False
+        elif fault == 'bool-assertion': value['external_data_preserved'] = 1
+        elif fault == 'installer-digest': value['installer']['sha256'] = 'INVALID'
+        elif fault == 'installer-size': value['installer']['size_bytes'] = True
+        elif fault == 'gui-identity': value['executables']['FIRMAVEX-Desktop.exe']['sha256'] = 'INVALID'
+        elif fault == 'cases': value['cases'].pop()
+        elif fault == 'order': value['cases'].reverse()
+        elif fault == 'exit': value['cases'][0]['exit_code'] = 1
+        elif fault == 'bool-exit': value['cases'][0]['exit_code'] = False
+        elif fault == 'cleanup': value['cases'][0]['owned_process_cleanup'] = []
+        elif fault == 'cleanup-code': value['cases'][0]['owned_process_cleanup'][0]['returncode'] = 1
+        elif fault == 'cleanup-bool': value['cases'][0]['owned_process_cleanup'][0]['returncode'] = False
+        elif fault == 'pid': value['cases'][0]['owned_process_cleanup'][0]['pid'] = True
+    if fault in {'frozen-identity', 'installed-identity'}:
+        path = ('source-probe/product-frozen/product-admission.json' if fault == 'frozen-identity'
+                else evidence.INSTALLED_ADMISSION)
+        change(installed_records, path, lambda r:r['executable'].update(sha256='0'*64))
+    elif fault.startswith('missing-'):
+        paths = {'missing-lifecycle': evidence.INSTALLED_LIFECYCLE, 'missing-installed': evidence.INSTALLED_ADMISSION,
+                 'missing-frozen': 'source-probe/product-frozen/product-admission.json',
+                 'missing-source': 'source-probe/product-source/product-admission.json'}
+        del installed_records[paths[fault]]
+    elif fault.startswith('junit-'):
+        path = 'test-diagnostics/product-installed/pytest.xml'
+        if fault == 'junit-missing': del installed_records[path]
+        elif fault == 'junit-module': installed_records[path] = installed_records[path].replace(b'tests.product.test_windows_candidate_installed', b'unrelated.tests')
+        else: installed_records[path] = installed_records[path].replace(b'/>', b'><skipped/></testcase>').replace(b'skipped="0"', b'skipped="1"')
+    elif fault == 'admission-approved':
+        change(installed_records, evidence.INSTALLED_ADMISSION, lambda r:r.update(installation_verified=True))
+    else: change(installed_records, evidence.INSTALLED_LIFECYCLE, mutate)
+    # Installation records require all legacy product paths, even when flags are omitted.
+    result = verify(archive(tmp_path, installed_records))
+    assert result['validation'] == 'failed', (fault, result)
+    assert result['production_qualified'] is False
 
 
 @pytest.mark.parametrize('bound', ['MAX_ARCHIVE','MAX_MEMBER','MAX_MEMBERS'])

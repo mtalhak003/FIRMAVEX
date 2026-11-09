@@ -282,7 +282,8 @@ pacman() { printf '%s\n' "$*" >> pacman-calls.txt; }
     calls = tmp_path / 'pacman-calls.txt'
     if allowed:
         assert calls.read_text().splitlines() == [
-            '-Syu --needed --noconfirm mingw-w64-ucrt-x86_64-qemu mingw-w64-ucrt-x86_64-gdb-multiarch mingw-w64-ucrt-x86_64-arm-none-eabi-gcc', '-Q']
+            '-Syu --needed --noconfirm mingw-w64-ucrt-x86_64-qemu mingw-w64-ucrt-x86_64-gdb-multiarch mingw-w64-ucrt-x86_64-arm-none-eabi-gcc', '-Q', '-Qi']
+        assert (archive / 'package-info.txt').is_file()
         candidate.signature_policy((archive / 'signature-policy.txt').read_text())
         assert (archive / 'repository-signature-policy.txt').read_text().split() == repo_policy.split()
     else:
@@ -629,7 +630,8 @@ def test_candidate_workflow_is_manual_pinned_separate_and_never_approves():
     assert 'FIRMAVEX_QUALIFY_BACKENDS' not in workflow
     assert 'tools.windows_runtime_candidate' not in (repo / 'packaging/desktop.spec').read_text()
     assert 'tools/windows_runtime_candidate.py' not in (repo / 'MANIFEST.in').read_text()
-    for name in ('windows_candidate_evidence', 'windows_candidate_packages', 'windows_candidate_product'):
+    for name in ('windows_candidate_evidence', 'windows_candidate_packages', 'windows_candidate_product',
+                 'windows_candidate_installed'):
         assert 'tools.' + name not in (repo / 'packaging/desktop.spec').read_text()
         assert 'tools/' + name + '.py' not in (repo / 'MANIFEST.in').read_text()
 
@@ -644,9 +646,23 @@ def test_candidate_python_commands_use_setup_interpreter_and_module_launcher():
     assert [command.split()[0] for command in commands] == [
         'pip', 'pip', 'tools.check_build_inputs', 'tools.windows_runtime_candidate',
         'tools.product_ci_tests', 'tools.product_ci_tests', 'tools.product_ci_tests',
-        'tools.product_ci_tests', 'tools.product_ci_tests', 'PyInstaller', 'tools.product_ci_tests']
+        'tools.product_ci_tests', 'tools.product_ci_tests', 'PyInstaller', 'tools.product_ci_tests',
+        'tools.product_ci_tests']
     assert 'tools/product_ci_tests.py' not in workflow
     assert "(Join-Path $prefix 'bin') >> $env:GITHUB_PATH" in workflow
+
+
+def test_candidate_installer_checks_keep_existing_setup_and_explicit_scope():
+    repo = Path(__file__).resolve().parents[2]
+    workflow = (repo / '.github/workflows/windows-runtime-candidate.yml').read_text()
+    assert 'ISCC.exe" packaging/windows.iss' in workflow
+    assert 'FIRMAVEX_REQUIRE_CANDIDATE_INSTALLED: "1"' in workflow
+    assert 'tests/product/test_windows_candidate_installed.py -k native_windows_candidate_installed' in workflow
+    assert 'FIRMAVEX_CANDIDATE_FROZEN_DIR: ${{ github.workspace }}/dist/FIRMAVEX' in workflow
+    assert 'timeout-minutes: 35' in workflow  # No unmeasured timeout increase.
+    assert 'pacman -Qi > "$output/package-info.txt"' in workflow
+    upload = workflow.split('Retain candidate evidence only', 1)[1]
+    assert '/dist/' not in upload and 'installer' not in upload.lower()
 
 
 @pytest.mark.parametrize('failure', [False, True], ids=['pass', 'preserve-failure'])

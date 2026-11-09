@@ -61,6 +61,9 @@ jobs:
           if tr '[:space:]' '\n' < "$output/signature-policy.txt" | grep -Eq '^(PackageOptional|PackageNever|PackageTrustAll)$'; then exit 1; fi
           pacman -Syu --needed --noconfirm mingw-w64-ucrt-x86_64-qemu mingw-w64-ucrt-x86_64-gdb-multiarch mingw-w64-ucrt-x86_64-arm-none-eabi-gcc 2>&1 | tee "$output/install.log"
           pacman -Q > "$output/packages.txt"
+          # Installed metadata includes per-package licenses and validation type.
+          # It is supplementary evidence, not a substitute for signed archives.
+          pacman -Qi > "$output/package-info.txt"
       - name: Install pinned application test dependencies
         shell: pwsh
         run: |
@@ -120,6 +123,20 @@ jobs:
         shell: pwsh
         run: |
           & "${{ steps.python.outputs.python-path }}" -m tools.product_ci_tests --ci-watchdog -q tests/product/test_windows_candidate_product.py -k native_windows_candidate_frozen --firmavex-test-timeout=225
+      - name: Build existing unsigned per-user installer - candidate evidence only
+        shell: pwsh
+        run: |
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" packaging/windows.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Installed candidate lifecycle and rejection - no positive runtime approval
+        env:
+          FIRMAVEX_RUN_WINDOWS_CANDIDATE: "1"
+          FIRMAVEX_REQUIRE_CANDIDATE_INSTALLED: "1"
+          FIRMAVEX_CANDIDATE_INSTALLER: ${{ github.workspace }}/dist/FIRMAVEX-Windows-unsigned.exe
+          FIRMAVEX_CANDIDATE_FROZEN_DIR: ${{ github.workspace }}/dist/FIRMAVEX
+        shell: pwsh
+        run: |
+          & "${{ steps.python.outputs.python-path }}" -m tools.product_ci_tests --ci-watchdog -q tests/product/test_windows_candidate_installed.py -k native_windows_candidate_installed --firmavex-test-timeout=225
       - name: Retain candidate evidence only - never a release artifact
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
