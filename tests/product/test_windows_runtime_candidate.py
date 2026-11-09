@@ -631,7 +631,7 @@ def test_candidate_workflow_is_manual_pinned_separate_and_never_approves():
     assert 'tools.windows_runtime_candidate' not in (repo / 'packaging/desktop.spec').read_text()
     assert 'tools/windows_runtime_candidate.py' not in (repo / 'MANIFEST.in').read_text()
     for name in ('windows_candidate_evidence', 'windows_candidate_packages', 'windows_candidate_product',
-                 'windows_candidate_installed'):
+                 'windows_candidate_installed', 'windows_candidate_artifact', 'windows_candidate_closure'):
         assert 'tools.' + name not in (repo / 'packaging/desktop.spec').read_text()
         assert 'tools/' + name + '.py' not in (repo / 'MANIFEST.in').read_text()
 
