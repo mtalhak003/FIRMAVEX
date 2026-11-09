@@ -77,7 +77,15 @@ def records(monkeypatch):
               'source_revision': REVISION, 'run_id': RUN, 'host': {'os': 'Windows', 'architecture': 'x86_64'},
               'candidate_expected': {n: {'version': v, 'sha256': h} for n, (v, h) in CANDIDATE.items()},
               'tools': tools, 'packages': PACKAGES, 'signature_policy': ['PackageRequired', 'PackageTrustedOnly'],
-              'production_rejection': {'required_profile': evidence.WINDOWS_PROFILE_ID},
+              'production_rejection': {
+                  'required_profile': evidence.WINDOWS_PROFILE_ID, 'profile_version': evidence.WINDOWS_PROFILE_VERSION,
+                  'qualification': {'schema_version': 1, 'required_profile': evidence.WINDOWS_PROFILE_ID,
+                      'profile_version': evidence.WINDOWS_PROFILE_VERSION, 'host_architecture': 'x86_64',
+                      'tools': {n: {'expected': dict(zip(('version', 'sha256'), evidence.WINDOWS_EXECUTABLES[n])),
+                                    'observed': {'version': v, 'sha256': h},
+                                    'matches': {'version': v == evidence.WINDOWS_EXECUTABLES[n][0],
+                                                'sha256': h == evidence.WINDOWS_EXECUTABLES[n][1]}}
+                                for n, (v, h) in CANDIDATE.items()}}},
               'vendor_inventory_sha256': hashlib.sha256(members['source-probe/vendor-files.json']).hexdigest(),
               'cases': []}
     for name, count, budget, triggers, aborted, first in cases:
@@ -141,6 +149,19 @@ def test_caller_expected_identities_are_mandatory(tmp_path, records, field, valu
     ('status', 'candidate_preflight_only'), ('host', {'os':'Linux','architecture':'x86_64'}), ('schema_version', True)])
 def test_report_labels_and_completion_fail_closed(tmp_path, records, field, value):
     change(records, 'source-probe/candidate-report.json', lambda r:r.update({field:value}))
+    assert verify(archive(tmp_path, records))['validation'] == 'failed'
+
+
+@pytest.mark.parametrize('kind', ['missing-qualification', 'profile-version', 'expected', 'observed', 'matches'])
+def test_original_source_report_rejection_matrix_is_verified(tmp_path, records, kind):
+    def mutate(report):
+        rejection = report['production_rejection']
+        if kind == 'missing-qualification': rejection.pop('qualification')
+        elif kind == 'profile-version': rejection['profile_version'] = True
+        elif kind in {'expected', 'observed'}:
+            rejection['qualification']['tools']['qemu'][kind]['sha256'] = '0'*64
+        else: rejection['qualification']['tools']['qemu']['matches']['version'] = True
+    change(records, 'source-probe/candidate-report.json', mutate)
     assert verify(archive(tmp_path, records))['validation'] == 'failed'
 
 
@@ -224,6 +245,112 @@ def test_additional_product_junit_is_reported_without_profile_promotion(tmp_path
     assert result['validation'] == 'passed', result
     assert result['junit']['selections'] == 5 and result['junit']['passed'] == 19
     assert result['additional_product_records_reviewed'] is False and result['production_qualified'] is False
+
+
+@pytest.fixture
+def product_records(records):
+    """Invented rejection records, not native product qualification evidence."""
+    qualification = {'schema_version': 1, 'required_profile': evidence.WINDOWS_PROFILE_ID,
+                     'profile_version': evidence.WINDOWS_PROFILE_VERSION, 'host_architecture': 'x86_64', 'tools': {}}
+    for name, (version, digest) in CANDIDATE.items():
+        expected = dict(zip(('version', 'sha256'), evidence.WINDOWS_EXECUTABLES[name]))
+        observed = {'version': version, 'sha256': digest}
+        qualification['tools'][name] = {'expected': expected, 'observed': observed,
+                                       'matches': {key: observed[key] == expected[key] for key in expected}}
+    rejection = {'category': 'unsupported_platform', 'required_profile': evidence.WINDOWS_PROFILE_ID,
+                 'qualification': qualification}
+    for path, (distribution, test) in evidence.PRODUCT_PATHS.items():
+        value = {'schema_version': 1, 'source_revision': REVISION, 'run_id': RUN,
+                 'host': {'os': 'Windows', 'architecture': 'x86_64'}, 'candidate_only': True,
+                 'production_qualified': False, 'firmware_execution': 'not_admitted', 'charged_attempts': 0}
+        if distribution == 'gui':
+            value.update(kind='firmavex_candidate_gui_admission', status='candidate_gui_admission_rejection_passed',
+                         worker_idle_after_cleanup=True, rejection=rejection)
+            module = 'tests.desktop.test_windows_candidate_rejection'
+        else:
+            value.update(kind='firmavex_candidate_product_admission', status='candidate_admission_rejection_passed',
+                         distribution=distribution, installation_verified=False,
+                         executable_origin='running_interpreter' if distribution == 'source'
+                             else 'caller_supplied_not_independently_verified',
+                         executable={'sha256': 'd'*64, 'size_bytes': 100},
+                         cases=[{'path': 'supervised_worker', 'event_kinds': ['accepted', 'error'], 'rejection': rejection},
+                                {'path': 'CLI', 'rejection': rejection,
+                                 'owned_process_cleanup': [{'pid': 123, 'returncode': 1, 'reaped': True}]}])
+            module = 'tests.product.test_windows_candidate_product'
+        records[path] = encoded(value)
+        records[f'test-diagnostics/product-{distribution}/pytest.xml'] = (
+            '<testsuite tests="1" failures="0" errors="0" skipped="0">'
+            f'<testcase classname="{module}" name="{test}"/></testsuite>').encode()
+    return records
+
+
+def test_product_rejection_records_are_bound_and_never_promote(tmp_path, product_records):
+    result = verify(archive(tmp_path, product_records), require_product_paths=True)
+    assert result['validation'] == 'passed', result
+    assert result['additional_product_records_reviewed'] is True
+    assert result['product_admission']['complete'] and result['product_admission']['required']
+    assert result['product_admission']['reviewed_paths'] == sorted(evidence.PRODUCT_PATHS)
+    assert result['junit']['passed'] == 20 and result['production_qualified'] is False
+    assert 'product GUI/frozen/installed qualification' in result['not_proven']
+
+
+def test_old_source_artifact_remains_valid_but_cannot_satisfy_product_requirement(tmp_path, records):
+    path = archive(tmp_path, records)
+    result = verify(path)
+    assert result['validation'] == 'passed' and result['product_admission']['complete'] is False
+    assert verify(path, require_product_paths=True)['failures'][0]['code'] == 'required_product_records_missing_or_unsupported'
+    assert verify(path, require_product_paths=1)['validation'] == 'failed'
+
+
+@pytest.mark.parametrize('kind', ['revision', 'run', 'host', 'candidate-label', 'approved', 'charged', 'bool-charged',
+    'state', 'error', 'installed', 'origin', 'executable', 'cases', 'events', 'cleanup', 'cleanup-code',
+    'rejection', 'expected', 'observed', 'matches', 'gui-idle', 'gui-rejection', 'junit-missing', 'junit-skipped', 'junit-module'])
+def test_product_evidence_contradictions_fail_even_in_optional_mode(tmp_path, product_records, kind):
+    path = 'source-probe/product-source/product-admission.json'
+    def mutate(value):
+        if kind == 'revision': value['source_revision'] = 'b'*40
+        elif kind == 'run': value['run_id'] = '999'
+        elif kind == 'host': value['host']['os'] = 'Linux'
+        elif kind == 'candidate-label': value['candidate_only'] = False
+        elif kind == 'approved': value['production_qualified'] = True
+        elif kind == 'charged': value['charged_attempts'] = 1
+        elif kind == 'bool-charged': value['charged_attempts'] = False
+        elif kind == 'state': value['status'] = 'failed'
+        elif kind == 'error': value['error_type'] = 'OSError'
+        elif kind == 'installed': value['installation_verified'] = True
+        elif kind == 'origin': value['executable_origin'] = 'trusted_installer'
+        elif kind == 'executable': value['executable']['sha256'] = 'invalid'
+        elif kind == 'cases': value['cases'].pop()
+        elif kind == 'events': value['cases'][0]['event_kinds'].insert(1, 'progress')
+        elif kind == 'cleanup': value['cases'][1]['owned_process_cleanup'][0]['reaped'] = False
+        elif kind == 'cleanup-code': value['cases'][1]['owned_process_cleanup'][0]['returncode'] = 0
+        elif kind == 'rejection': value['cases'][0]['rejection']['category'] = 'worker_failure'
+        elif kind in {'expected', 'observed'}:
+            value['cases'][0]['rejection']['qualification']['tools']['qemu'][kind]['sha256'] = '0'*64
+        elif kind == 'matches': value['cases'][0]['rejection']['qualification']['tools']['qemu']['matches']['version'] = True
+    if kind == 'gui-idle':
+        change(product_records, 'source-probe/product-gui/gui-admission.json', lambda r:r.update(worker_idle_after_cleanup=False))
+    elif kind == 'gui-rejection':
+        change(product_records, 'source-probe/product-gui/gui-admission.json', lambda r:r['rejection'].update(required_profile='other'))
+    elif kind.startswith('junit-'):
+        name = 'test-diagnostics/product-source/pytest.xml'
+        if kind == 'junit-missing': del product_records[name]
+        elif kind == 'junit-module': product_records[name] = product_records[name].replace(b'tests.product.test_windows_candidate_product', b'unrelated.tests')
+        else:
+            product_records[name] = product_records[name].replace(b'/>', b'><skipped/></testcase>').replace(b'skipped="0"', b'skipped="1"')
+    else: change(product_records, path, mutate)
+    result = verify(archive(tmp_path, product_records))
+    assert result['validation'] == 'failed', result
+    assert result['production_qualified'] is False
+
+
+def test_installed_claim_is_unreviewed_and_cannot_satisfy_required_product_scope(tmp_path, product_records):
+    product_records['source-probe/product-installed/product-admission.json'] = encoded({'installation_verified': True})
+    path = archive(tmp_path, product_records)
+    result = verify(path)
+    assert result['validation'] == 'passed' and result['additional_product_records_reviewed'] is False
+    assert result['product_admission']['unreviewed_paths'] == ['source-probe/product-installed/product-admission.json']
+    assert verify(path, require_product_paths=True)['validation'] == 'failed'
 
 
 @pytest.mark.parametrize('bound', ['MAX_ARCHIVE','MAX_MEMBER','MAX_MEMBERS'])

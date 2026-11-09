@@ -644,7 +644,7 @@ def test_candidate_python_commands_use_setup_interpreter_and_module_launcher():
     assert [command.split()[0] for command in commands] == [
         'pip', 'pip', 'tools.check_build_inputs', 'tools.windows_runtime_candidate',
         'tools.product_ci_tests', 'tools.product_ci_tests', 'tools.product_ci_tests',
-        'tools.product_ci_tests', 'PyInstaller', 'tools.product_ci_tests']
+        'tools.product_ci_tests', 'tools.product_ci_tests', 'PyInstaller', 'tools.product_ci_tests']
     assert 'tools/product_ci_tests.py' not in workflow
     assert "(Join-Path $prefix 'bin') >> $env:GITHUB_PATH" in workflow
 

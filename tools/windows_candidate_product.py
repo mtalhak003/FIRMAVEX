@@ -16,7 +16,7 @@ from firmavex.backends.security import checked_path, read_json
 from firmavex.product.bundled_example import prepare_example
 from firmavex.product.config import load_config
 from firmavex.product.errors import ProductError
-from firmavex.product.platform_support import WINDOWS_PROFILE_ID
+from firmavex.product.platform_support import WINDOWS_EXECUTABLES, WINDOWS_PROFILE_ID, WINDOWS_PROFILE_VERSION
 from firmavex.product.supervisor import Supervisor
 from firmavex.product.tools import file_identity
 from tools import windows_runtime_candidate as candidate
@@ -54,17 +54,26 @@ def rejection_details(error):
         raise ValueError('Expected production runtime rejection')
     details = error.get('details')
     if (type(details) is not dict or details.get('required_profile') != WINDOWS_PROFILE_ID
+            or type(details.get('profile_version')) is not int or details['profile_version'] != WINDOWS_PROFILE_VERSION
             or 'supervisor_cleanup_error' in details):
         raise ValueError('Missing admission identity or failed product cleanup')
     qualification = details.get('qualification')
-    if type(qualification) is not dict or qualification.get('host_architecture') != 'x86_64':
+    if (type(qualification) is not dict or qualification.get('host_architecture') != 'x86_64'
+            or type(qualification.get('schema_version')) is not int or qualification['schema_version'] != 1
+            or qualification.get('required_profile') != WINDOWS_PROFILE_ID
+            or type(qualification.get('profile_version')) is not int
+            or qualification['profile_version'] != WINDOWS_PROFILE_VERSION):
         raise ValueError('Native x64 qualification diagnostics required')
     tool_records = qualification.get('tools')
     if type(tool_records) is not dict:
         raise ValueError('Missing product runtime identities')
     for name, (version, digest) in candidate.CANDIDATE.items():
         item = tool_records.get(name)
-        if type(item) is not dict or item.get('observed') != {'version': version, 'sha256': digest}:
+        expected = dict(zip(('version', 'sha256'), WINDOWS_EXECUTABLES[name]))
+        observed = {'version': version, 'sha256': digest}
+        if (type(item) is not dict or item.get('observed') != observed or item.get('expected') != expected
+                or item.get('matches') != {key: observed[key] == expected[key] for key in expected}
+                or not all(type(value) is bool for value in item['matches'].values())):
             raise ValueError('Product observed a different candidate runtime')
     return {'category': error['category'], 'required_profile': WINDOWS_PROFILE_ID,
             'qualification': qualification}
@@ -91,7 +100,9 @@ def run_cli(command, config, destination, working):
             if primary is None or (isinstance(primary, Exception) and not isinstance(cleanup, Exception)):
                 raise
             primary.add_note('Candidate CLI cleanup failed: ' + type(cleanup).__name__)
-    if code != 1 or not owner.cleanup or not all(row['reaped'] for row in owner.cleanup):
+    if (type(code) is not int or code != 1 or not owner.cleanup
+            or not all(row.get('reaped') is True and type(row.get('pid')) is int and row['pid'] > 0
+                       and type(row.get('returncode')) is int and row['returncode'] == 1 for row in owner.cleanup)):
         raise ValueError('Unexpected CLI exit status or incomplete owned process cleanup')
     record = json.loads(output, object_pairs_hook=_json_object,
                         parse_constant=lambda value: (_ for _ in ()).throw(ValueError('Non-finite CLI result')))

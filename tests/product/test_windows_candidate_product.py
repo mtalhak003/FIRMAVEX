@@ -11,15 +11,21 @@ import pytest
 from firmavex.backends.api import Limits
 from firmavex.backends.process import Processes
 from firmavex.product.errors import ProductError
-from firmavex.product.platform_support import WINDOWS_PROFILE_ID
+from firmavex.product.platform_support import WINDOWS_EXECUTABLES, WINDOWS_PROFILE_ID, WINDOWS_PROFILE_VERSION
 from tools import windows_candidate_product as product
 
 
 def rejection():
+    tools = {}
+    for name, (version, digest) in product.candidate.CANDIDATE.items():
+        expected = dict(zip(('version', 'sha256'), WINDOWS_EXECUTABLES[name]))
+        observed = {'version': version, 'sha256': digest}
+        tools[name] = {'expected': expected, 'observed': observed,
+                       'matches': {key: observed[key] == expected[key] for key in expected}}
     return {'category': 'unsupported_platform', 'message': 'fixture rejection', 'details': {
-        'required_profile': WINDOWS_PROFILE_ID, 'qualification': {'host_architecture': 'x86_64',
-            'tools': {name: {'observed': {'version': version, 'sha256': digest}}
-                      for name, (version, digest) in product.candidate.CANDIDATE.items()}}}}
+        'required_profile': WINDOWS_PROFILE_ID, 'profile_version': WINDOWS_PROFILE_VERSION,
+        'qualification': {'schema_version': 1, 'required_profile': WINDOWS_PROFILE_ID,
+            'profile_version': WINDOWS_PROFILE_VERSION, 'host_architecture': 'x86_64', 'tools': tools}}}
 
 
 def test_rejection_requires_exact_candidate_observations():
@@ -27,12 +33,17 @@ def test_rejection_requires_exact_candidate_observations():
     assert result['category'] == 'unsupported_platform' and result['required_profile'] == WINDOWS_PROFILE_ID
 
 
-@pytest.mark.parametrize('change', ['success', 'cleanup', 'profile', 'architecture', 'missing', 'tools', 'tool-record', 'qemu', 'gdb'])
+@pytest.mark.parametrize('change', ['success', 'cleanup', 'profile', 'profile-version', 'schema', 'expected', 'matches',
+                                  'architecture', 'missing', 'tools', 'tool-record', 'qemu', 'gdb'])
 def test_rejection_cannot_mask_unexpected_error_or_identity(change):
     record = rejection()
     if change == 'success': record['category'] = 'success'
     elif change == 'cleanup': record['details']['supervisor_cleanup_error'] = 'failed'
     elif change == 'profile': record['details']['required_profile'] = 'other'
+    elif change == 'profile-version': record['details']['profile_version'] = True
+    elif change == 'schema': record['details']['qualification']['schema_version'] = True
+    elif change == 'expected': record['details']['qualification']['tools']['qemu']['expected']['sha256'] = '0'*64
+    elif change == 'matches': record['details']['qualification']['tools']['qemu']['matches']['version'] = True
     elif change == 'architecture': record['details']['qualification']['host_architecture'] = 'arm64'
     elif change == 'missing': record['details'].pop('qualification')
     elif change == 'tools': record['details']['qualification']['tools'] = []
@@ -111,6 +122,24 @@ def test_cli_cleanup_failure_preserves_original_control_flow(tmp_path, monkeypat
     with pytest.raises(control, match='original interruption') as raised:
         product.run_cli(['unused'], tmp_path/'config', tmp_path/'unused', tmp_path)
     assert raised.value.__notes__ == ['Candidate CLI cleanup failed: OSError']
+
+
+@pytest.mark.parametrize('fault', [None, 'exit-code', 'bool-exit', 'cleanup-code', 'cleanup-bool', 'not-reaped', 'pid'])
+def test_cli_rejection_requires_consistent_exit_and_cleanup(tmp_path, monkeypatch, fault):
+    class Owner:
+        def __init__(self, *args): self.cleanup = []
+        def run(self, *args):
+            return (0 if fault == 'exit-code' else True if fault == 'bool-exit' else 1,
+                    json.dumps({'success': False, 'error': rejection()}), '')
+        def close(self):
+            self.cleanup = [{'pid': False if fault == 'pid' else 123,
+                'returncode': 0 if fault == 'cleanup-code' else True if fault == 'cleanup-bool' else 1,
+                'reaped': fault != 'not-reaped'}]
+    monkeypatch.setattr(product, 'Processes', Owner)
+    if fault is None:
+        assert product.run_cli(['unused'], tmp_path/'config', tmp_path/'never-run', tmp_path)['path'] == 'CLI'
+    else:
+        with pytest.raises(ValueError): product.run_cli(['unused'], tmp_path/'config', tmp_path/'never-run', tmp_path)
 
 
 def test_native_windows_candidate_product_entrypoint_rejection():

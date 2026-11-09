@@ -95,12 +95,18 @@ jobs:
         shell: pwsh
         run: |
           & "${{ steps.python.outputs.python-path }}" -m tools.product_ci_tests --ci-watchdog -q tests/product/test_windows_runtime_candidate.py -k native_windows_candidate --firmavex-test-timeout=180
-      - name: Candidate production-entrypoint and GUI rejection - no admission override
+      - name: Candidate production-entrypoint rejection - no admission override
         env:
           FIRMAVEX_RUN_WINDOWS_CANDIDATE: "1"
         shell: pwsh
         run: |
-          & "${{ steps.python.outputs.python-path }}" -m tools.product_ci_tests --ci-watchdog -q tests/product/test_windows_candidate_product.py tests/desktop/test_windows_candidate_rejection.py -k "native_windows_candidate and not frozen" --firmavex-test-timeout=225
+          & "${{ steps.python.outputs.python-path }}" -m tools.product_ci_tests --ci-watchdog -q tests/product/test_windows_candidate_product.py -k "native_windows_candidate and not frozen" --firmavex-test-timeout=225
+      - name: Candidate GUI rejection and vendor revalidation - no admission override
+        env:
+          FIRMAVEX_RUN_WINDOWS_CANDIDATE: "1"
+        shell: pwsh
+        run: |
+          & "${{ steps.python.outputs.python-path }}" -m tools.product_ci_tests --ci-watchdog -q tests/desktop/test_windows_candidate_rejection.py -k native_windows_candidate --firmavex-test-timeout=225
       - name: Build unsigned candidate application - never a release artifact
         shell: pwsh
         run: |

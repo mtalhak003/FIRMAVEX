@@ -34,6 +34,8 @@ def test_native_windows_candidate_gui_rejection(qtbot):
         assert 'Charged attempts: 0' in window.accounting_label.text()
         assert not list((project.root/'runs').rglob('*.sqlite*'))
         assert not list((project.root/'runs').rglob('result.json'))
+        # Rejection cannot produce passing evidence if vendor identities changed.
+        product.prepared_context(Path(os.environ['FIRMAVEX_CANDIDATE_VENDOR']), evidence)
         product.candidate._save(directory/'gui-admission.json', {
             **context, 'schema_version': 1, 'kind': 'firmavex_candidate_gui_admission',
             'candidate_only': True, 'production_qualified': False,
