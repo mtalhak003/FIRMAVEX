@@ -11,12 +11,21 @@ This is a **beta-readiness development candidate**. Unsigned Windows installers,
 Linux portable/Debian packages and unnotarized macOS DMGs are built in native CI.
 See [first launch and runtime setup](docs/product/beta-setup.md) for qualification
 status, download instructions and remaining blockers.
+Start with the [documentation index](docs/README.md),
+[development history](docs/product/development-progress.md), and
+[readiness snapshot](docs/product/batch28-release-readiness.md). Historical batch
+reports describe their tested revisions; they are not qualification of every
+later commit. The history labels subsequent user-reported evidence separately.
 The execution profile is symbolized ARM Cortex-M3 ELF compatible with QEMU
 `mps2-an385`, with typed uint32 inputs and explicit input-ready/completion functions.
 Arbitrary vendor MCU firmware, raw BIN, hardware execution, and automatic
 vulnerability judgments are unsupported. The guided strategy uses runtime
 signatures, without an AI model. No discovery within a budget is not a safety
 assessment.
+
+The unified **Backends** workspace also provides bounded RISC-V RV32 symbol
+observations and Icarus Verilog testbench simulation. These methods have different
+contracts from ARM search; see the [capability guide](docs/product/unified-desktop.md).
 
 ## Install and launch
 
@@ -49,10 +58,14 @@ engine reference.
 - **WSL2:** requires WSLg for the interactive GUI; this cloud batch is not native
   WSL qualification.
 - **Windows x86-64:** actual ARM adapter, supervised CLI, GUI and frozen-executable
-  example workflows passed native CI. Only the checksum-qualified MSYS2 UCRT64
-  QEMU/GDB profile is admitted. An unsigned per-user installer candidate is available.
-- **macOS Apple Silicon:** actual source and app-bundle example execution passed
-  native CI. Intel macOS remains unqualified; the DMG is unnotarized.
+  example workflows passed historical native CI for the exact qualified profile.
+  ARM production admission remains pinned to QEMU 11.1.2 / GDB 18.1; candidate QEMU
+  11.1.3 rejection/lifecycle passes do not approve it. The installer is unsigned.
+- **macOS Apple Silicon:** desktop preview; current unified native execution is
+  unsupported because its resource-admission requirement remains unqualified.
+  Historical ARM-only source/app-bundle passes do not qualify the later unified
+  contract. See the [memory-admission investigation](docs/product/macos-memory-admission.md).
+  Intel macOS remains unqualified; the DMG is unnotarized.
 
 These are development candidates, not a public beta. They do not yet include a
 qualified one-click QEMU/GDB runtime distribution. See the [Batch 3 validation
