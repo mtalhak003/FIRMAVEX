@@ -10,6 +10,9 @@ passing test is evidence only for its stated revision and scope.
 |---|---|
 | Understand the project and supported methods | [Project overview](../README.md), [unified desktop guide](product/unified-desktop.md), [backend contracts](product/universal-backends.md) |
 | Review how the project developed | [Primary chronological history](product/development-progress.md) |
+| Follow the complete evidence trail through Batch 29 | [Coverage/source register](development/history-sources.md), [all 162 cutoff commits](development/history-commits.csv) |
+| Understand research contracts and experimental limits | [Research history](development/research-history.md) |
+| Review failures, repairs and validation methods | [Troubleshooting and lessons](development/troubleshooting-history.md), [testing/CI evolution](development/validation-history.md) |
 | Understand supported architectural decisions | [Retrospective engineering decision records](decisions/README.md) |
 | Evaluate evidence quality and historical coverage | [History audit and evidence gaps](development/history-audit.md) |
 | Assess release readiness | [Batch 28 readiness snapshot](product/batch28-release-readiness.md), [release policy](product/release-policy.md), [latest history follow-up](product/development-progress.md#november-9-2026--windows-candidate-evidence-and-release-preparation) |
@@ -79,3 +82,9 @@ No held-out, hardware, AI-guidance or general-superiority claim follows.
 Historical reports retain their original dates, partial scopes and statuses.
 Follow the chronological history for later evidence instead of silently treating
 an old preparation document as current approval.
+
+The Batch 30 [coverage register](development/history-sources.md) extends the
+preserved November 9 audit through Batch 29. It records source completeness and
+fresh public CI-page observations separately from historical reports and
+user-reported artifact verification. The companion histories explain contracts,
+testing and repairs without reconstructing missing experiments or approval.

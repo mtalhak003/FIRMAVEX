@@ -7,6 +7,9 @@ they are not interchangeable proof. Use the [milestone template](milestone-templ
 for future entries. This procedure does not authorize implementation, a workflow
 dispatch, publication of private records or a release.
 Use the [documentation index](../README.md) to keep these routes discoverable.
+The [source register](history-sources.md) declares the latest expanded audit
+cutoff and links the research, troubleshooting, validation and commit-catalogue
+companions. Keep those routes aligned with the primary history.
 
 ## Record evidence before writing conclusions
 
@@ -30,6 +33,12 @@ Use the [documentation index](../README.md) to keep these routes discoverable.
 5. Record exact test commands, flags, counts, skipped reasons and exclusions when
    retained. Do not infer passing counts from the presence of tests. Keep failures
    and their subsequent fixes visible, with separate repair and validation links.
+6. When extending a complete-history audit, declare its exact cutoff and compare
+   the commit catalogue with `git log --reverse --topo-order` at that SHA. Retain
+   original timestamps/parents/subjects and verify date conversions and routes.
+   Grouping maintenance commits is navigation, not proof of new implementation.
+   Preserve prior audit snapshots; add supported troubleshooting/validation detail
+   instead of copying the whole timeline into another document.
 
 ## Use two independent labels
 

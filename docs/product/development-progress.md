@@ -23,6 +23,15 @@ approval. See the [evidence audit](../development/history-audit.md),
 [documentation index](../README.md), [decision records](../decisions/README.md),
 and [future-entry template](../development/milestone-template.md).
 
+**Expanded Batch 30 coverage:** the
+[source register](../development/history-sources.md) catalogues all **162 commits**
+through Batch 29 checkpoint `da22cc6853d21cfa45fd851aa77108357f62dd7e`.
+The [research contract map](../development/research-history.md),
+[validation history](../development/validation-history.md) and
+[chronological troubleshooting register](../development/troubleshooting-history.md)
+add detail and evidence gaps to this primary timeline. The original 159-commit
+audit/counts above remain the earlier review's scope, not a current test result.
+
 | History segment | Coverage |
 |---|---|
 | [Research foundation](#research-foundation) | Static analysis, Cortex-M execution, blind evaluation, frozen comparisons, durable campaigns |
@@ -72,6 +81,7 @@ and [future-entry template](../development/milestone-template.md).
 - **Recorded decisions:** Versioned SHA-256 framing includes ordered uint32 PCs and a truncation marker; the completion PC is excluded, and exactly 4,096 samples immediately followed by completion is untruncated. The signature is an equality label, not distance, coverage or AI guidance. The strategy-facing API does not expose source, oracle, partition or administrator-diagnostic data; this remains a cooperative information boundary, not adversarial isolation. Baseline behavior and official serialization remain unchanged. See [signature semantics](../development/runtime-signature.md) and [guided algorithm](../development/guided-search.md).
 - **Commits:** [17A `4449f6f`](https://github.com/mtalhak003/FIRMAVEX/commit/4449f6f870e695b911a742405cd44a7acce5a144), [17B `d62cc71`](https://github.com/mtalhak003/FIRMAVEX/commit/d62cc715d82cf26359dc34ae96c48749bdb43403).
 - **Validation and failures — retained documentation:** Step 17A records 85 focused tests and three fresh QEMU trials proving controlled safe-input replay/differentiation. Step 17B records tests for causal feedback changes, deterministic replay and finite-domain progress, plus a two-observation real Cortex-M integration. These are historical documentation, not reruns or comparative campaigns.
+- **Documentation clarification — Batch 30:** the original signature page described reaching the cap too broadly. Its collection paragraph now matches the already-committed collector and boundary tests: 4,096 samples immediately followed by completion is untruncated; execution beyond the sampled prefix is truncated. Neither code nor historical results changed.
 - **Limitations and next step:** Single-stepping adds cost; identical paths with different data can share signatures and behavior beyond the prefix is invisible. No novelty, AI, hardware or superiority claim follows. The next step freezes a controlled comparison protocol.
 
 ### 2026-10-08 — Step 18A: controlled three-strategy protocol

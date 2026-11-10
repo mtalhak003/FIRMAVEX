@@ -16,6 +16,10 @@ Start with the [documentation index](docs/README.md),
 [readiness snapshot](docs/product/batch28-release-readiness.md). Historical batch
 reports describe their tested revisions; they are not qualification of every
 later commit. The history labels subsequent user-reported evidence separately.
+For the complete development record through Batch 29, see the
+[research and source register](docs/development/history-sources.md),
+[troubleshooting lessons](docs/development/troubleshooting-history.md), and
+[testing/CI history](docs/development/validation-history.md).
 The execution profile is symbolized ARM Cortex-M3 ELF compatible with QEMU
 `mps2-an385`, with typed uint32 inputs and explicit input-ready/completion functions.
 Arbitrary vendor MCU firmware, raw BIN, hardware execution, and automatic

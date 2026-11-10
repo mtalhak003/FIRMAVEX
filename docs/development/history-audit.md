@@ -108,3 +108,42 @@ checkout was accessed to fill a gap. Future updates should follow the
 [maintenance procedure](history-maintenance.md), use the
 [entry template](milestone-template.md), preserve failed outcomes, and update the
 [documentation index](../README.md) without silently rewriting old results.
+
+## November 10, 2026 — Batch 30 coverage extension
+
+The sections above remain the original November 9 audit and its recorded scope.
+The documentation-only Batch 30 review starts from
+`da22cc6853d21cfa45fd851aa77108357f62dd7e` and extends coverage through Batch 29:
+
+- [Complete source register](history-sources.md) and
+  [162-row commit catalogue](history-commits.csv): all reachable metadata, parent
+  links, original committer timestamps, converted dates and timeline routes.
+- [Research history](research-history.md): detailed experimental contracts,
+  frozen settings, measurement/projection separation, recovery accounting and
+  user-reported Step 19 limitations; no reconstructed campaign results.
+- [Troubleshooting chronology](troubleshooting-history.md): symptoms, supported
+  causes, repairs, later validation, unresolved failures and reusable lessons.
+- [Validation history](validation-history.md): test-method evolution, desktop
+  Batches 1–29, native/source/frozen/installed boundaries and missing transcripts.
+
+This adds source/evidence detail rather than replacing the old audit or counting
+README maintenance as new engine milestones. The primary history remains the
+chronological entry point. No speculative ADR or unrecorded decision rationale
+was added. A stale Step 17A truncation paragraph was clarified against existing
+source/tests; no implementation or recorded result changed.
+
+Fresh public-page observations on November 10 reconfirmed the six run/source/
+attempt/conclusion tuples listed in the new source register. The GitHub API read
+remained Forbidden, so original artifact/JUnit verification stays user-reported.
+No new workflow, runtime test, firmware execution, installer trial or campaign
+was run. Documentation links, commit/catalogue references, chronology and
+whitespace are validated separately from product/runtime qualification.
+
+Recorded local documentation checks: **10 Markdown files**, **423 local
+link/fragment/route checks** (including 162 catalogue routes), **107 distinct
+reachable commit references**, **162 catalogue rows** matched to original Git
+metadata/date conversions/parent order, and **35 dated primary milestone
+ranges** checked against linked committer dates. All passed. Whitespace passed
+for tracked changes and new additions. These counts are documentation validation,
+not new pytest or firmware results; overlapping historical test totals remain
+attributed to their original reports.

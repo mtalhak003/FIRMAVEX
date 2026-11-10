@@ -54,12 +54,21 @@ SHA-256 is updated incrementally, and the public digest is its lowercase
 hexadecimal representation. Python's process-dependent `hash()` is not used.
 No trace count or PC is included as a public field.
 
-The fixed collection bound is 4,096 PC samples per execution. If the bound is
-reached before completion, collection stops and GDB continues normally to the
-same completion breakpoint. Such a successful observation returns
-`truncated=True`. Reaching the bound does not consume a second firmware
-execution or create a second observation. Continuation must still complete
-successfully before the signature can be published.
+The fixed collection bound is 4,096 PC samples per execution. Each sampled PC
+is followed by a single step and an exact completion-breakpoint check. If that
+step reaches completion after the 4,096th sample, the sequence is complete and
+`truncated=False`. If execution is still stopped before completion after that
+step, guest execution extends beyond the sampled prefix: collection stops,
+GDB continues normally to the same completion breakpoint, and a successful
+observation returns `truncated=True`. The completion-breakpoint PC is never
+sampled. Reaching the bound does not consume a second firmware execution or
+create a second observation. Continuation must still complete successfully
+before the signature can be published.
+
+Documentation clarification (Batch 30): this describes the existing collector
+and the 4,095/4,096/4,097 boundary cases in
+[`test_monitor_signature.py`](../../tests/test_monitor_signature.py), already
+present in Step 17A. It changes neither implementation nor historical results.
 
 Registered corpus observations request collection for every execution.
 Legacy direct calls to `observe_symbol()` retain their default behavior with
