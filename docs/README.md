@@ -14,6 +14,7 @@ passing test is evidence only for its stated revision and scope.
 | Evaluate evidence quality and historical coverage | [History audit and evidence gaps](development/history-audit.md) |
 | Assess release readiness | [Batch 28 readiness snapshot](product/batch28-release-readiness.md), [release policy](product/release-policy.md), [latest history follow-up](product/development-progress.md#november-9-2026--windows-candidate-evidence-and-release-preparation) |
 | Add the next milestone | [Entry template](development/milestone-template.md), [maintenance and verification procedure](development/history-maintenance.md) |
+| Use the latest desktop workflow improvements | [Batch 29 operator and validation guide](product/batch29-desktop-workflows.md), [dated implementation entry](product/development-progress.md#2026-11-10--batch-29-desktop-project-readiness-and-export-workflows) |
 
 The latest original Batch 27 ZIP pass is **user-reported**, not independently
 verified in this environment: 19 receipts, 97 JUnit passed, 10 skipped and zero
@@ -26,6 +27,7 @@ earlier artifact-access limitations. The primary history retains both scopes.
 |---|---|
 | Installation and first launch | [Installation](product/install.md), [desktop usage](product/desktop.md), [beta setup](product/beta-setup.md). Unsigned/unnotarized development candidates are not public-release approval. |
 | Desktop and supervised services | `firmavex/desktop/` and `firmavex/product/`; [Batch 1 contract](product/batch1.md), [local worker interface](product/local-worker-interface.md), [ADR 0001](decisions/0001-supervised-local-execution.md) |
+| Desktop project and export usability | [Batch 29 workflows and actual validation](product/batch29-desktop-workflows.md): fresh forms, selected-ELF checks, shortcut recovery, persistent states and confirmed exports; native Windows validation remains outstanding. |
 | ARM, RV32 and HDL execution | `firmavex/backends/`; [bounded profiles](product/universal-backends.md), [unified GUI](product/unified-desktop.md), [custom projects](product/batch17-custom-workflow.md), [ADR 0002](decisions/0002-capability-aware-backends.md) |
 | Evidence, saved results and reports | [History/review](product/batch14-history.md), [scoped verification](product/batch15-verification.md), [verification reports](product/batch16-verification-reporting.md), [regression dashboards](product/batch20-regression-review.md), [retained-input consistency](product/batch22-verification-consistency.md) |
 | Execution trust and isolation limits | [Threat model](security/execution-threat-model.md), [Linux isolation assessment](security/linux-isolation-review/README.md). Trusted workloads only; no independently qualified hostile-input sandbox. |

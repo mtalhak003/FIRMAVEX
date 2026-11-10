@@ -1,10 +1,12 @@
 # Development progress
 
-This is the primary chronological engineering history for FIRMAVEX. It covers
-major milestones in the 159 commits reachable from the audited checkpoint
+This is the primary chronological engineering history for FIRMAVEX. Its initial
+retrospective audit covers major milestones in the 159 commits reachable from
+the audited checkpoint
 `e518342ede28ef462a0d6054f04b17e5bcb27821`, from September 14 to November 9, 2026.
 Related repair commits are grouped; README-only maintenance is not presented as
-new engine work. This retrospective audit does not establish development hours,
+new engine work. Later dated entries extend that history with their own evidence
+and date basis. The retrospective audit does not establish development hours,
 contemporaneous approval meetings or new execution results.
 
 **Date basis:** unless explicitly marked otherwise, retrospective dates are
@@ -28,6 +30,7 @@ and [future-entry template](../development/milestone-template.md).
 | [Product workflow and evidence review](#product-workflow-and-evidence-review) | Batches 12–22, result review/verification, regression sets and Windows repairs |
 | [Windows candidate evidence and provenance](#windows-candidate-evidence-and-provenance) | Batches 23–28, isolated qualification, installed rejection and provenance tools |
 | [November 9 progress update](#november-9-2026--windows-candidate-evidence-and-release-preparation) | Preserved CI observations and user-reported original-ZIP verification |
+| [Batch 29 desktop workflows](#2026-11-10--batch-29-desktop-project-readiness-and-export-workflows) | Project reset, static ELF feedback, recent-list recovery, runtime/progress presentation and confirmed exports |
 
 ## Research foundation
 
@@ -319,3 +322,78 @@ preservation and release-signing review. QEMU 11.1.3 remains production-rejected
 no runtime approval or public-release readiness is claimed. Batch 29 has not begun.
 
 [run]: https://github.com/mtalhak003/FIRMAVEX/actions/runs/42618949135
+
+## 2026-11-10 — Batch 29: desktop project, readiness and export workflows
+
+**Date basis:** execution/report date, November 10, 2026, UTC, from this development
+session. This is a new implementation entry, not a retrospective completion-date
+inference or a statement of work duration.
+
+**Objective:** improve ordinary desktop project creation, firmware selection,
+runtime feedback, cancellation states, saved-result navigation and report export
+without changing execution contracts or runtime admission.
+
+**Changes:** New Project clears the old project/result selection and asks before
+discarding unsaved editor changes. A background static ELF check validates the
+selected import image while distinguishing the open project's pinned image.
+Recent-list reset recovers corrupt shortcut preferences without deleting projects.
+Backend readiness persists visibly; cancellation remains visible despite late
+progress, and terminal execution states preserve the recorded outcome. History
+controls scroll and tab labels remain readable. Export feedback requires the
+worker's successful response, matching destination and file/hash metadata; rejected
+or malformed responses cannot leave an earlier export shown as successful. The
+ARM workspace can explicitly open a confirmed export folder. See the
+[operator and validation guide](batch29-desktop-workflows.md).
+
+**Decisions and reasoning:** reuse the existing ELF validator, background project
+task, supervised worker/export services and safe preference writer. Keep static
+compatibility, tool availability and execution qualification distinct. Validate
+export reply fields for truthful presentation; file hashing/writes remain service
+responsibilities. Preserve exact error categories with bounded plain-text recovery
+guidance. No evaluator, backend, protocol, runtime pin or admission changes.
+
+**Commit references:** baseline
+[`677bb7e94097ed9512be200ffb544350b4c4523e`](https://github.com/mtalhak003/FIRMAVEX/commit/677bb7e94097ed9512be200ffb544350b4c4523e);
+implementation and five new test files
+[`feb1fab8b65d3626a4389a2cc1424cd8f352d01f`](https://github.com/mtalhak003/FIRMAVEX/commit/feb1fab8b65d3626a4389a2cc1424cd8f352d01f).
+This entry is a separate documentation follow-up to that implementation.
+
+**Validation:** independently run on Linux x86_64, Python 3.12.14, PySide6 6.11.1,
+pytest 9.1.1 and offscreen Qt. Exact commands, exclusions and skip reasons are in
+the [validation section](batch29-desktop-workflows.md#validation-performed).
+Overlapping selections are not additive.
+
+| Claim | Result | Evidence class | Source and exact scope |
+|---|---|---|---|
+| New Batch 29 tests | PASS: 143 passed, no skips/failures/errors/deselections | Independently run local tests | Five `tests/desktop/test_batch29_*.py` files |
+| Desktop and recent-project regressions | PASS within scope: 389 passed, 16 skipped | Independently run local tests | `tests/desktop tests/product/test_recents.py`; missing runtime/native platform cases skipped |
+| Unfiltered application regression attempt | FAIL (environment): 2,079 passed, 106 skipped, 1 failed, 6 errors | Independently run local tests | Product/desktop/backend suites before final layout addition; missing ARM compiler causes the failure and setup errors |
+| Final available-environment regressions | PASS within scope: 2,080 passed, 106 skipped, 6 deselected | Independently run local tests | Product/desktop/backend suites; one integration test excluded and six compiler-dependent cases deselected; not a complete-suite pass |
+| Worker export round trips | PASS within synthetic-record scope | Independently run local tests | Real worker transport/Qt/files, synthetic saved inputs; hashes checked and source archives unchanged |
+| Syntax, build inputs, workflow lint and whitespace | PASS within scope | Independently run local checks | Ten Python files; existing lock check; two relevant workflows via actionlint without unavailable ShellCheck; changed/additional files |
+| Native Windows, macOS and firmware qualification of this revision | NOT PROVEN | Not run | Native hosts/runtime tools unavailable; no CI dispatch |
+
+**Failures and resolutions:** initial new GUI tests exposed incorrect test-harness
+assumptions about temporary Qt menu wrappers, wait predicates and signal-dictionary
+identity. Tests now retain the menu owner, use bounded boolean/event waits and
+compare record contents. Review also found stale export-success feedback on local
+destination/start failures and insufficient confirmation of malformed worker
+responses; implementation and regression tests address those cases. The unfiltered
+ARM-tool failures remain disclosed and the existing tests remain unchanged.
+
+**Limitations and blockers:** no ARM GCC, QEMU, ARM-capable GDB, RISC-V compiler or
+Icarus here; no actual firmware execution is claimed. Linux offscreen UI and
+synthetic archive tests do not establish Windows acceptance. Consumer usability,
+installed/frozen journeys for this exact revision, accessibility, offline and
+low-disk/recovery checks remain open. QEMU 11.1.3 remains production-rejected;
+macOS remains preview-only. Prior provenance and signing blockers are unchanged.
+
+**Next steps:** run equipped native regression/GUI checks for this revision, then
+exercise project creation, real bounded execution, cancellation, saved-result
+reopening and export through an installed application. Keep runtime qualification
+and consumer acceptance separate from presentation improvements.
+
+**Approval/traceability:** the user's Batch 29 task authorized implementation,
+tests, commits and normal fast-forward delivery to `product/desktop-batch11`.
+No CI dispatch, release or runtime-profile promotion was authorized. Main, frozen
+research and protected private evidence remain outside this batch's work.
