@@ -37,3 +37,26 @@ def remember(data_root, project):
     path = str(Path(project).absolute())
     existing = load(data_root)  # Never silently replace an invalid index.
     save(data_root, [path] + [p for p in existing if p != path])
+
+
+def forget(data_root, project):
+    """Remove one shortcut, without opening or deleting the project it names."""
+    if not isinstance(project, (str, Path)) or isinstance(project, str) and not project:
+        raise ValueError('Choose a recent-project shortcut to remove')
+    path = str(Path(project).absolute())
+    _paths({'schema_version': 1, 'paths': [path]})
+    existing = load(data_root)  # Removal never silently repairs a corrupt index.
+    if path not in existing:
+        return False
+    save(data_root, [item for item in existing if item != path])
+    return True
+
+
+def clear(data_root):
+    """Explicitly reset only shortcut preferences, including a corrupt index.
+
+    Callers must make the preference-only action clear to the user. Projects and
+    saved results are never opened, changed or deleted. The existing atomic
+    writer still rejects links, special files and unsafe preference locations.
+    """
+    save(data_root, [])

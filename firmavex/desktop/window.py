@@ -12,8 +12,8 @@ import json
 from pathlib import Path
 from uuid import uuid4
 
-from PySide6.QtCore import QObject, QRunnable, QThreadPool, Qt, Signal
-from PySide6.QtGui import QAction, QCloseEvent, QKeySequence
+from PySide6.QtCore import QObject, QRunnable, QThreadPool, Qt, Signal, QUrl
+from PySide6.QtGui import QAction, QCloseEvent, QDesktopServices, QKeySequence
 from PySide6.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog,
     QFormLayout, QFrame, QGridLayout, QGroupBox, QHBoxLayout, QLabel,
@@ -25,8 +25,10 @@ from PySide6.QtWidgets import (
 from firmavex.product.config import ProductConfig, load_config
 from firmavex.product.errors import ProductError
 from firmavex.product.services import _report
+from firmavex.product.firmware import inspect_elf
 from .controller import DesktopController
-from .diagnostics import arm_reproduction_summary
+from .diagnostics import arm_reproduction_summary, operation_error_text
+from .workflow import confirmed_export
 from firmavex.product.diagnosis import diagnosis
 from .projects import DesktopProject, application_data_directory, _safe_root
 
@@ -78,10 +80,18 @@ class MainWindow(QMainWindow):
         self._closing = False
         self._config_template: ProductConfig | None = None
         self._universal_window = None
+        self._last_export: Path | None = None
+        self._checking_selected_firmware = False
         self.setWindowTitle("FIRMAVEX Desktop — firmware testing")
         self.resize(1160, 800)
         self.setMinimumSize(860, 620)
         self._build_ui()
+        for label in (self.project_label, self.status_label, self.tool_status,
+                      self.firmware_status, self.export_status, self.run_path_label,
+                      self.outcome_label, self.trigger_label, self.evidence_label,
+                      self.progress_label, self.accounting_label, self.recent_hint):
+            label.setTextFormat(Qt.PlainText)
+        self._editor_snapshot = self._editor_values()
         self.controller.event.connect(self._event)
         self.controller.result.connect(self._result)
         self.controller.error.connect(self._error)
@@ -128,9 +138,9 @@ class MainWindow(QMainWindow):
         self.status_label = QLabel("Ready. Open a project or build the independent example.")
         self.status_label.setWordWrap(True)
         self.statusBar().addWidget(self.status_label, 1)
-        menu = self.menuBar().addMenu("&File")
+        self.file_menu = menu = self.menuBar().addMenu("&File")
         for title, shortcut, callback in (
-            ("&New project", QKeySequence.New, lambda: self.navigation.setCurrentRow(1)),
+            ("&New project", QKeySequence.New, self.new_project),
             ("&Open project…", QKeySequence.Open, self._pick_open_project),
             ("&Save configuration", QKeySequence.Save, self.save_configuration),
             ("&Quit", QKeySequence.Quit, self.close),
@@ -195,6 +205,7 @@ class MainWindow(QMainWindow):
                 self._load_fields(config)
                 self.project_label.setText((project.root.name + ' · selected ' + Path(source).name) if project else 'External ARM configuration — import into a new project before running')
                 self.project_dir_edit.setText(str(project.root) if project else str(self.data_root / 'projects' / _fresh_name('project')))
+                self._editor_snapshot = self._editor_values()
                 self.status_label.setText('Exact selected ARM configuration loaded; navigation did not execute firmware.')
                 self.navigation.setCurrentRow(1)
                 self._refresh_enabled()
@@ -232,7 +243,7 @@ class MainWindow(QMainWindow):
         intro.setWordWrap(True)
         layout.addWidget(intro)
         row = QHBoxLayout()
-        self.new_button = self._button("New firmware project", lambda: self.navigation.setCurrentRow(1))
+        self.new_button = self._button("New firmware project", self.new_project)
         self.open_button = self._button("Open project…", self._pick_open_project)
         self.example_button = self._button("Try built-in example (no compiler)", self.prepare_builtin_example)
         for button in (self.new_button, self.open_button, self.example_button):
@@ -244,8 +255,10 @@ class MainWindow(QMainWindow):
         recent_actions = QHBoxLayout()
         self.open_recent_button = self._button('Open selected recent project', self.open_recent_project)
         self.forget_recent_button = self._button('Remove from recent list', self.forget_recent_project)
+        self.clear_recents_button = self._button('Clear recent shortcuts…', self.clear_recent_projects)
         recent_actions.addWidget(self.open_recent_button)
         recent_actions.addWidget(self.forget_recent_button)
+        recent_actions.addWidget(self.clear_recents_button)
         layout.addLayout(recent_actions)
         self.recent_hint = QLabel('Recent entries are shortcuts only. Projects are verified again when opened; nothing executes.')
         self.recent_hint.setWordWrap(True)
@@ -272,6 +285,10 @@ class MainWindow(QMainWindow):
     def _project_page(self):
         page = QWidget()
         outer = QVBoxLayout(page)
+        target = QLabel('ARM Cortex-M3 • QEMU mps2-an385 • ELF32 little-endian • uint32 symbol inputs')
+        target.setWordWrap(True)
+        target.setAccessibleName('ARM project target and compatibility boundary')
+        outer.addWidget(target)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         content = QWidget()
@@ -292,6 +309,12 @@ class MainWindow(QMainWindow):
         form.addRow("New project folder", row)
         self.create_button = self._button("Import into new project", self.create_project)
         form.addRow("", self.create_button)
+        self.check_firmware_button = self._button('Check selected ELF without running', self.check_selected_firmware)
+        form.addRow('', self.check_firmware_button)
+        self.firmware_status = QLabel('Selected ELF has not been checked. Static compatibility does not establish runtime readiness.')
+        self.firmware_status.setWordWrap(True)
+        self.firmware_status.setAccessibleName('Selected firmware compatibility status')
+        form.addRow(self.firmware_status)
         help_text = QLabel(
             "Imports copy the image into the new project. Existing files are never overwritten. "
             "Input/failure bindings must be uint32 symbols or individual array entries. "
@@ -357,6 +380,9 @@ class MainWindow(QMainWindow):
             widget.setPlaceholderText("Leave empty for automatic discovery")
             form.addRow(label, widget)
         self.strategy_combo.currentTextChanged.connect(self._strategy_changed)
+        for edit in (self.firmware_edit, self.inputs_edit, self.ready_edit,
+                     self.complete_edit, self.failure_edit):
+            edit.textChanged.connect(self._firmware_unchecked)
         self._strategy_changed()
         scroll.setWidget(content)
         outer.addWidget(scroll, 1)
@@ -454,6 +480,13 @@ class MainWindow(QMainWindow):
         row.addWidget(self.reproduce_button)
         row.addWidget(self.export_button)
         layout.addLayout(row)
+        self.export_status = QLabel('No report export completed in this session.')
+        self.export_status.setWordWrap(True)
+        self.export_status.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.export_status.setAccessibleName('Report export status and destination')
+        layout.addWidget(self.export_status)
+        self.open_export_button = self._button('Open exported folder', self.open_export_folder)
+        layout.addWidget(self.open_export_button)
         row = QHBoxLayout()
         self.recover_button = self._button("Mark interrupted run recovered…", self.recover_current_run)
         self.restart_button = self._button("Restart as a new run…", self.restart_current_run)
@@ -474,6 +507,7 @@ class MainWindow(QMainWindow):
     def _refresh_enabled(self):
         idle = not self.busy and not self._closing
         self.recent_projects.setEnabled(idle)
+        self.clear_recents_button.setEnabled(idle)
         self.open_recent_button.setEnabled(idle and self.recent_projects.currentData() is not None)
         self.forget_recent_button.setEnabled(idle and self.recent_projects.currentData() is not None)
         project = self.project is not None
@@ -482,6 +516,8 @@ class MainWindow(QMainWindow):
                        self.doctor_button, self.create_button, self.firmware_button,
                        self.project_dir_button, self.open_run_button):
             button.setEnabled(idle)
+        self.check_firmware_button.setEnabled(idle and bool(self.firmware_edit.text().strip()))
+        self.open_export_button.setEnabled(idle and self._last_export is not None)
         for button in (self.save_button, self.revision_button, self.validate_button, self.run_button):
             button.setEnabled(idle and project)
         self.cancel_button.setEnabled(self.controller.busy and not self._closing)
@@ -558,6 +594,85 @@ class MainWindow(QMainWindow):
         self.qemu_edit.setText(config.qemu or "")
         self.gdb_edit.setText(config.gdb or "")
         self.compiler_edit.setText(config.compiler or "")
+        self._editor_snapshot = self._editor_values()
+
+    def _editor_values(self):
+        return tuple(edit.text() for edit in (
+            self.firmware_edit, self.project_dir_edit, self.inputs_edit, self.ready_edit,
+            self.complete_edit, self.failure_edit, self.failure_value_edit, self.minimum_edit,
+            self.maximum_edit, self.seed_edit, self.qemu_edit, self.gdb_edit, self.compiler_edit,
+        )) + (self.strategy_combo.currentText(), self.budget_spin.value(), self.timeout_spin.value(),
+              self.startup_spin.value(), self.signature_check.isChecked(), self.archive_spin.value(),
+              self.mutations_spin.value())
+
+    def new_project(self):
+        if self.busy or self._closing:
+            return False
+        if self._editor_values() != self._editor_snapshot:
+            choice = QMessageBox.question(
+                self, 'Discard unsaved editor changes?',
+                'Start a new project form and discard the current unsaved editor changes? '
+                'Saved projects and test results are retained.',
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+            )
+            if choice != QMessageBox.Yes:
+                return False
+        self.project = None
+        defaults = ProductConfig(firmware=self.data_root / 'unselected.elf',
+            input_symbols=('product_inputs[0]', 'product_inputs[1]'),
+            ready_breakpoint='product_input_ready', completion_breakpoint='product_complete',
+            failure_symbol='product_failure', input_max=3, execution_budget=16)
+        self._load_fields(defaults)
+        self.firmware_edit.clear()
+        self.project_dir_edit.setText(str(self.data_root / 'projects' / _fresh_name('project')))
+        self._config_template = None
+        self._editor_snapshot = self._editor_values()
+        self.active_run = None
+        self.result_record = None
+        self.inspection = None
+        self.run_path_label.setText('No run selected')
+        self.outcome_label.setText('No result available')
+        self.trigger_label.setText('Triggering input: unavailable')
+        self.evidence_label.setText('Execution evidence: unavailable')
+        self.result_text.clear()
+        self.report_view.clear()
+        self._last_export = None
+        self.export_status.setText('No report export completed for this new project form.')
+        self.project_label.setText('New project — firmware not imported')
+        self.validation_text.clear()
+        self.status_label.setText('Choose a compatible ELF, review its symbols, then import into a new project folder.')
+        self.navigation.setCurrentRow(1)
+        self._refresh_enabled()
+        return True
+
+    def _firmware_unchecked(self, *_):
+        self.firmware_status.setText(
+            'Selected ELF has not been checked. Static compatibility does not establish runtime readiness.'
+            + (' Save and Run still use the open project’s pinned image; import a new project/build to replace it.'
+               if self.project is not None else ''))
+        if hasattr(self, 'open_export_button'):
+            self._refresh_enabled()
+
+    def check_selected_firmware(self):
+        if self.busy or self._closing:
+            return False
+        self._checking_selected_firmware = True
+        try:
+            selected = self.firmware_edit.text().strip()
+            if not selected:
+                raise ProductError('invalid_configuration', 'Choose the ELF image to check first.')
+            config = replace(self.configuration(), firmware=Path(selected))
+            self.firmware_status.setText('Checking selected ELF and declared symbols without executing guest firmware…')
+            def checked(record):
+                self._checking_selected_firmware = False
+                self.firmware_status.setText('Static ELF check passed for Cortex-M3 / mps2-an385 and the declared symbols. '
+                                             'Runtime tools and guest behavior still require validation/testing.')
+                self.validation_text.setPlainText('Static selected-image compatibility check; no runtime tools or guest execution.\n\n' + _json(record))
+                self.status_label.setText('Selected ELF static check complete. Review configuration before importing or testing.')
+            return self._local_operation(lambda: inspect_elf(config), checked)
+        except Exception as exc:
+            self._error(exc.to_dict() if isinstance(exc, ProductError) else {'category': 'invalid_configuration', 'message': str(exc)})
+            return False
 
     def _local_operation(self, operation, callback):
         if self.busy:
@@ -592,6 +707,7 @@ class MainWindow(QMainWindow):
         self._load_fields(config)
         self.project_dir_edit.setText(str(project.root))
         self.project_label.setText(project.root.name)
+        self._editor_snapshot = self._editor_values()
         self.status_label.setText("Project open. Review the configuration, then validate firmware and tools.")
         self.navigation.setCurrentRow(1)
         self.validation_text.clear()
@@ -626,12 +742,30 @@ class MainWindow(QMainWindow):
     def forget_recent_project(self):
         if self.busy or not self.recent_projects.currentData():
             return
-        from .recents import load, save
+        from .recents import forget
         try:
-            save(self.data_root, [p for p in load(self.data_root) if p != self.recent_projects.currentData()])
+            forget(self.data_root, self.recent_projects.currentData())
             self._refresh_recents()
         except (OSError, ValueError, ProductError):
             self.recent_hint.setText('Recent-project preferences could not be updated. No project was deleted.')
+
+    def clear_recent_projects(self):
+        if self.busy or self._closing:
+            return False
+        choice = QMessageBox.question(
+            self, 'Clear recent-project shortcuts?',
+            'Reset the recent-project list, including a damaged preference file? '
+            'Saved projects and results are retained.',
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+        )
+        if choice != QMessageBox.Yes:
+            return False
+        from .recents import clear
+        def cleared(_):
+            self._refresh_recents()
+            self.recent_hint.setText('Recent shortcuts cleared. Use Open project to select an existing project; its files and results are retained.')
+            self.status_label.setText('Recent-project preferences reset.')
+        return self._local_operation(lambda: clear(self.data_root), cleared)
 
     def create_project(self):
         if self.busy:
@@ -700,6 +834,9 @@ class MainWindow(QMainWindow):
             config = self.configuration()
             def saved(command_path):
                 self._config_template = config
+                values = list(self._editor_values())
+                values[0], values[1] = str(config.firmware), str(self.project.root)
+                self._editor_snapshot = tuple(values)
                 self.status_label.setText("Configuration saved. Runtime validation is performed again before execution.")
                 if callable(after):
                     after(config, command_path)
@@ -714,7 +851,19 @@ class MainWindow(QMainWindow):
     def _start(self, command, payload, *, output=None):
         if self.busy or self._closing:
             return False
+        if command == 'export':
+            self._job = command
+            self._job_output = Path(output) if output is not None else None
+            self._last_export = None
+            self.export_status.setText('Export in progress. Waiting for the worker to finish writing report and evidence.')
         if not self.controller.start(command, payload):
+            if command == 'export':
+                if self.export_status.text().startswith('Export in progress.'):
+                    self.export_status.setText('Export not started. No completed export is confirmed; retry after the worker is idle.')
+                    self.status_label.setText('Export not started. The saved result remains selected.')
+                self._job = None
+                self._job_output = None
+                self._refresh_enabled()
             return False
         self._job = command
         self._job_output = Path(output) if output is not None else None
@@ -853,7 +1002,13 @@ class MainWindow(QMainWindow):
             self.inspection = result
             self._show_result(result.get("result"), inspection=result)
         elif command == "export":
-            self.status_label.setText("Export complete: " + str(self._job_output))
+            destination = confirmed_export(result, self._job_output)
+            if destination is None:
+                self._error({'category': 'invalid_output', 'message': 'The worker did not confirm a completed export to the requested destination.', 'details': result})
+                return
+            self.status_label.setText("Export complete: " + str(destination))
+            self._last_export = destination
+            self.export_status.setText('Export complete: ' + str(destination) + '\nIncludes report.md, evidence.json and SHA256SUMS. Review private paths and diagnostics before publication.')
             self.log.appendPlainText("Report export: " + _json(result))
         if command != "export":
             self.status_label.setText("Operation finished; waiting for worker cleanup." if self.controller.busy else "Operation complete.")
@@ -890,8 +1045,14 @@ class MainWindow(QMainWindow):
     def _error(self, error):
         category = error.get("category", "unknown_error")
         message = error.get("message", "Operation failed.")
-        self.status_label.setText(f"{category}: {message}")
+        self.status_label.setText(operation_error_text(error, operation=self._job))
         self.validation_text.setPlainText(_json(error))
+        if self._checking_selected_firmware:
+            self._checking_selected_firmware = False
+            self.firmware_status.setText('Selected ELF static check failed: ' + str(message))
+        if self._job == 'export':
+            self._last_export = None
+            self.export_status.setText('Export did not complete: ' + str(message) + '\nChoose a fresh writable parent folder and retry. Inspect any partial export separately.')
         if self._job == "doctor":
             self.tool_status.setText(f"Runtime check failed: {message} ({category}). See installation instructions for platform dependencies.")
         self.log.appendPlainText("ERROR " + _json(error))
@@ -969,11 +1130,25 @@ class MainWindow(QMainWindow):
             return
         parent = QFileDialog.getExistingDirectory(self, "Choose parent folder for a new report export")
         if parent:
+            self._last_export = None
+            self.export_status.setText('Checking a new export destination. No completed export is confirmed.')
+            self._refresh_enabled()
             try:
                 output = _safe_root(Path(parent) / _fresh_name("firmavex-report"))
                 self._start("export", {"run_dir": str(self.active_run), "output_dir": str(output)}, output=output)
-            except ProductError as exc:
-                self._error(exc.to_dict())
+            except (ProductError, ValueError, OSError) as exc:
+                self.export_status.setText('Export did not complete: ' + str(exc) + '\nChoose a fresh writable parent folder; existing results remain unchanged.')
+                self._error(exc.to_dict() if isinstance(exc, ProductError) else {'category': 'export_error', 'message': str(exc)})
+
+    def open_export_folder(self):
+        if self.busy or self._last_export is None:
+            return False
+        from firmavex.backends.security import checked_path
+        selected = self._last_export
+        def opened(path):
+            if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(path))):
+                self.status_label.setText('The system file manager could not open the export. Use the displayed destination path.')
+        return self._local_operation(lambda: checked_path(selected, directory=True), opened)
 
     def recover_current_run(self):
         if self.busy or self.active_run is None:

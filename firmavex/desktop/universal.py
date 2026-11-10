@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout,
     QHBoxLayout, QGridLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
     QMainWindow, QPlainTextEdit, QProgressBar, QPushButton, QSpinBox,
-    QSplitter, QTabWidget, QVBoxLayout, QWidget,
+    QScrollArea, QSplitter, QTabWidget, QVBoxLayout, QWidget,
     QTableWidget, QTableWidgetItem, QAbstractItemView, QHeaderView,
 )
 
@@ -26,10 +26,10 @@ from firmavex.backends.api import profiles, request_to_dict, request_from_dict
 from firmavex.product.errors import ProductError
 from firmavex.product.presentation import summary, guidance
 from .controller import DesktopController
-from .diagnostics import arm_reproduction_summary, compiler_diagnostics
+from .diagnostics import arm_reproduction_summary, compiler_diagnostics, operation_error_text
 from firmavex.product.diagnosis import diagnosis, inspect_artifact
 from .projects import _safe_root, application_data_directory
-from .workflow import display_text, execution_request, result_context
+from .workflow import confirmed_export, display_text, execution_request, result_context
 from firmavex.product.run_review import outcome_category
 
 
@@ -73,6 +73,8 @@ class UniversalWindow(QMainWindow):
         self._arm_context = None
         self._verification_session = None
         self._history_summaries = {}
+        self._terminal_job_state = None
+        self._cancellation_requested = False
         self.setWindowTitle("FIRMAVEX — processor and HDL backends")
         self.resize(1100, 760)
         self.setMinimumSize(760, 580)
@@ -123,6 +125,11 @@ class UniversalWindow(QMainWindow):
         self.capability_label = QLabel()
         self.capability_label.setWordWrap(True)
         form.addRow("Capabilities", self.capability_label)
+        self.runtime_status_label = QLabel()
+        self.runtime_status_label.setTextFormat(Qt.TextFormat.PlainText)
+        self.runtime_status_label.setWordWrap(True)
+        self.runtime_status_label.setAccessibleName('Selected backend runtime readiness')
+        form.addRow('Runtime readiness', self.runtime_status_label)
         row = QWidget()
         source_layout = QHBoxLayout(row)
         source_layout.setContentsMargins(0, 0, 0, 0)
@@ -213,6 +220,11 @@ class UniversalWindow(QMainWindow):
         self.progress_bar.setValue(0)
         self.progress_bar.setAccessibleName("Supervised job progress")
         layout.addWidget(self.progress_bar)
+        self.job_state_label = QLabel('Idle. No target execution requested.')
+        self.job_state_label.setTextFormat(Qt.TextFormat.PlainText)
+        self.job_state_label.setWordWrap(True)
+        self.job_state_label.setAccessibleName('Current supervised operation state')
+        layout.addWidget(self.job_state_label)
         split = QSplitter()
         history_panel = QWidget()
         history_layout = QVBoxLayout(history_panel)
@@ -276,10 +288,14 @@ class UniversalWindow(QMainWindow):
         folder_actions.addWidget(self.left_folder_button)
         folder_actions.addWidget(self.right_folder_button)
         history_layout.addLayout(folder_actions)
-        split.addWidget(history_panel)
+        self.history_scroll = QScrollArea()
+        self.history_scroll.setWidgetResizable(True)
+        self.history_scroll.setAccessibleName('Scrollable saved-run history and review controls')
+        self.history_scroll.setWidget(history_panel)
+        split.addWidget(self.history_scroll)
         self.tabs = QTabWidget()
         self.tabs.setUsesScrollButtons(True)
-        self.tabs.setElideMode(Qt.TextElideMode.ElideRight)
+        self.tabs.setElideMode(Qt.TextElideMode.ElideNone)
         self.result_context_label = QLabel('No saved result selected. Opening history never executes a target.')
         self.result_context_label.setTextFormat(Qt.TextFormat.PlainText)
         self.result_context_label.setWordWrap(True)
@@ -374,6 +390,12 @@ class UniversalWindow(QMainWindow):
         exports.addWidget(self.reproduce_button)
         exports.addWidget(self.export_button)
         layout.addLayout(exports)
+        self.export_feedback_label = QLabel('Export creates a fresh report folder; opening or exporting saved evidence does not execute a target.')
+        self.export_feedback_label.setTextFormat(Qt.TextFormat.PlainText)
+        self.export_feedback_label.setWordWrap(True)
+        self.export_feedback_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.export_feedback_label.setAccessibleName('Report export destination and outcome')
+        layout.addWidget(self.export_feedback_label)
         self.status_label = QLabel("Ready. Runtime checking and example preparation do not execute a target.")
         self.status_label.setTextFormat(Qt.TextFormat.PlainText)
         self.status_label.setWordWrap(True)
@@ -382,7 +404,7 @@ class UniversalWindow(QMainWindow):
     @Slot()
     def _profile_changed(self):
         self._configuration_edited()
-        self._ready = False
+        self._runtime_unchecked()
         self._example_source = None
         self.trust_box.setChecked(False)
         profile = profiles[self.profile]
@@ -396,6 +418,11 @@ class UniversalWindow(QMainWindow):
                 "verilog-icarus": "One self-contained ASCII testbench; no synthesis, VHDL or physical FPGA support."}[self.profile])
         )
         self.source_label.setText({"cortex-m3-mps2": "Existing ARM project JSON", "riscv32-virt": "Compatible RV32 ELF", "verilog-icarus": "Self-contained Verilog testbench"}[self.profile])
+        self.source_edit.setPlaceholderText({
+            'cortex-m3-mps2': 'Choose an existing ARM project .json; import ELF files in the ARM editor',
+            'riscv32-virt': 'Choose RV32IM ELF for QEMU virt with the documented input/completion symbols',
+            'verilog-icarus': 'Choose one self-contained ASCII .v or .sv testbench',
+        }[self.profile])
         self.values_edit.setVisible(self.profile == "riscv32-virt")
         self.values_label.setVisible(self.profile == "riscv32-virt")
         self.arm_button.setVisible(self.profile == "cortex-m3-mps2")
@@ -403,6 +430,12 @@ class UniversalWindow(QMainWindow):
         self.artifact_spin.setEnabled(self.profile != "cortex-m3-mps2")
         self.source_edit.clear()
         self._refresh()
+
+    def _runtime_unchecked(self):
+        self._ready = False
+        self.runtime_status_label.setText('Not checked for ' + profiles[self.profile].architecture +
+            '. Required tools: ' + ', '.join(profiles[self.profile].tool_names) +
+            '. Check runtime readiness; availability is not native qualification.')
 
     @Slot(str)
     def _source_changed(self, text):
@@ -436,7 +469,7 @@ class UniversalWindow(QMainWindow):
             self._saved_configuration = None
             self._associated_history = Path(context['project']) / 'runs'
             self.trust_box.setChecked(False)
-            self._ready = False
+            self._runtime_unchecked()
             self.configuration_context.setText('Selected ARM configuration: ' + display_text(context['source'], 500) +
                 ' · SHA-256 ' + context['sha256'] + '. Navigation does not execute it.')
         finally:
@@ -461,7 +494,7 @@ class UniversalWindow(QMainWindow):
             self.configurations.setCurrentIndex(index)
             self._arm_context = None
             self._associated_history = Path(record['configuration']) / 'runs'
-            self._ready = False
+            self._runtime_unchecked()
             self.trust_box.setChecked(False)
             self._example_source = None
             self.configuration_context.setText('Selected ' + display_text(record['name'], 80) + ' · ' + record['identity'][:16] +
@@ -521,7 +554,20 @@ class UniversalWindow(QMainWindow):
     def _start(self, command, payload, *, output=None):
         if self.busy or self._closing:
             return False
+        previous_result = (self.active_run, self.record, self.summary_view.toPlainText(),
+                           self.result_view.toPlainText(), self.result_context_label.text())
         self._job, self._output = command, output
+        self._terminal_job_state = None
+        self._cancellation_requested = False
+        labels = {'backend_check': 'Checking selected runtime tools; no target execution',
+                  'backend_prepare': 'Preparing independent example; no target execution',
+                  'backend_execute': 'Testing selected backend', 'backend_configuration_execute': 'Testing saved configuration',
+                  'backend_reproduce': 'Reproducing saved observation in a fresh run',
+                  'backend_inspect': 'Opening saved evidence; no target execution',
+                  'backend_export': 'Exporting saved evidence into a fresh folder; no target execution'}
+        self.job_state_label.setText(labels.get(command, 'Running supervised operation') + '…')
+        if command == 'backend_export':
+            self.export_feedback_label.setText('Export in progress. Waiting for the worker to confirm the destination and files.')
         if command == 'backend_verify':
             self._verification_session = {'provenance': {
                 'archive': payload['run_dir'], 'started_at': datetime.now(timezone.utc).isoformat(),
@@ -547,14 +593,31 @@ class UniversalWindow(QMainWindow):
             self.log_view.clear()
         self.status_label.setText("Running supervised job; waiting for confirmed completion and cleanup…")
         if not self.controller.start(command, payload):
+            error_reported = self._job is None
             self._job = None
+            self.active_run, self.record, explanation, evidence, context = previous_result
+            self.summary_view.setPlainText(explanation)
+            self.result_view.setPlainText(evidence)
+            self.result_context_label.setText(context)
+            self._terminal_job_state = ('Operation not started. The previous result remains selected; retry after the worker is idle.', False)
+            if command == 'backend_export':
+                self.export_feedback_label.setText('Export not started. No completed export is confirmed; the saved result remains selected.')
+            if command == 'backend_check':
+                self._ready = False
+                self.runtime_status_label.setText('Runtime check not started. Retry when the worker is idle; readiness is not established.')
+            if not error_reported:
+                self.status_label.setText('Operation not started. Retry after the worker is idle; the previous saved result remains selected.')
             self._refresh()
             return False
         return True
 
     @Slot()
     def check_runtime(self):
+        if self.busy or self._closing:
+            return
         self._ready = False
+        self.runtime_status_label.setText('Checking ' + profiles[self.profile].architecture +
+            ' runtime tools. No target execution; compatibility and admission are checked separately.')
         self._start("backend_check", {"profile": self.profile})
 
     @Slot()
@@ -603,6 +666,8 @@ class UniversalWindow(QMainWindow):
     @Slot()
     def cancel(self):
         if self.controller.cancel():
+            self._cancellation_requested = True
+            self.job_state_label.setText('Cancellation requested. Waiting for the background task and owned cleanup; no passing outcome is implied.')
             if self._job == 'backend_verification_review':
                 self.status_label.setText('Cancellation requested; waiting for metadata checks and worker cleanup. A report write already started may complete.')
             else:
@@ -832,6 +897,8 @@ class UniversalWindow(QMainWindow):
                 self._verification_update(payload)
             return
         self.log_view.appendPlainText(_preview(envelope)[:8192])
+        if self._cancellation_requested:
+            return
         payload = envelope.get("payload", {})
         if type(payload) is dict:
             if payload.get('type') == 'regression_verification':
@@ -857,6 +924,22 @@ class UniversalWindow(QMainWindow):
     def _result(self, record):
         command = self._job
         self._job = None
+        returned = record.get('result', record) if command == 'backend_reproduce' else record
+        if command in {'backend_execute', 'backend_configuration_execute', 'backend_reproduce'}:
+            message = 'Recorded outcome: ' + display_text(returned.get('status', 'unknown'), 80) + '. Review evidence and cleanup; this is not a general correctness claim.'
+            if self._cancellation_requested:
+                message = 'Cancellation was requested. ' + message
+        elif command == 'backend_inspect':
+            message = 'Saved evidence opened. No target execution was requested.'
+        else:
+            message = 'Supervised operation finished. Review its details; this is not target qualification.'
+        returned_status = returned.get('status')
+        if command not in {'backend_execute', 'backend_configuration_execute', 'backend_reproduce', 'backend_inspect'} and returned_status:
+            message = 'Operation finished with recorded status: ' + display_text(returned_status, 80) + '. Review operation details.'
+        finished = returned_status not in {'cancelled', 'failed', 'infrastructure_failure', 'invalid_output'}
+        if command in {'backend_execute', 'backend_configuration_execute', 'backend_reproduce'}:
+            finished = returned_status in {'passed', 'triggered', 'not_discovered'}
+        self._terminal_job_state = (message, finished)
         administrative = command in {'backend_check', 'backend_prepare', 'backend_export', 'backend_history', 'backend_compare', 'backend_verify', 'backend_verification_review', 'backend_preflight', 'backend_configurations', 'backend_regression'}
         target = self.operation_view if administrative else self.result_view
         target.setPlainText(_preview(record, session_only=command == 'backend_verify'))
@@ -917,6 +1000,18 @@ class UniversalWindow(QMainWindow):
             self.status_label.setText('Read-only comparison complete. Unavailable fields are not evidence of equality.')
         elif command == "backend_check":
             self._ready = record.get("status") in {"tools_available", "ready"} or record.get("success") is True
+            self._terminal_job_state = ('Runtime check finished; tool availability is not execution qualification.' if self._ready
+                else 'Runtime check did not establish readiness. Review the missing or unsupported tools.', self._ready)
+            if self._ready:
+                self.runtime_status_label.setText('Last check: tools available for ' + profiles[self.profile].architecture +
+                    '. Availability is not native qualification; the worker revalidates compatibility and admission before execution.' +
+                    (' This check used synthetic test feedback.' if record.get('measurement_mode') == 'synthetic_test' else ''))
+            else:
+                error = record.get('error', {})
+                error = error if type(error) is dict else {}
+                category = record.get('status') or error.get('category') or 'runtime_unavailable'
+                reason = record.get('reason') or error.get('message') or 'Required tools are missing or unsupported.'
+                self.runtime_status_label.setText('Not ready: ' + display_text(reason, 500) + ' ' + guidance(category))
             self.status_label.setText("Runtime tools available; actual execution is checked by the backend." if self._ready else "Runtime unavailable or unsupported. Review readiness details; nothing executed.")
         elif command == "backend_prepare":
             artifact = record.get("firmware") or record.get("source") or {}
@@ -932,6 +1027,7 @@ class UniversalWindow(QMainWindow):
                 self.status_label.setText("Independent example prepared; no target execution performed. Check runtime, acknowledge trusted runtime tools, then Run.")
             else:
                 self.status_label.setText("Preparation returned no usable source path; inspect details before proceeding.")
+                self._terminal_job_state = ('Preparation returned no usable input path. No target execution was requested.', False)
         elif command in {"backend_execute", "backend_configuration_execute", "backend_inspect", "backend_reproduce"}:
             self.record = record.get("result", record) if command == "backend_reproduce" else record
             self.result_context_label.setText(result_context(self.record, self.active_run))
@@ -948,18 +1044,39 @@ class UniversalWindow(QMainWindow):
             self.summary_view.setPlainText(explanation)
             self.tabs.setCurrentWidget(self.summary_view)
         elif command == "backend_export":
-            self.status_label.setText("Export complete: " + str(record.get("destination", self._output)))
+            destination = confirmed_export(record, self._output, backend=True)
+            if destination is not None:
+                count = str(len(record['files'])) + ' files listed in checksums.json'
+                self.export_feedback_label.setText('Exported report to ' + display_text(destination, 1000) +
+                    '. Open REPORT.md for the readable result; integrity hashes cover ' + count + '. Saved evidence remains selected.')
+                self.status_label.setText('Export complete: ' + display_text(destination, 500))
+            else:
+                self.export_feedback_label.setText('The worker did not confirm a completed export destination. Review Operation details before using any output folder.')
+                self.status_label.setText('Export completion was not confirmed. Review Operation details.')
+                self._terminal_job_state = ('Export completion was not confirmed; no successful export is claimed.', False)
         self._refresh()
 
     def _local_error(self, exc):
         category = exc.category if isinstance(exc, ProductError) else "invalid_input"
-        self.status_label.setText(display_text(category + ": " + str(exc) + " " + guidance(category)))
+        self.status_label.setText(operation_error_text({'category': category, 'message': str(exc)}))
+        if not self.busy:
+            self._terminal_job_state = ('Input needs attention. No new supervised operation was started.', False)
         self._refresh()
 
     @Slot(dict)
     def _error(self, record):
         command = self._job
         self._job = None
+        category = record.get('category', 'worker_error')
+        friendly_error = operation_error_text(record, operation=command)
+        self._terminal_job_state = ('Operation ' + ('cancelled' if category == 'cancelled' else 'failed') + ': ' + friendly_error, False)
+        if command == 'backend_check':
+            self._ready = False
+            self.runtime_status_label.setText('Not ready: ' + friendly_error)
+        elif command == 'backend_export':
+            self.export_feedback_label.setText('Export ' + ('cancelled' if category == 'cancelled' else 'failed') + ': ' +
+                display_text(record.get('message', 'Review Operation details.'), 500) +
+                '. The saved run remains selected. Inspect the destination for partial files before retrying into a new folder.')
         if command == 'backend_regression':
             self.operation_view.setPlainText(_preview(record))
             self.regression_panel.failed(record)
@@ -990,12 +1107,12 @@ class UniversalWindow(QMainWindow):
                 self.comparison_scope.setText('Comparison unavailable: ' + display_text(record.get('message', 'Review operation details.'), 500))
             self.operation_view.setPlainText(_preview(record))
             self.tabs.setCurrentWidget(self.operation_view)
-            self.status_label.setText(display_text(str(record.get('category', 'worker_error')) + ': ' + str(record.get('message', 'Review operation details.'))))
+            self.status_label.setText(friendly_error)
             self._refresh()
             return
         self.result_context_label.setText('No validated outcome from this operation. Review the error and inspect the saved run if available.')
         self.result_view.setPlainText(_preview(record))
-        explanation = display_text(record.get("message", "Worker failure"), 2000) + "\n" + guidance(record.get("category"))
+        explanation = friendly_error
         details = record.get("details")
         partial = details.get("partial_result") if type(details) is dict else None
         reproduction = arm_reproduction_summary(partial)
@@ -1003,7 +1120,7 @@ class UniversalWindow(QMainWindow):
             explanation += "\n\n" + reproduction
         self.summary_view.setPlainText(explanation)
         self.tabs.setCurrentWidget(self.summary_view)
-        self.status_label.setText(display_text(str(record.get("category", "worker_error")) + ": " + str(record.get("message", "Inspect saved results."))))
+        self.status_label.setText(friendly_error)
         self._refresh()
 
     @Slot()
@@ -1061,10 +1178,17 @@ class UniversalWindow(QMainWindow):
         self.freshness_button.setEnabled(idle and self._verification_session is not None)
         self.verification_export_button.setEnabled(idle and self._verification_session is not None)
         self.cancel_button.setEnabled(self.busy and not self._closing)
+        if self._cancellation_requested:
+            self.cancel_button.setEnabled(False)
         self.reproduce_button.setEnabled(idle and self.active_run is not None and self.record is not None and self.record.get("status") in {"passed", "triggered"} and self.trust_box.isChecked())
         self.export_button.setEnabled(idle and self.active_run is not None and self.record is not None)
         self.progress_bar.setRange(0, 0 if self.busy else 1)
-        self.progress_bar.setValue(0)
+        self.progress_bar.setValue(0 if self.busy or self._terminal_job_state is None else 1)
+        self.progress_bar.setFormat('Finished' if self._terminal_job_state and self._terminal_job_state[1] else 'Stopped' if self._terminal_job_state else 'Idle')
+        if self.busy and self._terminal_job_state is not None:
+            self.job_state_label.setText('Final record received; finishing the background task before another operation can start.')
+        elif not self.busy and self._terminal_job_state is not None:
+            self.job_state_label.setText(self._terminal_job_state[0])
 
     def closeEvent(self, event: QCloseEvent):
         if not self.controller.shutdown():

@@ -4,6 +4,51 @@ COMPILER_DIAGNOSTIC_LIMIT = 8192
 ARM_REPRODUCTION_LIMIT = 4096
 _STREAM_LIMIT = (COMPILER_DIAGNOSTIC_LIMIT - 512) // 2
 
+_ERROR_ACTIONS = {
+    "missing_dependency": "Open runtime setup / repair, then check the selected runtime again. The built-in firmware example does not need a compiler.",
+    "dependency_probe_failed": "Check the selected executable paths and retained diagnostics, then run the runtime check again. Tool availability is not execution qualification.",
+    "unsupported_platform": "The selected platform or runtime is not admitted. Review the expected and observed identities in diagnostics; use a qualified runtime without disabling admission checks.",
+    "unsupported_runtime": "Check that QEMU supports the selected board and that GDB supports the target. Select the documented compatible runtime and check readiness again.",
+    "runtime_pack_invalid": "Use runtime setup / repair to verify or restore a trusted runtime generation. Do not replace the recorded tool identities to force admission.",
+    "invalid_firmware": "Select a readable, compatible ELF image, then check its compatibility. Raw BIN and arbitrary MCU images are not supported.",
+    "unsupported_firmware": "Review the target, memory layout and required symbols. ARM testing needs the documented Cortex-M3 MPS2 ELF contract; use the built-in example as a reference.",
+    "invalid_configuration": "Review the selected input, symbol bindings and execution settings, then validate again. No execution success is assumed from this message.",
+    "configuration_error": "Review the input and execution settings, then validate again before starting a separate run.",
+    "invalid_input": "Review the selected backend's input contract. RV32 requires two uint32 values; HDL requires the supported testbench format.",
+    "cancelled": "Wait for worker cleanup, then inspect any saved partial record. Cancellation is not a passing test and does not automatically restart work.",
+    "worker_interrupted": "Inspect the saved run before recovery or an explicit restart. Missing terminal accounting remains unknown; abandoned work may repeat in a new run.",
+    "worker_timeout": "Wait for process cleanup and inspect retained diagnostics. A timeout is an infrastructure failure, not evidence of a safe input.",
+    "infrastructure_failure": "Inspect retained diagnostics and cleanup information before a separate attempt. An incomplete observation is not a safe result.",
+    "invalid_output": "Inspect the debugger or simulator logs for missing completion or result markers. A trigger alone does not establish successful completion.",
+    "firmware_changed": "The saved and selected firmware identities differ. Keep the original result and import the new build as a separate project or revision.",
+    "toolchain_changed": "The selected tools differ from the saved run. Preserve its evidence and use a separate project for the changed environment.",
+    "output_exists": "Choose a new, empty export destination. Existing results and exports must not be overwritten.",
+    "incomplete_run": "Inspect the run's saved state first. Export requires an authoritative terminal result; do not invent missing observations.",
+    "no_saved_trigger": "Select a saved run containing an exact triggering vector before requesting reproduction.",
+}
+
+
+def operation_error_text(error, operation=None):
+    """Bounded GUI guidance; never infer outcomes, counts or trust from an error.
+
+    Only category/message fields are read here. Separate administrative details,
+    stream and environment fields stay in the existing diagnostics view; a
+    message may still contain diagnostic text. Display this string as plain text.
+    """
+    def visible(value, limit, fallback):
+        if type(value) is not str or not value:
+            return fallback
+        text = ''.join(char if char.isprintable() else '\ufffd' for char in value[:limit])
+        return text + ('…' if len(value) > limit else '')
+    value = error if type(error) is dict else {}
+    category = visible(value.get('category'), 80, 'operation_failed')
+    message = visible(value.get('message'), 1200, 'The operation could not be completed.')
+    action = _ERROR_ACTIONS.get(category,
+        "Review the retained diagnostics and selected project before starting a separate operation. No successful execution is assumed.")
+    if type(operation) is str and operation in {'export', 'backend_export', 'backend_verification_report', 'export_verification_report'}:
+        action += " No completed export is confirmed. Choose a new writable destination after inspecting the failure."
+    return category + ': ' + message + '\nNext: ' + action
+
 
 def compiler_diagnostics(record):
     """Return retained Verilog compiler output, or no section without evidence.
