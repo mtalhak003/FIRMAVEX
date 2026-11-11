@@ -476,3 +476,44 @@ neither its definition nor old successful runs prove these new native cases ran.
 and normal fast-forward delivery to the development branch. No workflow dispatch,
 installer release, runtime promotion, main change or private-evidence access was
 authorized or performed.
+
+## 2026-11-12 — Batch 31 Windows regression repair: oversized test identity
+
+**Date basis:** repair report date, November 12, 2026, Asia/Karachi. The actual
+date of the user's Windows execution was not independently established.
+
+**Original observation — user report:** native Windows at
+`be355eec3760c9d0d6a01246b30a0e10d88b6c10` reported **169 passed, 1 skipped,
+2 errors** in Batch 29+31, including an environment variable over 32,767
+characters for the oversized corrupted-preference case. The complete original
+traceback was not available; those counts are not an independently reviewed
+native transcript.
+
+**Cause and repair — independently inspected source/collection:** pytest used the
+65,537-byte input as part of a 65,652-character node ID, then assigned it to
+`PYTEST_CURRENT_TEST`. Both setup and teardown perform that assignment. Linux
+diagnostic emulation of Windows' size admission reproduced two errors before the
+test body on that case. Explicit short IDs now label all seven inputs; the full
+oversized bytes and all assertions remain unchanged. A collection guard, following
+the existing malformed-frame regression pattern, enforces seven stable IDs and
+bounded node/stage labels. It failed before repair and passes afterward.
+
+**Validation — independently run on Linux:** affected preference plus complete
+CI-diagnostics modules: **46 passed**, zero skips/failures/errors/deselections.
+Original Batch 29+31 selection: **165 passed, 6 native-Windows skips**, zero
+failures/errors/deselections. The 171-case collection's largest node ID is now
+169 characters; its largest full environment entry is 200 UTF-16 units. All seven
+affected cases pass the limit emulation. Desktop/recent regressions passed
+**411 tests, 22 skipped**, zero failures/errors/deselections. No native Windows
+execution or CI dispatch occurred here. See the
+[repair record and rerun procedure](batch31-windows-validation.md#native-windows-follow-up-corrupted-preference-parameter-id-repair).
+
+**Scope and remaining evidence:** this repeats a test-identity failure class
+previously seen in [Batch 7 diagnostics](ci-diagnostics.md) and
+[Batch 20](batch20-windows-repair.md); application resource limits and firmware
+execution are not the failing boundary. Production code, runtime pins, security
+policy, frozen research and workflows are untouched. Retain the original Windows
+failure alongside the forthcoming native rerun; do not infer its success from
+collection checks or Linux emulation. The user authorized only this tested repair
+and normal fast-forward delivery to the development branch, with no main change
+or runtime promotion.

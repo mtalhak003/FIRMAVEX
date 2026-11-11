@@ -9,7 +9,9 @@ from firmavex.product.errors import ProductError
 
 
 @pytest.mark.parametrize('raw', [b'not JSON', b'[]', b'{"schema_version":true,"paths":[]}',
-    b'{"schema_version":1,"paths":[],"paths":[]}', b'{"bad":NaN}', b'\xff', b'x'*65537])
+    b'{"schema_version":1,"paths":[],"paths":[]}', b'{"bad":NaN}', b'\xff', b'x'*65537],
+    ids=['invalid-json', 'wrong-container', 'boolean-version', 'duplicate-fields',
+         'nonfinite-json', 'invalid-utf8', 'over-byte-limit'])
 def test_explicit_clear_recovers_invalid_preferences_without_reading_projects(tmp_path, raw):
     preferences = tmp_path/'preferences'; preferences.mkdir()
     index = preferences/'recent-projects.json'; index.write_bytes(raw)

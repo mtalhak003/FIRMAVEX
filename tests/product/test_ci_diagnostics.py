@@ -263,6 +263,26 @@ def test_gateway_collection_has_bounded_ids_and_retains_all_malformed_cases():
     assert any('[oversized_frame]' in node for node in nodes)
 
 
+def test_corrupt_preferences_collection_has_windows_safe_ids_and_all_cases():
+    result = subprocess.run(
+        [sys.executable, '-m', 'pytest', '--collect-only', '-q',
+         'tests/desktop/test_batch29_projects.py', '-k',
+         'test_explicit_clear_recovers_invalid_preferences_without_reading_projects'],
+        cwd=REPO, env=probe_environment(PYTEST_DISABLE_PLUGIN_AUTOLOAD='1'),
+        capture_output=True, text=True, timeout=15)
+    assert result.returncode == 0
+    nodes = [line for line in result.stdout.splitlines() if '::test_' in line]
+    assert len(nodes) == 7
+    # Pytest writes these identities to PYTEST_CURRENT_TEST before any fixture.
+    # Keep a failure message bounded even if a future ID embeds the whole input.
+    longest = max(len(node + ' (teardown)') for node in nodes)
+    assert longest < 512, 'Preference case IDs must remain short on Windows'
+    assert {node.rsplit('[', 1)[-1].removesuffix(']') for node in nodes} == {
+        'invalid-json', 'wrong-container', 'boolean-version', 'duplicate-fields',
+        'nonfinite-json', 'invalid-utf8', 'over-byte-limit',
+    }
+
+
 def test_long_failure_identity_is_bounded_in_annotations_and_summary(tmp_path, monkeypatch):
     import hashlib
     import xml.etree.ElementTree as ET

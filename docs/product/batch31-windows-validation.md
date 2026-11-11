@@ -335,3 +335,49 @@ the existing missing-tool failures. Run the unchanged required-runtime checks on
 an equipped native host before claiming their success. Packaging, worker,
 persistence and security regressions are included in the broader selection;
 their host/synthetic scopes do not replace positive native product execution.
+
+## Native Windows follow-up: corrupted-preference parameter ID repair
+
+**User-reported Windows observation:** at
+`be355eec3760c9d0d6a01246b30a0e10d88b6c10`, the Batch 29+31 selection reported
+**169 passed, 1 skipped, 2 errors**, including
+`ValueError: the environment variable is longer than 32767 characters` for
+`test_explicit_clear_recovers_invalid_preferences_without_reading_projects`.
+The full original traceback and native execution date were not available for
+independent review. This report remains separate from the earlier Linux results.
+
+**Confirmed source/collection defect:** pytest embedded the `b'x' * 65537` value
+in an automatically generated **65,652-character** node ID. Its runner writes
+that ID to `PYTEST_CURRENT_TEST` during both setup and teardown, before the test
+body. The full environment entries measured 65,680/65,683 UTF-16 units for those
+phases. Existing diagnostic-label caps run too late to prevent this environment
+assignment. A bounded Linux diagnostic emulation of the Windows admission limit
+reproduced six passed cases and two errors on the seventh case, independently
+showing the setup/teardown failure mechanism. It is not native Windows evidence
+or a reconstruction of the missing original log.
+
+**Repair:** give all seven parameters short, stable IDs, including
+`over-byte-limit`. All original byte values (including **65,537 bytes**) and every
+test-body assertion are unchanged, checked against the pre-repair AST. A new
+collection regression in `tests/product/test_ci_diagnostics.py` requires all seven
+IDs and a node/stage label under 512 characters. That guard failed before the fix
+and passes afterward. Runtime policy, production pins, admission, diagnostic
+caps and test payloads are unchanged.
+
+**Local repair validation, November 12, 2026 (Asia/Karachi):** Linux, pytest 9.1.1,
+offscreen Qt. The affected module plus complete CI-diagnostics module passed
+**46 tests**, zero skips/failures/errors/deselections. The original seven-file
+Batch 29+31 selection passed **165 tests, 6 native-Windows skips**, zero failures/
+errors/deselections. All 171 collected cases now have node IDs at most **169
+characters**, and full `PYTEST_CURRENT_TEST` entries at most **200 UTF-16 units**.
+The seven affected cases also pass the diagnostic limit emulation with zero
+errors. The desktop/recent-project selection passed **411 tests, 22 skipped**,
+zero failures/errors/deselections. Whitespace checks passed. These overlapping
+checks are not additive or native Windows validation.
+
+After updating the existing verification checkout to the reviewed repair SHA,
+repeat step 1's native Windows preflight and retained-diagnostics setup. Run its
+same seven-file test selection, adding
+`tests/product/test_ci_diagnostics.py::test_corrupt_preferences_collection_has_windows_safe_ids_and_all_cases`
+to exercise the new guard. Preserve the actual rerun counts and any skips/errors.
+No CI was dispatched; native Windows confirmation of this repair remains pending.
