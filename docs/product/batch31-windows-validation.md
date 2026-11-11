@@ -380,4 +380,37 @@ repeat step 1's native Windows preflight and retained-diagnostics setup. Run its
 same seven-file test selection, adding
 `tests/product/test_ci_diagnostics.py::test_corrupt_preferences_collection_has_windows_safe_ids_and_all_cases`
 to exercise the new guard. Preserve the actual rerun counts and any skips/errors.
-No CI was dispatched; native Windows confirmation of this repair remains pending.
+At the time of that repair report, no CI was dispatched and native Windows
+confirmation remained pending. The subsequent user-reported rerun is recorded
+below without changing the earlier failure or local-validation record.
+
+## User-reported native Windows rerun at the repair revision
+
+**Recorded November 12, 2026 (Asia/Karachi), from the user's report.** The tested
+revision was
+[`f8efe1e109d608789a75f154a8516b8e053bc014`](https://github.com/mtalhak003/FIRMAVEX/commit/f8efe1e109d608789a75f154a8516b8e053bc014),
+using **native Windows PowerShell 7.7 and Python 3.12.10**. The user reports
+**171 passed, 1 skipped, zero failures and zero errors in 20.58 seconds** for all
+seven selected Batch 29/31 desktop test files plus
+`test_corrupt_preferences_collection_has_windows_safe_ids_and_all_cases` in
+`tests/product/test_ci_diagnostics.py`.
+
+**Evidence class: user-reported native Windows host/UI test execution.** Codex did
+not execute this run independently or inspect original logs/JUnit. The exact
+execution timestamp, Windows build/architecture and reason for the single skip
+were not supplied. Do not infer which individual Windows-only case was skipped
+or assign per-case results beyond the reported aggregate.
+
+Within that reported selection, the previous pytest/pytest-qt environment-variable
+overflow is reported resolved. Retain the chain: **169 passed/1 skipped/2 errors
+at `be355eec…`**, explicit-ID and collection-guard repair at **`f8efe1e…`**, then
+this successful scoped rerun. The 20.58 seconds is the reported test-selection
+duration, not guest-execution timing. Earlier Linux failures, emulation and
+passing selections retain their original evidence classes.
+
+This result does not establish firmware execution, frozen/installed application
+acceptance, human usability, public-release readiness or production runtime
+qualification. Synthetic records remain synthetic, QEMU 11.1.3 remains
+production-unqualified, and the separate actual-runtime/frozen/installed/manual
+checks above remain outstanding. No new CI dispatch or experiment was performed
+to record this report.

@@ -517,3 +517,33 @@ failure alongside the forthcoming native rerun; do not infer its success from
 collection checks or Linux emulation. The user authorized only this tested repair
 and normal fast-forward delivery to the development branch, with no main change
 or runtime promotion.
+
+## 2026-11-12 — Batch 31 user-reported native Windows regression rerun
+
+**Date basis and evidence:** report recorded November 12, 2026, Asia/Karachi.
+The exact execution timestamp was not supplied. This is **user-reported native
+Windows host/UI test execution**, not a run independently executed by Codex or
+an independently reviewed original log/JUnit artifact.
+
+**Tested revision and environment:**
+[`f8efe1e109d608789a75f154a8516b8e053bc014`](https://github.com/mtalhak003/FIRMAVEX/commit/f8efe1e109d608789a75f154a8516b8e053bc014),
+native Windows PowerShell **7.7**, Python **3.12.10**. The user reports
+**171 passed, 1 skipped, zero failures/errors, 20.58 seconds** for the seven
+selected Batch 29/31 desktop files and targeted diagnostic collection guard.
+The single skip's reason and per-case output were not provided.
+
+**Failure and repair chain:** preserve the earlier user-reported **169 passed,
+1 skipped, 2 errors** at `be355eec…`. The oversized corrupted-preference input
+produced an excessive pytest identity; `f8efe1e…` supplied short explicit IDs and
+a collection guard while preserving the full input and assertions. The latest
+user-reported rerun supports resolution of that overflow in the tested selection.
+It does not relabel the Linux emulation or earlier local results as native tests.
+See the [full scoped record](batch31-windows-validation.md#user-reported-native-windows-rerun-at-the-repair-revision)
+and [troubleshooting chain](../development/troubleshooting-history.md#2026-11-12--batch-31-windows-test-identity-overflow-and-reported-rerun).
+
+**Limits and next steps:** the reported duration measures the test selection,
+not firmware execution. Guest execution, frozen/installed acceptance, consumer
+usability and production runtime qualification remain separate outstanding
+requirements. No runtime pins, admission, research or production functionality
+changed; QEMU 11.1.3 remains production-unqualified. This update records evidence
+without dispatching CI or accessing private Windows evidence.

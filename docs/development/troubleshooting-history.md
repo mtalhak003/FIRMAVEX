@@ -359,6 +359,38 @@ partly synthetic locally; native-only selections require their explicit workflow
   A successful stale label, synthetic transport test or filtered suite cannot
   stand in for a completed export or unavailable native execution evidence.
 
+## 2026-11-12 — Batch 31 Windows test-identity overflow and reported rerun
+
+**Date basis:** November 12, 2026 is this follow-up's report date in Asia/Karachi,
+not an inferred timestamp for the user's Windows execution.
+
+- **Original failure — user report:** native Windows at
+  `be355eec3760c9d0d6a01246b30a0e10d88b6c10` reported **169 passed, 1 skipped,
+  2 errors**, including an environment-variable length error for the corrupted
+  preference test's `b'x' * 65537` case. The original full traceback was not
+  independently available.
+- **Cause and repair — source and prior local checks:** pytest generated a
+  65,652-character node ID and assigned it to `PYTEST_CURRENT_TEST` during setup
+  and teardown. Linux limit emulation reproduced both errors; it was not native
+  Windows validation. The [repair commit](https://github.com/mtalhak003/FIRMAVEX/commit/f8efe1e109d608789a75f154a8516b8e053bc014)
+  adds short explicit IDs and a bounded collection guard, retaining all seven
+  inputs and assertions. Prior Linux results remain **46 focused passed**,
+  **165 passed/6 Windows skips** for the original selection, and **411 passed/
+  22 skipped** for desktop/recent regressions; these overlap and are not additive.
+- **Subsequent result — user report:** at the repair revision, native Windows
+  **PowerShell 7.7 / Python 3.12.10** completed the seven selected Batch 29/31
+  desktop files plus targeted diagnostic guard with **171 passed, 1 skipped,
+  zero failures/errors in 20.58 seconds**. The user reports the overflow repaired.
+  Codex did not execute or independently inspect the original run. The skip
+  reason, exact execution timestamp and per-case output remain unavailable.
+- **Lesson and boundary:** preserve the failed run, repair and scoped rerun
+  together. Bound test identities independently of payload size; keep oversized
+  rejection inputs intact. A reported native host/UI regression pass does not
+  establish firmware execution, frozen/installed acceptance, runtime promotion
+  or public-release readiness. See the
+  [Windows record](../product/batch31-windows-validation.md#user-reported-native-windows-rerun-at-the-repair-revision).
+  QEMU 11.1.3 remains production-unqualified; no CI was dispatched for this update.
+
 ## Applying the lessons to future work
 
 1. Record the symptom, exact source/run/attempt and accessible evidence before
