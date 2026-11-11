@@ -407,3 +407,72 @@ and consumer acceptance separate from presentation improvements.
 tests, commits and normal fast-forward delivery to `product/desktop-batch11`.
 No CI dispatch, release or runtime-profile promotion was authorized. Main, frozen
 research and protected private evidence remain outside this batch's work.
+
+## 2026-11-11 — Batch 31: Windows-focused desktop regressions and transition fixes
+
+**Date basis:** report/validation date, November 11, 2026, Asia/Karachi. The
+implementation commit records the same local date. This resumed batch's report
+does not assign all investigation or work to one day or imply elapsed effort.
+
+**Objective:** exercise practical desktop failure/retry behavior, prepare native
+Windows checks and close confirmed source-GUI defects while preserving admission,
+evidence and backend execution contracts.
+
+**Changes and reasoning:** new tests reproduced silent discard of unsaved edits
+on Open/recent and stale result/export context after switching projects. The
+desktop reuses a default-No discard confirmation for New, Open/recent and both
+example entry points. Verification completes before the old editor/selection is
+replaced. Successful project adoption clears prior result/export/progress
+presentation without deleting files or resetting evaluator accounting.
+
+Two new test files add 28 cases: real bundled-ELF import/static inspection at
+multilingual/metacharacter paths; retry after invalid destinations, corrupt
+preferences, synthetic runtime rejection, export/file-manager failure and
+interrupted-state inspection; and six actual-Windows sharing/attributes/locking/
+case-normalization cases. Native tests use real Win32 APIs and a second Python
+process, and explicitly skip on other operating systems. Qt URL capture does not
+launch or qualify Explorer. The [Windows procedure](batch31-windows-validation.md)
+separates source host tests, admitted real ARM execution, frozen/installed paths
+and manual consumer acceptance, with private outputs outside the checkout.
+
+**Commit references:** baseline
+[`bd875f22cc2604a7e397166177cd82c6e81bc07f`](https://github.com/mtalhak003/FIRMAVEX/commit/bd875f22cc2604a7e397166177cd82c6e81bc07f);
+implementation and regression tests
+[`31037ac904ed0affb1e3359781d40ebd546fc56d`](https://github.com/mtalhak003/FIRMAVEX/commit/31037ac904ed0affb1e3359781d40ebd546fc56d).
+This documentation follows that implementation as a separate commit.
+
+**Validation:** independently run on Linux x86_64, Python 3.12.14, PySide6 6.11.1,
+pytest 9.1.1, with `QT_QPA_PLATFORM=offscreen`. Exact commands/exclusions are in
+the [local validation record](batch31-windows-validation.md#validation-performed-in-this-development-environment).
+Overlapping selections are not additive.
+
+| Claim | Result | Evidence class | Scope |
+|---|---|---|---|
+| Existing Batch 29 baseline | PASS: 143 passed | Independently run local tests | Five existing test files before fixes |
+| New regressions after fixes | PASS within scope: 22 passed, 6 skipped | Independently run local tests | Real Qt/temporary filesystem and explicit synthetic feedback; Windows-only cases skipped |
+| Desktop/recent regressions | PASS within scope: 411 passed, 22 skipped | Independently run local tests | Existing runtime/native skips plus six new Windows skips |
+| Unfiltered application tests | FAIL (environment): 2,102 passed, 112 skipped, 1 failed, 6 errors | Independently run local tests | ARM compiler unavailable; existing assertions retained |
+| Available-environment regressions | PASS within scope: 2,102 passed, 112 skipped, 6 deselected | Independently run local tests | Product/desktop/backend suites; one integration test excluded and six runtime cases deselected; no full-suite pass claimed |
+| Syntax, lock versions, workflow lint and whitespace | PASS within scope | Independently run local checks | Three Python files and existing workflow/build inputs; ShellCheck unavailable |
+| Native Windows source/frozen/installed behavior at this revision | NOT PROVEN | Not run | Linux host; no Windows runner, runtime tools or PowerShell available; no CI dispatch |
+
+**Failures and resolutions:** three initial targeted tests failed before repair,
+demonstrating missing discard confirmation and stale selection. Those journeys
+now pass alongside their failure/retry cases. The unfiltered missing-ARM-tool
+failure and six setup errors remain visible; explicit local exclusions do not
+weaken the tests or qualification policy.
+
+**Limitations and next steps:** execute the new host tests and unchanged
+required-runtime tests on native Windows using the exact reviewed revision and
+admitted runtime. Keep QEMU 11.1.3 production-rejected. Obtain matching native
+frozen/installed builds, then test visible GUI, actual Explorer opening,
+standard-user ACLs, offline behavior, accessibility, low-disk/recovery and
+data-preserving lifecycle transitions. The targeted discard guard does not
+cover Quit or every configuration handoff; do not describe it as universal
+unsaved-edit protection. Host CI selection already includes `tests/desktop`;
+neither its definition nor old successful runs prove these new native cases ran.
+
+**Approval/traceability:** the user authorized Batch 31 implementation, testing
+and normal fast-forward delivery to the development branch. No workflow dispatch,
+installer release, runtime promotion, main change or private-evidence access was
+authorized or performed.

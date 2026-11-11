@@ -18,6 +18,7 @@ passing test is evidence only for its stated revision and scope.
 | Assess release readiness | [Batch 28 readiness snapshot](product/batch28-release-readiness.md), [release policy](product/release-policy.md), [latest history follow-up](product/development-progress.md#november-9-2026--windows-candidate-evidence-and-release-preparation) |
 | Add the next milestone | [Entry template](development/milestone-template.md), [maintenance and verification procedure](development/history-maintenance.md) |
 | Use the latest desktop workflow improvements | [Batch 29 operator and validation guide](product/batch29-desktop-workflows.md), [dated implementation entry](product/development-progress.md#2026-11-10--batch-29-desktop-project-readiness-and-export-workflows) |
+| Validate the desktop on native Windows | [Batch 31 procedure and actual local results](product/batch31-windows-validation.md): source, frozen and installed scopes; native Windows execution remains to be run. |
 
 The latest original Batch 27 ZIP pass is **user-reported**, not independently
 verified in this environment: 19 receipts, 97 JUnit passed, 10 skipped and zero
