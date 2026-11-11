@@ -605,28 +605,20 @@ class MainWindow(QMainWindow):
               self.startup_spin.value(), self.signature_check.isChecked(), self.archive_spin.value(),
               self.mutations_spin.value())
 
-    def new_project(self):
-        if self.busy or self._closing:
-            return False
+    def _confirm_discard_editor(self, action):
         if self._editor_values() != self._editor_snapshot:
             choice = QMessageBox.question(
                 self, 'Discard unsaved editor changes?',
-                'Start a new project form and discard the current unsaved editor changes? '
+                action + ' and discard the current unsaved editor changes? '
                 'Saved projects and test results are retained.',
                 QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
             )
             if choice != QMessageBox.Yes:
                 return False
-        self.project = None
-        defaults = ProductConfig(firmware=self.data_root / 'unselected.elf',
-            input_symbols=('product_inputs[0]', 'product_inputs[1]'),
-            ready_breakpoint='product_input_ready', completion_breakpoint='product_complete',
-            failure_symbol='product_failure', input_max=3, execution_budget=16)
-        self._load_fields(defaults)
-        self.firmware_edit.clear()
-        self.project_dir_edit.setText(str(self.data_root / 'projects' / _fresh_name('project')))
-        self._config_template = None
-        self._editor_snapshot = self._editor_values()
+        return True
+
+    def _clear_result_selection(self, export_message):
+        """Forget only the displayed selection after a successful context change."""
         self.active_run = None
         self.result_record = None
         self.inspection = None
@@ -637,7 +629,30 @@ class MainWindow(QMainWindow):
         self.result_text.clear()
         self.report_view.clear()
         self._last_export = None
-        self.export_status.setText('No report export completed for this new project form.')
+        self.export_status.setText(export_message)
+        self.progress_label.setText('No run selected.')
+        self.accounting_label.setText('No run selected. Open saved evidence to inspect its charged accounting.')
+        self.progress_bar.setRange(0, 1)
+        self.progress_bar.setValue(0)
+        self.attempts_table.setRowCount(0)
+        self.log.clear()
+
+    def new_project(self):
+        if self.busy or self._closing:
+            return False
+        if not self._confirm_discard_editor('Start a new project form'):
+            return False
+        self.project = None
+        defaults = ProductConfig(firmware=self.data_root / 'unselected.elf',
+            input_symbols=('product_inputs[0]', 'product_inputs[1]'),
+            ready_breakpoint='product_input_ready', completion_breakpoint='product_complete',
+            failure_symbol='product_failure', input_max=3, execution_budget=16)
+        self._load_fields(defaults)
+        self.firmware_edit.clear()
+        self.project_dir_edit.setText(str(self.data_root / 'projects' / _fresh_name('project')))
+        self._config_template = None
+        self._editor_snapshot = self._editor_values()
+        self._clear_result_selection('No report export completed for this new project form.')
         self.project_label.setText('New project — firmware not imported')
         self.validation_text.clear()
         self.status_label.setText('Choose a compatible ELF, review its symbols, then import into a new project folder.')
@@ -708,6 +723,7 @@ class MainWindow(QMainWindow):
         self.project_dir_edit.setText(str(project.root))
         self.project_label.setText(project.root.name)
         self._editor_snapshot = self._editor_values()
+        self._clear_result_selection('No report export completed for this project selection. Open a saved run to review or export it.')
         self.status_label.setText("Project open. Review the configuration, then validate firmware and tools.")
         self.navigation.setCurrentRow(1)
         self.validation_text.clear()
@@ -802,9 +818,12 @@ class MainWindow(QMainWindow):
             self._error(exc.to_dict() if isinstance(exc, ProductError) else {'category': 'project_error', 'message': str(exc)})
 
     def open_project(self, directory):
-        if not self.busy:
-            self.status_label.setText("Opening and verifying project…")
-            self._local_operation(lambda: self._verified_project(DesktopProject.open(Path(directory))), self._adopt_project)
+        if self.busy or self._closing:
+            return False
+        if not self._confirm_discard_editor('Open another project'):
+            return False
+        self.status_label.setText("Opening and verifying project…")
+        return self._local_operation(lambda: self._verified_project(DesktopProject.open(Path(directory))), self._adopt_project)
 
     @staticmethod
     def _verified_project(project):
@@ -903,15 +922,19 @@ class MainWindow(QMainWindow):
         self._setup_wizard.open()
 
     def prepare_builtin_example(self):
+        if self.busy or self._closing or not self._confirm_discard_editor('Open the built-in example'):
+            return False
         output = self.data_root / 'examples' / _fresh_name('builtin-example')
-        self._start('prepare_example', {'output_dir': str(output)}, output=output)
+        return self._start('prepare_example', {'output_dir': str(output)}, output=output)
 
     def check_tools(self):
         self._start("doctor", {})
 
     def build_example(self):
+        if self.busy or self._closing or not self._confirm_discard_editor('Build and open the example'):
+            return False
         output = self.data_root / "examples" / _fresh_name("example")
-        self._start("build_example", {"output_dir": str(output)}, output=output)
+        return self._start("build_example", {"output_dir": str(output)}, output=output)
 
     def validate_configuration(self):
         self.save_configuration(lambda config, command_path: self._start("validate", {"config": str(command_path)}))
