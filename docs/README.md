@@ -19,6 +19,7 @@ passing test is evidence only for its stated revision and scope.
 | Add the next milestone | [Entry template](development/milestone-template.md), [maintenance and verification procedure](development/history-maintenance.md) |
 | Use the latest desktop workflow improvements | [Batch 29 operator and validation guide](product/batch29-desktop-workflows.md), [dated implementation entry](product/development-progress.md#2026-11-10--batch-29-desktop-project-readiness-and-export-workflows) |
 | Validate the desktop on native Windows | [Batch 31 procedure and evidence](product/batch31-windows-validation.md): user-reported host/UI regressions and scoped manual static-project checks; launcher/runtime blockers and firmware/frozen/installed validation remain outstanding. |
+| Plan Windows runtime and signed distribution work | [Batch 32 qualification plan](product/batch32-windows-runtime-packaging-plan.md): admitted-runtime recovery versus separate candidate qualification, Authenticode/Store options, eligibility, evidence gates and future approvals; no runtime promotion or signing authorization. |
 
 The latest original Batch 27 ZIP pass is **user-reported**, not independently
 verified in this environment: 19 receipts, 97 JUnit passed, 10 skipped and zero

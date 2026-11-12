@@ -1,5 +1,10 @@
 # Batch 31 — native Windows desktop validation
 
+For the subsequent runtime-recovery, candidate-qualification and Windows signing
+decisions, see the [Batch 32 plan](batch32-windows-runtime-packaging-plan.md).
+That research-only plan preserves every scoped observation below; it adds no
+native execution, accepted installer or production-runtime approval.
+
 Batch 31 starts at `bd875f22cc2604a7e397166177cd82c6e81bc07f`.
 Implementation and regressions:
 [`31037ac904ed0affb1e3359781d40ebd546fc56d`](https://github.com/mtalhak003/FIRMAVEX/commit/31037ac904ed0affb1e3359781d40ebd546fc56d).

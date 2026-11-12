@@ -613,3 +613,55 @@ see the [manual GUI record](batch31-windows-validation.md#user-provided-manual-w
 and [troubleshooting follow-up](../development/troubleshooting-history.md#2026-11-12--manual-static-project-workflow-with-runtime-failure).
 This update records observations only; it changes no production behavior or
 research and dispatches no CI.
+
+## 2026-11-13 — Batch 32 Windows runtime and packaging qualification plan
+
+**Date basis:** documentation review/report date, Asia/Karachi (November 12 UTC),
+not a Windows execution date or work-duration claim.
+
+**Objective and changes:** prepare an implementation-ready response to the
+admitted-runtime recovery, candidate qualification and host application-control
+blockers. The [Batch 32 plan](batch32-windows-runtime-packaging-plan.md) compares
+the exact 11.1.2/18.1 recovery route with separately authorized candidate work,
+defines immutable package/installed/DLL/license evidence, and evaluates existing
+Inno/Authenticode, Artifact Signing and Store MSIX distribution. Index and Windows
+validation cross-references point to the plan; no product behavior changed.
+
+**Decisions and reasoning:** recommend a bounded approved original-generation
+recovery check, then a fully captured candidate path if recovery fails. Prefer
+qualifying trusted RSA signing with the existing installer before assuming MSIX
+will preserve workers, runtime provisioning and user data. Signing changes full
+executable hashes; transformed runtime bytes require a separate reviewed decision,
+not an admission bypass. Provider eligibility, live cost and final host acceptance
+remain unresolved. These are recommendations, not recorded purchase/promotion
+approvals or retrospective design decisions.
+
+**Commit references:** inspected baseline
+[`2feb722349cbc3534c1ac614031f0404d477ac30`](https://github.com/mtalhak003/FIRMAVEX/commit/2feb722349cbc3534c1ac614031f0404d477ac30).
+The documentation delivery commit is discoverable in this entry's Git history;
+no self-referential future commit SHA is invented. Historical candidate run
+[42618949135](https://github.com/mtalhak003/FIRMAVEX/actions/runs/42618949135) remains
+evidence only for its old revision and recorded scope.
+
+**Validation/evidence:** current source/configuration inspected; 16 official
+Microsoft, Inno and MSYS2 documentation source URLs returned HTTP 200. Direct
+documentation/pricing sites were proxy-blocked; the requested escalated retry did
+not execute. The plan marks source conflicts, indicative costs and unknown legal
+eligibility explicitly. Local document links/anchors, commit references, content
+consistency and whitespace were checked for this documentation delivery. No
+pytest/native tests, firmware, installers, CI dispatch, artifact/package acquisition
+or signing were run; no test-pass count is claimed for this batch.
+
+**Failures and limitations:** preserve the prior host-policy/GDB capability
+failures, candidate rejection and user-reported original-ZIP verification without
+relabeling them independently verified. Neither complete authentic old/candidate
+runtime closure nor positive candidate source/frozen/installed execution is
+established. A signed outer installer is insufficient evidence for every loose
+runtime DLL; Store approval and SAC acceptance remain unproven.
+
+**Next steps and approval:** after explicit scope approval, implement the small
+read-only provenance/signing-coverage preflight defined in the plan. Acquisition,
+candidate lab policy, paid signing, native execution, profile promotion and release
+require their separately stated approvals. The user authorized documentation-only
+delivery to the development branch; main, production pins/admission, research,
+workflows and protected evidence remain untouched.
