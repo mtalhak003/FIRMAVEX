@@ -29,6 +29,14 @@ The following are commit-pinned documentation sources reviewed in development-br
 
 The source register reports document validation of 10 Markdown files, 423 links/routes, 107 referenced commits, 162 catalogue rows and 35 timeline ranges. These are **documentation checks**, not new firmware execution or production runtime qualification. Step 19's missing original evidence, publisher provenance, native Windows tests and consumer acceptance remain open.
 
+## Batch 31–32 Windows follow-up (November 12–13, 2026)
+
+The [Batch 31 Windows validation and manual GUI record](https://github.com/mtalhak003/FIRMAVEX/blob/19f9eb0254fd0162db601e5ed82055baa92e7a5d/docs/product/batch31-windows-validation.md) documents **user-reported** native Windows results: 171 passed, 1 skipped for the selected repaired desktop regressions, plus source-launched GUI, built-in example static ELF inspection, save/reopen, and correct missing-runtime feedback. These checks do **not** qualify firmware execution, the generated launcher or an installed application.
+
+The [Batch 32 Windows runtime and packaging qualification plan](https://github.com/mtalhak003/FIRMAVEX/blob/19f9eb0254fd0162db601e5ed82055baa92e7a5d/docs/product/batch32-windows-runtime-packaging-plan.md) compares recovery of the previously admitted QEMU/GDB profile against separately qualifying a complete candidate, and evaluates publisher signing, Smart App Control and Windows distribution evidence. **This is research/proposal only**, not runtime promotion, signing authorization or release approval.
+
+Both links are pinned to the reviewed development-branch documentation commit [`19f9eb0`](https://github.com/mtalhak003/FIRMAVEX/commit/19f9eb0254fd0162db601e5ed82055baa92e7a5d); experimental code is not merged into `main`.
+
 ## November 9, 2026 milestone
 
 Windows candidate CI [run 42618949135](https://github.com/mtalhak003/FIRMAVEX/actions/runs/42618949135) passed native ARM, source/GUI/frozen rejection and installer lifecycle checks. Batch 28 added provenance/qualification review tooling. The original evidence ZIP's full required-scope verifier **passed when run locally by the user**, reporting 19 receipts, 97 JUnit passed, 10 skipped and zero JUnit failures/errors. This is a user-reported verification result, not independent publisher authentication or positive production execution.
