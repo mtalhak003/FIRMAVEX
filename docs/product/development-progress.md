@@ -547,3 +547,35 @@ usability and production runtime qualification remain separate outstanding
 requirements. No runtime pins, admission, research or production functionality
 changed; QEMU 11.1.3 remains production-unqualified. This update records evidence
 without dispatching CI or accessing private Windows evidence.
+
+## 2026-11-12 — User-reported Windows GUI launch and runtime blockers
+
+**Evidence/date basis:** native Windows observations reported by the user on
+November 12, 2026 (Asia/Karachi); not independently executed by Codex. Original
+tool output/events, exact observation times, source revision and executable/DLL
+hashes were not supplied for these checks. They are separate from the earlier
+171-pass regression report at `f8efe1e…`.
+
+**Reported observations:** the source GUI launched with
+`.venv\Scripts\python.exe -m firmavex.desktop.app`, while the generated
+`firmavex-desktop.exe` launcher was blocked by Windows Application Control and
+the first-launch wizard's runtime check failed. Installed QEMU ARM was the
+11.1.0 development build `v11.1.0-12130-ge470268ff4`; ARM GDB was
+`16.3.90.20250906-git`. GDB version/configuration commands succeeded, but its
+configuration reported `--without-python` and the embedded Python capability
+test exited **1**. MSYS2 installed successfully, but launching mintty was blocked
+on `msys-2.0.dll`. The user reports Code Integrity Event **3077**, policy
+`0283ac0f-fff1-49ae-ada1-8a933130cad6`, and an enforced
+`VerifiedAndReputableDesktop` Smart App Control policy in `CiTool --list-policies`.
+
+**Interpretation and next steps:** preserve three separate boundaries: missing
+GDB Python capability, versions outside the exact QEMU 11.1.2/GDB 18.1 production
+profile, and host application-control blocks. The exact wizard failure stage
+and original policy-event/file correlation remain unreviewed. Retain private
+diagnostics and seek trusted compatible packages accepted by both host policy
+and existing admission; keep firmware execution blocked if unavailable. Do not
+disable controls, substitute DLLs or approve a different runtime. The source
+module launch does not qualify the generated launcher, frozen/installed product
+or guest execution. See the [full observations and safe next steps](batch31-windows-validation.md#user-reported-gui-launch-and-runtime-compatibility-findings)
+and [troubleshooting entry](../development/troubleshooting-history.md#2026-11-12--windows-source-gui-launch-with-runtime-and-policy-blockers).
+No production, research, admission or workflow change accompanies this record.

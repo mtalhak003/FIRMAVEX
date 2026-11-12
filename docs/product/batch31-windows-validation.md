@@ -414,3 +414,76 @@ qualification. Synthetic records remain synthetic, QEMU 11.1.3 remains
 production-unqualified, and the separate actual-runtime/frozen/installed/manual
 checks above remain outstanding. No new CI dispatch or experiment was performed
 to record this report.
+
+## User-reported GUI launch and runtime compatibility findings
+
+**Report date: November 12, 2026, Asia/Karachi. Evidence class: user-reported
+native Windows host observations.** Codex did not execute these checks or inspect
+original event logs/tool output. The exact source revision, executable/DLL
+SHA-256 digests, Windows build/architecture and observation timestamps were not
+provided for this report; do not assign the earlier regression run's revision
+or results to these separate observations.
+
+| Host observation | User-reported result |
+|---|---|
+| Source GUI entry point | `.venv\Scripts\python.exe -m firmavex.desktop.app` launched the desktop successfully |
+| Generated Python entry-point launcher | `firmavex-desktop.exe` was blocked by Windows Application Control |
+| First-launch wizard | Runtime check failed |
+| Installed QEMU ARM | 11.1.0 development build, `v11.1.0-12130-ge470268ff4` |
+| Installed ARM GDB | `16.3.90.20250906-git`; `--version` and `--configuration` succeeded |
+| GDB Python capability | Configuration explicitly reports `--without-python`; embedded Python capability test failed with exit code **1** |
+| MSYS2 installation and shell | Installation succeeded; Windows blocked `msys-2.0.dll` when launching mintty |
+| Code Integrity | Event **3077** identifies policy `0283ac0f-fff1-49ae-ada1-8a933130cad6` |
+| Policy inventory | `CiTool --list-policies` reports enforced `VerifiedAndReputableDesktop` (Smart App Control) |
+
+### Separate blockers and interpretation
+
+1. **GDB capability:** the existing [discovery probe](../../firmavex/product/tools.py)
+   requires embedded GDB Python and `hashlib`. The reported `--without-python`
+   build cannot meet that requirement. Version/configuration command success
+   alone is insufficient. This is a build-capability limitation; it is not
+   evidence that Windows policy removed Python from GDB.
+2. **Production admission:** the unchanged
+   [Windows profile](../../firmavex/product/platform_support.py) requires exact
+   QEMU **11.1.2** / GDB **18.1** version strings and SHA-256 identities. Both
+   reported versions differ. A Python-enabled replacement alone would not satisfy
+   that gate. No observed executable digests or compatible dependency closure
+   were supplied, and no new runtime is approved.
+3. **Host application control:** the reported launcher/DLL blocks and enforced
+   policy are an additional compatibility boundary. The policy GUID is the
+   reported host's policy identity, not a universal Smart App Control identifier
+   or publisher-authenticity proof. Original event contents and exact file/time
+   correlations remain independently unreviewed. Without wizard diagnostics,
+   its precise failing probe/tool selection is also unconfirmed; do not attribute
+   every failure to one policy event.
+
+The successful module launch establishes only that reported source-GUI entry
+point. The generated Python launcher is distinct from the frozen/installed
+`FIRMAVEX-Desktop.exe`; neither those binaries nor firmware execution were
+validated by this observation. MSYS2 installation completion does not establish
+that its shell, DLLs or a complete FIRMAVEX runtime generation can execute.
+The earlier 171-pass host/UI regression report retains its own scope and revision.
+
+### Safe next steps
+
+- Keep Smart App Control, Defender and Application Control enforcement enabled.
+  Do not use exclusions, policy edits, renaming, unblocking, DLL substitution or
+  alternate-shell workarounds to evade a block.
+- Retain minimal private diagnostics outside the checkout: source SHA, selected
+  tool/launcher/DLL identities, trusted package origin/signature information,
+  wizard error, relevant Event 3077 file/time/policy fields and policy-listing
+  output. Review/redact paths and other private information before publication.
+  Correlate the actual blocked file and timestamp before assigning a cause.
+- Continue host/UI-only inspection only through trusted entry points permitted
+  by the existing policy. The reported module launch is not remediation or
+  qualification of the blocked generated launcher.
+- Seek a publisher-trusted, internally compatible runtime package set that the
+  host policy accepts, that has the required ARM/GDB Python capabilities, and
+  that satisfies the existing exact admission profile. Do not mix an older
+  executable with incompatible rolling dependencies. If such a set is unavailable,
+  keep native firmware execution **BLOCKED**; any different runtime requires
+  separately authorized candidate qualification, without changing this gate.
+
+No firmware execution, frozen/installed acceptance, runtime promotion or release
+readiness follows. QEMU 11.1.3 remains production-unqualified. This documentation
+update changes no security controls or production behavior and dispatches no CI.

@@ -391,6 +391,38 @@ not an inferred timestamp for the user's Windows execution.
   [Windows record](../product/batch31-windows-validation.md#user-reported-native-windows-rerun-at-the-repair-revision).
   QEMU 11.1.3 remains production-unqualified; no CI was dispatched for this update.
 
+## 2026-11-12 — Windows source GUI launch with runtime and policy blockers
+
+- **Evidence class/date:** user-reported native Windows observations on November
+  12, 2026, Asia/Karachi. Codex did not execute these checks or inspect original
+  logs. Exact revision, executable/DLL hashes and event timestamps were not
+  supplied; this is separate from the `f8efe1e…` host/UI regression result.
+- **Reported behavior:** `.venv\Scripts\python.exe -m firmavex.desktop.app`
+  launched the GUI; Windows Application Control blocked the generated
+  `firmavex-desktop.exe`. The wizard runtime check failed. QEMU ARM was
+  11.1.0 development build `v11.1.0-12130-ge470268ff4`; ARM GDB was
+  `16.3.90.20250906-git`. GDB `--version`/`--configuration` succeeded but reported
+  `--without-python`; the embedded Python test exited **1**.
+- **Additional reported host block:** MSYS2 installation succeeded, then mintty
+  launch was blocked on `msys-2.0.dll`. Code Integrity Event **3077** names policy
+  `0283ac0f-fff1-49ae-ada1-8a933130cad6`; `CiTool --list-policies` reports enforced
+  `VerifiedAndReputableDesktop` (Smart App Control). The original event/file/time
+  correlation remains independently unreviewed; the GUID is not a universal SAC
+  identifier.
+- **Diagnosis boundary:** source inspection confirms that discovery requires GDB
+  Python/`hashlib` and that production requires exact QEMU 11.1.2/GDB 18.1
+  identities. The reported GDB build lacks a required capability and both versions
+  differ from admission. Those incompatibilities are distinct from host policy enforcement;
+  the wizard's exact failing stage cannot be assigned without its diagnostics.
+- **Resolution status and lesson:** unresolved. Preserve enforcement and private
+  diagnostics, correlate the blocked files, and obtain a trusted compatible
+  package set satisfying both host policy and existing admission. Do not disable
+  controls, evade blocks or mix incompatible DLL/package generations. A working
+  source entry point and completed installer do not establish runtime readiness,
+  frozen/installed acceptance or firmware execution. See the
+  [detailed record](../product/batch31-windows-validation.md#user-reported-gui-launch-and-runtime-compatibility-findings).
+  Production pins and policies remain unchanged; no CI was dispatched.
+
 ## Applying the lessons to future work
 
 1. Record the symptom, exact source/run/attempt and accessible evidence before
