@@ -579,3 +579,37 @@ module launch does not qualify the generated launcher, frozen/installed product
 or guest execution. See the [full observations and safe next steps](batch31-windows-validation.md#user-reported-gui-launch-and-runtime-compatibility-findings)
 and [troubleshooting entry](../development/troubleshooting-history.md#2026-11-12--windows-source-gui-launch-with-runtime-and-policy-blockers).
 No production, research, admission or workflow change accompanies this record.
+
+## 2026-11-12 — User-provided manual Windows GUI checks
+
+**Evidence/date basis:** manual native Windows GUI observations supplied by the
+user on November 12, 2026, Asia/Karachi; not independently reproduced by Codex.
+Exact source revision, observation timestamps and original project/output files
+were not supplied for independent review.
+
+**Observed workflow:** FIRMAVEX launched through Python while the generated
+`.exe` launcher remained blocked by Windows Application Control. The built-in
+compiler-free Cortex-M3 project was created/opened and statically inspected
+without QEMU/GDB execution. The UI identified ELF32, ARMv7-M, little-endian,
+`mps2-an385`, and required input/failure/ready/completion symbols. The reported
+firmware SHA-256 is
+`bdb370112a4fe834dae7127b75c3d38f7ffaf125af6dc4e02a6f24c4cae940ff`;
+it was not independently rehashed here. Consistency was `stable_observed` with
+`atomic=false`, not an atomic snapshot. Configuration save and subsequent reopen
+preserved the visible bindings; no byte-for-byte preservation claim follows.
+
+**Observed failure/empty states:** Validate firmware & tools returned
+`dependency_probe_failed` with GDB stderr indicating unsupported embedded Python.
+Testing & progress showed no selected run, 0% progress, no observations and
+disabled cancellation. Results & reproduction showed no result, triggering input
+or execution evidence, with reproduction/recovery disabled. These are UI states,
+not independent measurements of guest activity or execution accounting.
+
+**Limits and next steps:** keep scoped manual host/UI acceptance separate from
+static validation, runtime qualification, firmware execution and frozen/installed
+acceptance. The Smart App Control/MSYS2 blocks and missing compatible admitted
+runtime remain separate unresolved blockers. Preserve security controls and pins;
+see the [manual GUI record](batch31-windows-validation.md#user-provided-manual-windows-gui-checks)
+and [troubleshooting follow-up](../development/troubleshooting-history.md#2026-11-12--manual-static-project-workflow-with-runtime-failure).
+This update records observations only; it changes no production behavior or
+research and dispatches no CI.

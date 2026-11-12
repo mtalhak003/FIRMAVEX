@@ -487,3 +487,44 @@ The earlier 171-pass host/UI regression report retains its own scope and revisio
 No firmware execution, frozen/installed acceptance, runtime promotion or release
 readiness follows. QEMU 11.1.3 remains production-unqualified. This documentation
 update changes no security controls or production behavior and dispatches no CI.
+
+## User-provided manual Windows GUI checks
+
+**Report date: November 12, 2026, Asia/Karachi. Evidence class: user-provided
+manual native Windows GUI observations.** Codex did not independently reproduce
+these checks or inspect original project files, screenshots or tool output. The
+exact source revision and observation timestamps were not supplied; do not assign
+the earlier automated regression run's SHA or environment to this manual session.
+
+| Manual check | User-observed result and scope |
+|---|---|
+| Launch | FIRMAVEX launched through Python while Windows Application Control continued to block the generated `.exe` launcher |
+| Compiler-free project | The built-in Cortex-M3 example project was created and opened |
+| Static ELF inspection | Completed without QEMU/GDB execution; identified ELF32, ARMv7-M, little-endian, target `mps2-an385`, and required input, failure, ready and completion symbols |
+| Static consistency | `stable_observed`, with `atomic=false`; this is not an atomic snapshot |
+| Save/reopen | Configuration was saved; the project was subsequently reopened with its visible bindings preserved |
+| Validate firmware & tools | Returned `dependency_probe_failed`; GDB stderr indicated embedded Python scripting is unsupported |
+| Testing & progress | No selected run, **0%** progress, no observations and disabled cancellation |
+| Results & reproduction | No result, triggering input or execution evidence; reproduction and recovery controls disabled |
+
+**User-supplied firmware SHA-256:**
+`bdb370112a4fe834dae7127b75c3d38f7ffaf125af6dc4e02a6f24c4cae940ff`.
+The digest is recorded as supplied, not independently rehashed or authenticated.
+Reopened visible bindings are a manual UI observation, not a byte-for-byte project
+or archive preservation check. Empty progress/results describe the observed UI
+state; they do not independently measure global process activity, physical guest
+executions or authoritative charged-attempt accounting.
+
+The reported static inspection and project workflow establish scoped host/UI
+observations only. They do not establish runtime qualification, firmware behavior,
+hardware validation or frozen/installed acceptance. The newly reported error
+narrows this **Validate firmware & tools** check; it does not retroactively prove
+the exact failure stage of the earlier first-launch wizard check.
+
+Two blocker groups remain separate: **Smart App Control/Application Control and
+MSYS2 usability** (generated launcher and `msys-2.0.dll` blocks), and **missing
+compatible admitted runtime** (GDB Python capability and exact version/hash
+requirements). Neither is resolved by static inspection, saving or reopening a
+project. Preserve the controls and admission rules, retain private diagnostics,
+and follow the [safe next steps](#safe-next-steps) above. No firmware execution,
+new tests or CI dispatch was performed by Codex to record these observations.

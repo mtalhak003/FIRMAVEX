@@ -423,6 +423,37 @@ not an inferred timestamp for the user's Windows execution.
   [detailed record](../product/batch31-windows-validation.md#user-reported-gui-launch-and-runtime-compatibility-findings).
   Production pins and policies remain unchanged; no CI was dispatched.
 
+## 2026-11-12 — Manual static project workflow with runtime failure
+
+- **Evidence class/date:** user-provided manual native Windows GUI observations,
+  reported November 12, 2026, Asia/Karachi. Codex did not reproduce the session or
+  independently inspect project/output files; its exact source SHA and timestamps
+  were not provided.
+- **Reported host/static behavior:** Python launched the GUI while Application
+  Control blocked the generated `.exe`. The built-in compiler-free Cortex-M3
+  project was created/opened. Static inspection, without QEMU/GDB execution,
+  identified ELF32, ARMv7-M, little-endian, `mps2-an385` and required input,
+  failure, ready and completion symbols. Reported firmware SHA-256:
+  `bdb370112a4fe834dae7127b75c3d38f7ffaf125af6dc4e02a6f24c4cae940ff`.
+  This is a supplied identity, not an independently authenticated hash.
+  Consistency was `stable_observed` and `atomic=false`; configuration save and
+  reopen preserved visible bindings, without proving an atomic snapshot or
+  byte-for-byte preservation.
+- **Reported runtime/empty states:** Validate firmware & tools returned
+  `dependency_probe_failed`; GDB stderr indicated embedded Python unsupported.
+  Progress had no selected run, 0%, no observations and cancellation disabled.
+  Results had no result/trigger/execution evidence and disabled reproduction/
+  recovery. Those visible states do not independently establish global guest
+  execution counts or authoritative accounting.
+- **Unresolved blockers and lesson:** static validation and project usability
+  remain distinct from runtime qualification, firmware behavior and frozen/
+  installed acceptance. Preserve the separate Smart App Control/MSYS2 blocking
+  issue and missing compatible admitted runtime; do not lower controls or change
+  pins to make a check pass. The reported Validate error does not identify the
+  earlier wizard's exact failure stage. See the
+  [full manual record](../product/batch31-windows-validation.md#user-provided-manual-windows-gui-checks).
+  No new execution test or CI dispatch accompanied this documentation update.
+
 ## Applying the lessons to future work
 
 1. Record the symptom, exact source/run/attempt and accessible evidence before
