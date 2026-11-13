@@ -665,3 +665,76 @@ candidate lab policy, paid signing, native execution, profile promotion and rele
 require their separately stated approvals. The user authorized documentation-only
 delivery to the development branch; main, production pins/admission, research,
 workflows and protected evidence remain untouched.
+
+## 2026-11-13 — Batch 33 read-only runtime provenance preflight
+
+**Date basis:** implementation/review report date, Asia/Karachi; not a native
+Windows execution date or a claim of development hours.
+
+**Objective and changes:** implement the first independently testable diagnostic
+from the [Batch 32 plan](batch32-windows-runtime-packaging-plan.md). The new
+administrative `tools.windows_runtime_preflight` module reads only explicit local
+files and emits sanitized JSON plus a summary. It compares QEMU/GDB bytes to
+unchanged production pins, checks declared companions and limited PE/certificate
+structure, and checks supplied observation/receipt integrity and consistency.
+The [operator contract](batch33-runtime-preflight.md) defines all five evidence
+states, limits and fail-closed exit statuses. Tests use invented PE/receipt bytes;
+no real firmware, Windows runtime or signing evidence is fabricated.
+
+**Decisions and reasoning:** reuse the existing bounded, consistency-checking
+reader, file-state helpers and static import parser. Do not run discovery,
+signature tools, package verifiers or native executables. A matching hash,
+caller-supplied capability flag or certificate-table container cannot establish
+publisher trust, working embedded Python, full DLL/license closure or qualification.
+Keep those checks explicitly unassessed. The administrative tool stays outside
+the shipped desktop entry points and preserves production rejection of 11.1.3.
+
+**Commit references:** development baseline
+[`19f9eb0254fd0162db601e5ed82055baa92e7a5d`](https://github.com/mtalhak003/FIRMAVEX/commit/19f9eb0254fd0162db601e5ed82055baa92e7a5d).
+This entry's Git history identifies its implementation delivery; no future
+self-referential SHA is invented.
+
+**Validation — actual Linux unit/regression runs:** focused new module tests:
+**116 passed**, zero failures/errors/skips/deselections, **0.36 seconds**.
+Related file-state, admission, static-import and selected reader/security cases:
+**205 passed, 1 skipped**, zero failures/errors/deselections, **0.56 seconds**.
+The overlapping selections are not additive and are not a full repository suite.
+The skip is `test_native_windows_change_time_detects_same_size_write_with_restored_mtime`:
+actual NTFS semantics require native Windows. Reparse-point attributes and PE32
+installer layouts in the new tests are simulations, not native qualification.
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 /workspace/firmavex-batch7-venv/bin/python -B -m pytest -q -ra -p no:cacheprovider tests/product/test_windows_runtime_preflight.py
+
+PYTHONDONTWRITEBYTECODE=1 /workspace/firmavex-batch7-venv/bin/python -B -m pytest -q -ra -p no:cacheprovider \
+  tests/product/test_windows_runtime_preflight.py tests/product/test_platform_support.py \
+  tests/product/test_file_state.py tests/product/test_windows_candidate_closure.py \
+  tests/backends/test_records_security.py::test_unsafe_path_spellings_rejected \
+  tests/backends/test_records_security.py::test_source_and_parent_symlinks_are_rejected \
+  tests/backends/test_records_security.py::test_special_file_rejected_without_blocking \
+  tests/backends/test_records_security.py::test_mid_read_changes_fail_closed \
+  tests/backends/test_records_security.py::test_same_size_rewrite_with_deferred_metadata_fails_closed
+```
+
+**Failures and repairs:** an initial smaller synthetic selection reported
+83 passed/1 failed at the exact aggregate-byte boundary; reserving one EOF-probe
+byte fixed the inclusive cap without increasing admitted logical input bytes.
+Review also identified ambiguous Windows path aliases, disappearance wrongly
+classified as initial absence, CLI argument echo and invalid-PE companion
+overstatement. Regression coverage now verifies lexical refusal before access,
+global rejection of inconsistent captures, safe CLI diagnostics and propagation
+of structural failures. Original KeyboardInterrupt/SystemExit objects propagate.
+Independent source review found no remaining blocking issue in the revised scope.
+
+**Limits and next steps:** no native Windows tests, firmware, runtime probes,
+installation, signing, acquisition or CI dispatch occurred. No real package set
+was authenticated. Authentic immutable publisher inputs, complete installed/native
+DLL provenance, licensing, final signing and consumer acceptance remain separate
+requirements. Start with user-supplied administrative inputs and retain every
+missing/mismatch/blocked/unassessed result; do not treat this report as approval.
+
+**Approval/traceability:** the user authorized this read-only diagnostic
+implementation, synthetic tests, documentation and fast-forward delivery to the
+development branch. No production pin, admission rule, candidate gate, packaged
+desktop behavior, frozen research or main change is included. No release or
+runtime promotion was authorized.

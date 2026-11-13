@@ -20,6 +20,7 @@ passing test is evidence only for its stated revision and scope.
 | Use the latest desktop workflow improvements | [Batch 29 operator and validation guide](product/batch29-desktop-workflows.md), [dated implementation entry](product/development-progress.md#2026-11-10--batch-29-desktop-project-readiness-and-export-workflows) |
 | Validate the desktop on native Windows | [Batch 31 procedure and evidence](product/batch31-windows-validation.md): user-reported host/UI regressions and scoped manual static-project checks; launcher/runtime blockers and firmware/frozen/installed validation remain outstanding. |
 | Plan Windows runtime and signed distribution work | [Batch 32 qualification plan](product/batch32-windows-runtime-packaging-plan.md): admitted-runtime recovery versus separate candidate qualification, Authenticode/Store options, eligibility, evidence gates and future approvals; no runtime promotion or signing authorization. |
+| Inspect explicitly supplied runtime/signing evidence without executing tools | [Batch 33 read-only preflight](product/batch33-runtime-preflight.md): bounded file identities, declared DLLs and receipt consistency; publisher trust, native capabilities and qualification remain unassessed. |
 
 The latest original Batch 27 ZIP pass is **user-reported**, not independently
 verified in this environment: 19 receipts, 97 JUnit passed, 10 skipped and zero
