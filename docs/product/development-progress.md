@@ -738,3 +738,76 @@ implementation, synthetic tests, documentation and fast-forward delivery to the
 development branch. No production pin, admission rule, candidate gate, packaged
 desktop behavior, frozen research or main change is included. No release or
 runtime promotion was authorized.
+
+## 2026-11-13 — Batch 34 preflight security review
+
+**Date basis:** review/implementation report date, Asia/Karachi; not native
+Windows validation or an external security certification.
+
+**Objective and changes:** independently audit the Batch 33 administrative
+preflight's path access, receipts, PE/certificate parsing, evidence states and
+read-only behavior. The [security review](batch34-preflight-security-review.md)
+records ranked findings, fixes, remaining risks and a bounded native Windows
+procedure. The component now validates both raw and joined absolute spellings,
+rejects mixed-separator UNC and additional reserved-device variants, validates
+receipt schemas before subject binding and distinguishes explicit null from
+missing entries. Tests add 42 cases and strengthen existing write/enumeration
+guards; no previous assertion is disabled.
+
+**Decisions and reasoning:** two independent source-review passes separated
+path access from PE/receipt semantics. Fix demonstrable lexical/classification
+defects without altering production admission. A temporary benign parent-swap
+experiment also showed that final rejection does not prevent an outside-selected
+fixture being opened first. This remains an unresolved access-isolation limit;
+reports now expose `concurrent_path_isolation=false` and unassessed access
+containment rather than implying a sandbox. Native validation is recommended only
+for stable controlled staging, not hostile concurrent writers.
+
+**Commit references:** baseline
+[`1d419eba447a62cabd298ccf58bcf60c68f395f6`](https://github.com/mtalhak003/FIRMAVEX/commit/1d419eba447a62cabd298ccf58bcf60c68f395f6).
+This entry's delivery commit is discoverable in Git history; no future SHA or
+native evidence is invented.
+
+**Validation — actual local Linux results:** baseline preflight suite
+**116 passed**, zero skips/failures/errors, 0.37 seconds. Final focused suite:
+**158 passed**, zero skips/failures/errors/deselections, **0.49 seconds**. Related
+admission, file-state, static-import and selected reader/security regressions:
+**247 passed, 1 skipped**, zero failures/errors/deselections, **0.66 seconds**.
+The skip requires actual native NTFS change-time semantics. These overlapping
+selections are not additive or a complete repository suite. A deterministic
+2,622-input synthetic PE mutation loop is one test, not guest execution.
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 /workspace/firmavex-batch7-venv/bin/python -B -m pytest -q -ra -p no:cacheprovider tests/product/test_windows_runtime_preflight.py
+
+PYTHONDONTWRITEBYTECODE=1 /workspace/firmavex-batch7-venv/bin/python -B -m pytest -q -ra -p no:cacheprovider \
+  tests/product/test_windows_runtime_preflight.py tests/product/test_platform_support.py \
+  tests/product/test_file_state.py tests/product/test_windows_candidate_closure.py \
+  tests/backends/test_records_security.py::test_unsafe_path_spellings_rejected \
+  tests/backends/test_records_security.py::test_source_and_parent_symlinks_are_rejected \
+  tests/backends/test_records_security.py::test_special_file_rejected_without_blocking \
+  tests/backends/test_records_security.py::test_mid_read_changes_fail_closed \
+  tests/backends/test_records_security.py::test_same_size_rewrite_with_deferred_metadata_fails_closed
+```
+
+**Demonstrated failures and repairs:** targeted baseline regressions reported
+16 failed/4 passed/116 deselected, plus a separate inherited-base selection of
+5 failed/1 passed/136 deselected. After the component fixes, a lexical Windows
+control exposed a Linux-modeling error (142 passed/1 failed); simulating only the
+preflight module's Windows OS reference corrected that test without permitting
+foreign drive paths on Linux or changing process-wide path behavior. All final
+cases pass. Malformed/oversized/racing receipt and certificate cases retain
+blocked/mismatch/unassessed states and cannot authenticate themselves.
+
+**Limitations and next steps:** the active-parent race is documented and tested
+for truthful rejection, not fixed or accepted as safe isolation. Stronger
+containment requires separate handle-relative/native design and qualification.
+Proceed only with controlled native Windows functional preflight tests; preserve
+actual skips, failures and unknowns. Publisher trust, GDB capabilities, DLL/legal
+closure, signing/SAC acceptance and runtime/product qualification remain unproven.
+
+**Approval/traceability:** the user authorized this review, targeted fixes,
+synthetic tests, documentation and fast-forward development delivery. No supplied
+runtime, firmware, installer, signer, package acquisition or CI dispatch occurred.
+No shared production security implementation, production pin/admission rule,
+frozen research, protected evidence, main or release status was changed.

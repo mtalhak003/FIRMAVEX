@@ -21,6 +21,7 @@ passing test is evidence only for its stated revision and scope.
 | Validate the desktop on native Windows | [Batch 31 procedure and evidence](product/batch31-windows-validation.md): user-reported host/UI regressions and scoped manual static-project checks; launcher/runtime blockers and firmware/frozen/installed validation remain outstanding. |
 | Plan Windows runtime and signed distribution work | [Batch 32 qualification plan](product/batch32-windows-runtime-packaging-plan.md): admitted-runtime recovery versus separate candidate qualification, Authenticode/Store options, eligibility, evidence gates and future approvals; no runtime promotion or signing authorization. |
 | Inspect explicitly supplied runtime/signing evidence without executing tools | [Batch 33 read-only preflight](product/batch33-runtime-preflight.md): bounded file identities, declared DLLs and receipt consistency; publisher trust, native capabilities and qualification remain unassessed. |
+| Review preflight security and native validation limits | [Batch 34 security review](product/batch34-preflight-security-review.md): repaired lexical/schema defects, stronger synthetic guards and an unresolved concurrent path-isolation limitation; controlled native functional validation only. |
 
 The latest original Batch 27 ZIP pass is **user-reported**, not independently
 verified in this environment: 19 receipts, 97 JUnit passed, 10 skipped and zero

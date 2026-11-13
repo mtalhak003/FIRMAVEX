@@ -1,8 +1,10 @@
-"""Read explicitly supplied files only; never execute, install, sign or qualify.
+"""Static audit of supplied paths; never execute, install, sign or qualify.
 
 JSON is written to stdout and a sanitized summary to stderr. Exit 1 means the
 report retains missing/mismatching/unassessed evidence; 2 means assessment was
 blocked. Neither a hash match nor a supplied receipt authenticates a publisher.
+Inputs must be stable and controlled; consistency checks do not prevent hostile
+concurrent parent replacement from redirecting a read before rejection.
 """
 import argparse
 from collections import Counter
@@ -78,16 +80,16 @@ def _json(data):
     return value
 
 
-def _lexical_path(value, base):
-    # No resolve(), stat(), expanduser(), directory scan or PATH search here.
+def _path_spelling(value):
+    """Apply the same policy to raw and joined native spellings before access."""
     if (type(value) is not str or not 1 <= len(value) <= 4096
-            or value.startswith(('~', '\\\\', '//'))
+            or value.replace('\\', '/').startswith(('~', '//'))
             or any(ord(c) < 32 or ord(c) == 127 for c in value)):
         raise _Blocked('unsafe_path')
     parts = re.split(r'[\\/]+', value.casefold())
-    devices = {'con', 'prn', 'aux', 'nul', *(f'com{i}' for i in range(1, 10)),
-               *(f'lpt{i}' for i in range(1, 10))}
-    if any(p and (p.endswith((' ', '.')) or '~' in p or p.split('.')[0] in devices)
+    devices = {'con', 'prn', 'aux', 'nul', 'conin$', 'conout$',
+               *(f'com{i}' for i in '123456789¹²³'), *(f'lpt{i}' for i in '123456789¹²³')}
+    if any(p and (p.endswith((' ', '.')) or '~' in p or p.split('.')[0].rstrip(' ') in devices)
            for p in parts):
         raise _Blocked('unsafe_path')
     if '..' in parts or any(a == 'evidence' and b == 'windows-sandbox'
@@ -97,15 +99,21 @@ def _lexical_path(value, base):
     if ':' in value and not (os.name == 'nt' and re.match(r'^[A-Za-z]:[\\/]', value)
                              and value.count(':') == 1):
         raise _Blocked('unsafe_path')
-    path = Path(value)
-    path = path if path.is_absolute() else base / path
-    spelling = str(path.absolute()).replace('\\', '/').casefold()
+    spelling = value.replace('\\', '/').casefold()
     if spelling == '/workspace/firmavex' or spelling.startswith('/workspace/firmavex/'):
         raise _Blocked('forbidden_original_checkout')
     tokens = spelling.split('/')
     if any(a == 'evidence' and b == 'windows-sandbox' for a, b in zip(tokens, tokens[1:])):
         raise _Blocked('forbidden_path')
-    return path.absolute()
+
+
+def _lexical_path(value, base):
+    # No resolve(), stat(), expanduser(), directory scan or PATH search here.
+    _path_spelling(value)
+    path = Path(value)
+    path = (path if path.is_absolute() else base / path).absolute()
+    _path_spelling(str(path))
+    return path
 
 
 class _Capture:
@@ -306,25 +314,20 @@ def _runtime_observations(data, artifacts):
         raise _Blocked('invalid_observation_receipt')
     checks = {}
     for name in ('qemu', 'gdb'):
-        row = value['tools'].get(name)
-        if row is None:
+        if name not in value['tools']:
             checks[name] = _check('missing', 'tool_observation_not_supplied')
             continue
+        row = value['tools'][name]
         fields = {'sha256', 'version', 'mps2_an385'} if name == 'qemu' else {'sha256', 'version', 'arm', 'python_hashlib_marker'}
         if type(row) is not dict or 'sha256' not in row or not row.keys() <= fields:
             raise _Blocked('invalid_observation_receipt')
         digest = _sha(row['sha256'])
-        file = artifacts[name]['file']
-        if file['state'] != 'verified':
-            checks[name] = _check('blocked', 'observation_subject_unavailable')
-            continue
-        if digest != file['sha256']:
-            checks[name] = _check('mismatch', 'observation_subject_digest_mismatch')
-            continue
-        checks[name] = _check('verified', 'receipt_subject_binding_only')
+        # Validate the complete supplied schema before any binding short-circuit.
+        # A stale/missing subject must not disguise malformed observations.
+        field_checks = {}
         for field in sorted(fields - {'sha256'}):
             if field not in row:
-                checks[name + '_' + field] = _check('missing', 'observation_field_not_supplied')
+                field_checks[name + '_' + field] = _check('missing', 'observation_field_not_supplied')
                 continue
             observed = row[field]
             if field == 'version':
@@ -342,8 +345,17 @@ def _runtime_observations(data, artifacts):
                 if type(observed) is not bool:
                     raise _Blocked('invalid_observation_receipt')
                 matches, detail = observed is True, {}
-            checks[name + '_' + field] = _check('verified' if matches else 'mismatch',
-                                               'receipt_consistency_only', **detail)
+            field_checks[name + '_' + field] = _check('verified' if matches else 'mismatch',
+                                                     'receipt_consistency_only', **detail)
+        file = artifacts[name]['file']
+        if file['state'] != 'verified':
+            checks[name] = _check('blocked', 'observation_subject_unavailable')
+            continue
+        if digest != file['sha256']:
+            checks[name] = _check('mismatch', 'observation_subject_digest_mismatch')
+            continue
+        checks[name] = _check('verified', 'receipt_subject_binding_only')
+        checks.update(field_checks)
     return {'scope': 'caller_supplied_receipt_consistency_only', 'checks': checks}
 
 
@@ -352,7 +364,8 @@ def _base():
             'profile': {'id': WINDOWS_PROFILE_ID, 'version': WINDOWS_PROFILE_VERSION, 'architecture': 'x64'},
             'read_only': True, 'firmware_executed': False, 'tools_executed': False,
             'production_admission_evaluated': False, 'production_qualified': False,
-            'atomic_snapshot': False, 'artifacts': {}, 'receipts': {}, 'required_dlls': {},
+            'atomic_snapshot': False, 'concurrent_path_isolation': False,
+            'artifacts': {}, 'receipts': {}, 'required_dlls': {},
             'checks': {name: _check('not_assessed', code) for name, code in (
                 ('native_capabilities', 'no_runtime_tools_executed'),
                 ('publisher_trust', 'publisher_authentication_not_verified'),
@@ -360,6 +373,7 @@ def _base():
                 ('license_completeness', 'legal_review_not_performed'),
                 ('authenticode_trust', 'native_signature_trust_not_verified'),
                 ('application_signing_coverage', 'explicit_files_not_complete_inventory'),
+                ('access_containment', 'concurrent_path_redirection_not_prevented'),
                 ('qualification', 'preflight_never_qualifies'))}}
 
 
@@ -459,7 +473,8 @@ def preflight(manifest_path, *, expected_manifest_sha256=None):
 def summary(report):
     counts = ', '.join(f'{state}={report["counts"][state]}' for state in STATES)
     return ('Windows runtime preflight: ' + report['status'] + '\n' + counts
-            + '\nNo tools or firmware executed. Runtime/signing qualification: NOT ASSESSED.\n')
+            + '\nNo tools or firmware executed. Runtime/signing qualification: NOT ASSESSED.\n'
+            + 'Use controlled input directories; concurrent path isolation is not provided.\n')
 
 
 def main(argv=None):

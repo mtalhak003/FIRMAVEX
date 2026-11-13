@@ -2,12 +2,15 @@
 
 import builtins
 import hashlib
+import io
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
+import random
 import socket
 import struct
 import subprocess
+from types import SimpleNamespace
 import urllib.request
 
 import pytest
@@ -111,7 +114,12 @@ def forbid_activity(monkeypatch):
     monkeypatch.setattr(urllib.request, 'urlopen', forbidden)
     for name in ('write_bytes', 'write_text', 'touch', 'mkdir', 'unlink', 'rename', 'replace'):
         monkeypatch.setattr(Path, name, forbidden)
+    for name in ('iterdir', 'glob', 'rglob'):
+        monkeypatch.setattr(Path, name, forbidden)
+    for name in ('scandir', 'walk', 'listdir'):
+        monkeypatch.setattr(os, name, forbidden)
     original_open = builtins.open
+    original_io_open = io.open
     original_os_open = os.open
 
     def only_read_open(file, mode='r', *args, **kwargs):
@@ -122,19 +130,25 @@ def forbid_activity(monkeypatch):
         assert not flags & (os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC | os.O_APPEND)
         return original_os_open(path, flags, *args, **kwargs)
 
+    def only_read_io_open(file, mode='r', *args, **kwargs):
+        assert not any(flag in mode for flag in 'wax+'), mode
+        return original_io_open(file, mode, *args, **kwargs)
+
     monkeypatch.setattr(builtins, 'open', only_read_open)
+    monkeypatch.setattr(io, 'open', only_read_io_open)
     monkeypatch.setattr(os, 'open', only_read_os_open)
 
 
 def assert_inert(report):
     assert report['read_only'] is True
     for key in ('firmware_executed', 'tools_executed', 'production_admission_evaluated',
-                'production_qualified', 'atomic_snapshot'):
+                'production_qualified', 'atomic_snapshot', 'concurrent_path_isolation'):
         assert report[key] is False
     for name in ('native_capabilities', 'publisher_trust', 'dynamic_dll_closure',
                  'license_completeness', 'authenticode_trust', 'application_signing_coverage',
-                 'qualification'):
+                 'qualification', 'access_containment'):
         assert report['checks'][name]['state'] == 'not_assessed'
+    assert report['checks']['access_containment']['code'] == 'concurrent_path_redirection_not_prevented'
     counts = {state: 0 for state in preflight.STATES}
     for node in all_nodes(report):
         if type(node) is dict and node.get('state') in counts:
@@ -728,3 +742,304 @@ def test_production_profile_remains_exact_original_constants():
     assert platform_support.WINDOWS_EXECUTABLES == {
         'qemu': ('QEMU emulator version 11.1.2', '1247e03f58f2e845ff516e0cc951b67d0ee5dd5d6bcbe89faedbec692641b244'),
         'gdb': ('GNU gdb (GDB) 18.1', 'f867205234b5c61ad53bbb70db25462566b1742b409eb345f7f0178fd388f236')}
+
+
+@pytest.mark.parametrize('tool', ['qemu', 'gdb'])
+def test_present_null_observation_tool_is_malformed_not_missing(sample, tool):
+    value = observations(sample)
+    value['tools'][tool] = None
+    receipt(sample, 'runtime_observations', value)
+    report = run(sample)
+    assert report['status'] == 'blocked'
+    assert report['checks']['capture']['code'] == 'invalid_observation_receipt'
+    assert report['artifacts'] == {}
+
+
+@pytest.mark.parametrize('subject', ['missing-artifact', 'stale-digest'])
+@pytest.mark.parametrize(('tool', 'field', 'bad_value'), [
+    ('qemu', 'mps2_an385', 1),
+    ('gdb', 'arm', 1),
+    ('qemu', 'version', None),
+    ('gdb', 'version', {'private': 'DO-NOT-PUBLISH'}),
+    ('gdb', 'python_hashlib_marker', []),
+    ('gdb', 'unknown', 'DO-NOT-PUBLISH'),
+], ids=['machine-bool', 'arm-bool', 'null-version', 'object-version',
+        'marker-list', 'unknown-field'])
+def test_observation_schema_is_validated_before_subject_binding(sample, subject, tool, field, bad_value):
+    value = observations(sample)
+    value['tools'][tool][field] = bad_value
+    if subject == 'missing-artifact':
+        del sample['spec']['artifacts'][tool]
+    else:
+        value['tools'][tool]['sha256'] = '0' * 64
+    receipt(sample, 'runtime_observations', value)
+    report = run(sample)
+    assert report['status'] == 'blocked'
+    assert report['checks']['capture']['code'] == 'invalid_observation_receipt'
+    assert report['artifacts'] == {}
+    assert 'DO-NOT-PUBLISH' not in json.dumps(report)
+
+
+@pytest.mark.parametrize('tool', ['qemu', 'gdb'])
+def test_truly_absent_observation_tool_remains_missing(sample, tool):
+    value = observations(sample)
+    del value['tools'][tool]
+    receipt(sample, 'runtime_observations', value)
+    report = run(sample)
+    assert report['receipts']['runtime_observations']['checks'][tool] == {
+        'state': 'missing', 'code': 'tool_observation_not_supplied'}
+    assert report['checks']['capture']['state'] == 'verified'
+
+
+@pytest.mark.parametrize('value', [r'\/server/share/file.json', r'/\server/share/file.json'],
+                         ids=['backslash-forward-unc', 'forward-backslash-unc'])
+def test_mixed_separator_unc_manifest_is_refused_before_filesystem_or_network(monkeypatch, value):
+    def forbidden(*args, **kwargs):
+        raise AssertionError('UNC manifest reached filesystem or network')
+    monkeypatch.setattr(preflight, 'checked_path', forbidden)
+    monkeypatch.setattr(preflight, 'read_bytes', forbidden)
+    monkeypatch.setattr(socket, 'socket', forbidden)
+    report = preflight.preflight(value)
+    assert report['status'] == 'blocked'
+    assert 'server' not in json.dumps(report)
+
+
+@pytest.mark.parametrize('value', [r'\/server/share/file.exe', r'/\server/share/file.exe'],
+                         ids=['backslash-forward-unc', 'forward-backslash-unc'])
+def test_mixed_separator_unc_descriptor_is_refused_before_artifact_access(sample, monkeypatch, value):
+    sample['spec']['artifacts']['qemu']['path'] = value
+    manifest = sample['save']()
+    original = preflight.checked_path
+    def manifest_only(path, *args, **kwargs):
+        assert Path(path) == manifest, 'UNC artifact reached filesystem'
+        return original(path, *args, **kwargs)
+    monkeypatch.setattr(preflight, 'checked_path', manifest_only)
+    report = preflight.preflight(manifest)
+    assert report['status'] == 'blocked'
+    assert report['artifacts'] == {}
+    assert 'server' not in json.dumps(report)
+
+
+class _AbsoluteWindowsPath(PureWindowsPath):
+    """Lexical-only Windows path model; never sent to filesystem helpers."""
+    def absolute(self):
+        return self
+
+
+@pytest.mark.parametrize('base', [
+    r'\\server\share\admin',
+    r'C:\EVIDEN~1\WINDOW~1',
+    r'C:\evidence.\windows-sandbox',
+    r'C:\evidence \windows-sandbox',
+    r'C:\evidence\windows-sandbox.',
+], ids=['unc-base', 'short-name-base', 'parent-dot-base', 'parent-space-base',
+        'protected-child-dot-base'])
+def test_relative_path_cannot_inherit_unsafe_windows_base(monkeypatch, base):
+    def forbidden(*args, **kwargs):
+        raise AssertionError('Lexical-only test reached filesystem')
+    monkeypatch.setattr(preflight, 'checked_path', forbidden)
+    monkeypatch.setattr(preflight, 'read_bytes', forbidden)
+    monkeypatch.setattr(preflight, 'os', SimpleNamespace(name='nt'))
+    with pytest.raises(ValueError):
+        preflight._lexical_path('manifest.json', _AbsoluteWindowsPath(base))
+
+
+def test_relative_path_under_ordinary_windows_drive_base_remains_lexically_supported(monkeypatch):
+    monkeypatch.setattr(preflight, 'os', SimpleNamespace(name='nt'))
+    base = _AbsoluteWindowsPath(r'C:\FIRMAVEX-admin')
+    result = preflight._lexical_path('manifest.json', base)
+    assert str(result).replace('\\', '/') == 'C:/FIRMAVEX-admin/manifest.json'
+
+
+def test_bounded_deterministic_pe_mutations_do_not_escape_parser_or_claim_trust():
+    original = synthetic_pe(certificate=True)
+    rng = random.Random(3401)
+    cases = [original[:n] for n in range(0, len(original) + 1, 17)]
+    fields = [60, 68, 70, 84, 88, 148, 196, 232, 236, 344, 348, 2048, 2052, 2054]
+    for index in range(2500):
+        data = bytearray(original)
+        for _ in range(1 + index % 3):
+            offset = rng.choice(fields)
+            struct.pack_into('<I', data, offset, rng.choice([
+                0, 1, 7, 8, 9, 16, 96, 512, 2048, 0xffffffff, rng.randrange(2**32)]))
+        cases.append(bytes(data))
+    accepted = rejected = 0
+    for data in cases:
+        try:
+            header, table = preflight._pe(data)
+        except ValueError:
+            rejected += 1
+        else:
+            accepted += 1
+            assert header['state'] == 'verified'
+            assert table['state'] in {'verified', 'missing'}
+            assert set(header) == {'state', 'code', 'architecture'}
+            assert set(table) <= {'state', 'code', 'entries'}
+    assert len(cases) == 2622
+    assert accepted > 0 and rejected > 0
+
+
+def test_runtime_receipt_change_during_processing_rejects_entire_capture(sample, monkeypatch):
+    path = receipt(sample, 'runtime_observations', observations(sample))
+    original = preflight._runtime_observations
+    changed = False
+    def mutate_receipt(data, artifacts):
+        nonlocal changed
+        result = original(data, artifacts)
+        path.write_bytes(data + b' ')
+        changed = True
+        return result
+    monkeypatch.setattr(preflight, '_runtime_observations', mutate_receipt)
+    report = run(sample)
+    assert changed
+    assert report['status'] == 'blocked'
+    assert report['checks']['capture']['code'] == 'capture_changed'
+    assert report['artifacts'] == {} and report['receipts'] == {}
+
+
+def test_initially_missing_receipt_appearing_during_later_receipt_read_is_blocked(sample, monkeypatch):
+    missing = sample['root'] / 'missing-package-receipt.json'
+    sample['spec']['receipts'] = {'package_manifest': {'path': str(missing), 'sha256': '0' * 64}}
+    later = receipt(sample, 'publisher_authentication', {'declared': 'opaque-evidence'})
+    original = preflight.read_bytes
+    appeared = False
+    def create_missing(path, maximum):
+        nonlocal appeared
+        data = original(path, maximum)
+        if Path(path) == later and not appeared:
+            missing.write_bytes(b'appeared during capture')
+            appeared = True
+        return data
+    monkeypatch.setattr(preflight, 'read_bytes', create_missing)
+    report = run(sample)
+    assert appeared
+    assert report['status'] == 'blocked'
+    assert report['checks']['capture']['code'] == 'capture_changed'
+    assert report['artifacts'] == {} and report['receipts'] == {}
+
+
+def test_integrity_pinned_malformed_runtime_receipt_json_is_blocked_without_echo(sample):
+    data = b'{"schema_version":1,"tools":{"gdb": PRIVATE-RECEIPT-SECRET'
+    path = sample['root'] / 'malformed-runtime-observations.json'
+    path.write_bytes(data)
+    sample['spec']['receipts'] = {'runtime_observations': {'path': str(path), 'sha256': digest(data)}}
+    report = run(sample)
+    assert report['status'] == 'blocked'
+    assert report['artifacts'] == {} and report['receipts'] == {}
+    assert 'PRIVATE-RECEIPT-SECRET' not in json.dumps(report)
+    assert str(path) not in json.dumps(report)
+
+
+def test_opaque_provenance_bytes_prove_only_integrity_and_are_not_parsed_or_published(sample):
+    data = b'\xff{not-json; PRIVATE-PUBLISHER-SECRET}'
+    path = sample['root'] / 'opaque-publisher-evidence.bin'
+    path.write_bytes(data)
+    sample['spec']['receipts'] = {'publisher_authentication': {'path': str(path), 'sha256': digest(data)}}
+    report = run(sample)
+    row = report['receipts']['publisher_authentication']
+    assert row['file']['state'] == 'verified' and row['integrity']['state'] == 'verified'
+    assert report['checks']['publisher_authentication'] == {
+        'state': 'not_assessed', 'code': 'receipt_integrity_only_not_authentication'}
+    assert report['checks']['publisher_trust']['state'] == 'not_assessed'
+    assert report['checks']['capture']['state'] == 'verified'
+    assert 'PRIVATE-PUBLISHER-SECRET' not in json.dumps(report)
+    assert str(path) not in json.dumps(report)
+    assert_inert(report)
+
+
+def test_protected_receipt_path_is_rejected_before_any_artifact_access(sample, monkeypatch):
+    sample['spec']['receipts'] = {'licensing': {'path': 'evidence/windows-sandbox/NEVER-READ.json'}}
+    manifest = sample['save']()
+    original = preflight.checked_path
+    calls = []
+    def manifest_only(path, *args, **kwargs):
+        calls.append(Path(path))
+        assert Path(path) == manifest, 'Protected receipt reached filesystem'
+        return original(path, *args, **kwargs)
+    monkeypatch.setattr(preflight, 'checked_path', manifest_only)
+    report = preflight.preflight(manifest)
+    assert calls and set(calls) == {manifest}
+    assert report['status'] == 'blocked'
+    assert report['artifacts'] == {} and report['receipts'] == {}
+    assert 'NEVER-READ' not in json.dumps(report)
+
+
+def test_real_oversized_runtime_receipt_is_blocked_before_json_processing(sample, monkeypatch):
+    data = b'x' * (1024**2 + 1)
+    path = sample['root'] / 'oversized-runtime-observations.json'
+    path.write_bytes(data)
+    sample['spec']['receipts'] = {'runtime_observations': {'path': str(path), 'sha256': digest(data)}}
+    def forbidden(*args, **kwargs):
+        raise AssertionError('Oversized runtime observations reached parser')
+    monkeypatch.setattr(preflight, '_runtime_observations', forbidden)
+    report = run(sample)
+    assert path.stat().st_size == preflight.MAX_RECEIPT_BYTES + 1
+    assert report['status'] == 'blocked'
+    assert report['receipts']['runtime_observations']['file']['state'] == 'blocked'
+    assert 'oversized-runtime-observations.json' not in json.dumps(report)
+
+
+@pytest.mark.parametrize('value', ['COM\u00b9.exe', 'LPT\u00b2.txt', 'COM1 .exe',
+                                  'NUL .dll', 'CONIN$', 'CONOUT$.txt'],
+                         ids=['superscript-com', 'superscript-lpt', 'spaced-com',
+                              'spaced-nul', 'console-input', 'console-output'])
+def test_additional_windows_reserved_names_are_refused_before_filesystem_access(monkeypatch, value):
+    assert PureWindowsPath(value).is_reserved(), 'Fixture must model a Windows reserved name'
+    def forbidden(*args, **kwargs):
+        raise AssertionError('Reserved device spelling reached filesystem')
+    monkeypatch.setattr(preflight, 'checked_path', forbidden)
+    monkeypatch.setattr(preflight, 'read_bytes', forbidden)
+    report = preflight.preflight(value)
+    assert report['status'] == 'blocked'
+    assert value not in json.dumps(report)
+
+
+@pytest.mark.parametrize('value', ['COM0.exe', 'COM10.exe'])
+def test_ordinary_nonreserved_device_like_names_remain_lexically_supported(value):
+    assert not PureWindowsPath(value).is_reserved()
+    base = Path.cwd() / 'ordinary-preflight-base'
+    assert preflight._lexical_path(value, base) == base / value
+
+
+def test_concurrent_parent_swap_is_rejected_without_claiming_access_containment(tmp_path, monkeypatch):
+    """Characterize final rejection only; hostile-writer containment is unresolved."""
+    from firmavex.backends import security
+
+    selected_parent = tmp_path / 'selected-parent'
+    selected_parent.mkdir()
+    alternate_parent = tmp_path / 'alternate-parent'
+    alternate_parent.mkdir()
+    selected = selected_parent / 'synthetic.exe'
+    selected.write_bytes(synthetic_pe('declared.dll'))
+    (alternate_parent / selected.name).write_bytes(synthetic_pe('alternate.dll'))
+    probe = tmp_path / 'symlink-capability-probe'
+    try:
+        probe.symlink_to(alternate_parent, target_is_directory=True)
+    except OSError:
+        pytest.skip('Host cannot create the required temporary directory symlink')
+    probe.unlink()
+    manifest = tmp_path / 'manifest.json'
+    manifest.write_text(json.dumps({'schema_version': 1,
+                                    'artifacts': {'qemu': {'path': str(selected)}}}))
+    original_state = security.path_state
+    swapped = False
+
+    def swap_parent_before_open(path, *args, **kwargs):
+        nonlocal swapped
+        if Path(path) == selected and not swapped:
+            swapped = True
+            selected_parent.rename(tmp_path / 'retained-original-parent')
+            selected_parent.symlink_to(alternate_parent, target_is_directory=True)
+        return original_state(path, *args, **kwargs)
+
+    monkeypatch.setattr(security, 'path_state', swap_parent_before_open)
+    report = preflight.preflight(manifest)
+    assert swapped
+    assert report['status'] == 'blocked'
+    assert report['checks']['capture']['state'] == 'blocked'
+    assert report['artifacts'] == {} and report['receipts'] == {}
+    assert report['checks']['access_containment'] == {
+        'state': 'not_assessed', 'code': 'concurrent_path_redirection_not_prevented'}
+    assert report['production_qualified'] is False
+    # A blocked final report does not assert that no redirected access occurred.
+    assert str(tmp_path) not in json.dumps(report)

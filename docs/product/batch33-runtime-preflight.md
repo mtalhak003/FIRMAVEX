@@ -119,6 +119,12 @@ and an overall status with precedence blocked, mismatch, missing, not_assessed.
 `firmware_executed` and `atomic_snapshot` remain **false**. There is no approval
 flag, runtime repair, download or promotion action.
 
+The [Batch 34 security review](batch34-preflight-security-review.md) adds
+`concurrent_path_isolation=false` and an explicit `access_containment=not_assessed`
+check. It also corrects mixed-separator/inherited-base path refusal and malformed
+observation classification. These are later hardening results, not retroactive
+claims about the original Batch 33 revision.
+
 **Exit 2** means blocked assessment. **Exit 1** means a report retaining
 missing/mismatching/unassessed evidence. This diagnostic deliberately offers
 no successful qualification exit: even complete static inputs leave native trust
@@ -136,6 +142,11 @@ argument values. Interruptions such as KeyboardInterrupt are not swallowed.
   helpers reject symlinks, reparse points, hardlinked/special files and unsafe
   parents. These restrictions can reject vendor layouts that need separate
   future review; they are not relaxed here.
+- The same lexical policy now checks raw and joined absolute spellings, including
+  inherited bases and mixed slash UNC prefixes. This does not prevent hostile
+  concurrent parent replacement: an unintended file can be opened before final
+  checks reject the capture. Use only stable developer-controlled local staging
+  without concurrent untrusted writers; general access isolation is not provided.
 - At most 64 supplied artifact/DLL descriptors, six receipts and one manifest.
   Artifacts are at most 64 MiB each; manifest/receipts at most 1 MiB each; logical
   input bytes including the manifest are capped at 128 MiB. Consistency rereads
