@@ -36,3 +36,27 @@ Windows candidate CI [run 42618949135](https://github.com/mtalhak003/FIRMAVEX/ac
 **Not proven:** authentic publisher/signature trust and complete package/DLL/license provenance, positive production product-path execution, clean consumer Windows acceptance, or release authorization. The history is retrospective; dates and links are evidence-based, not claims of unrecorded working hours or decisions.
 
 **Publication scope:** This default-branch entry point is documentation only. No application code, runtime admission, CI workflows, packages or release artifacts are merged.
+
+
+## Batch 32 Windows runtime and packaging plan (November 13, 2026)
+
+The [Batch 32 qualification plan](product/batch32-windows-runtime-packaging-plan.md)
+compares recovery of the exact admitted QEMU 11.1.2 / GDB 18.1 profile with a
+separately authorized candidate qualification. It defines package/signature,
+dependency/DLL, licensing, native product-path and signing acceptance gates, and
+compares existing Inno/Authenticode distribution with Microsoft Store MSIX.
+
+The review date is November 13 Asia/Karachi (November 12 UTC), not a new Windows
+execution date. Official documentation source checks, historical CI observations,
+user reports and unproven requirements remain explicitly separated. No new
+firmware or installer execution, production promotion, signing purchase or release
+was authorized. Signing can change executable hashes; an outer installer signature
+does not establish trust in every separately installed runtime DLL.
+
+Development delivery:
+[19f9eb0254fd0162db601e5ed82055baa92e7a5d](https://github.com/mtalhak003/FIRMAVEX/commit/19f9eb0254fd0162db601e5ed82055baa92e7a5d).
+The [updated development history](https://github.com/mtalhak003/FIRMAVEX/blob/19f9eb0254fd0162db601e5ed82055baa92e7a5d/docs/product/development-progress.md)
+and [scoped Windows user-report record](https://github.com/mtalhak003/FIRMAVEX/blob/19f9eb0254fd0162db601e5ed82055baa92e7a5d/docs/product/batch31-windows-validation.md)
+remain pinned on the development line. This publication adds only the plan and
+this index entry; it brings no experimental code, workflows, runtime policies,
+packages or original evidence into `main`.
