@@ -120,6 +120,11 @@ Other outstanding requirements:
 
 ## Subsequent manual native Windows validation
 
+The later [Batch 35 operator harness](batch35-native-preflight-validation.md)
+automates a controlled version of this procedure with source checks and retained
+evidence. Its portable validation is separate from native Windows execution,
+which remains pending; it does not close B34-03 or grant runtime qualification.
+
 This is a future bounded **preflight-only** procedure, not permission to execute
 firmware, acquire packages, sign, install or promote a runtime.
 

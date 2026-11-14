@@ -811,3 +811,94 @@ synthetic tests, documentation and fast-forward development delivery. No supplie
 runtime, firmware, installer, signer, package acquisition or CI dispatch occurred.
 No shared production security implementation, production pin/admission rule,
 frozen research, protected evidence, main or release status was changed.
+
+## 2026-11-14 — Batch 35 controlled preflight validation harness
+
+**Date basis:** delivery/review report date, Asia/Karachi. Actual test execution
+was Linux; no native Windows or PowerShell execution date is claimed.
+
+**Objective and recovery:** complete the developer-supervised
+[Batch 35 operator workflow](batch35-native-preflight-validation.md), preserving
+the three recovered drafts after the execution environment disconnected and a
+subsequent startup was canceled. Inspection confirmed detached HEAD at
+[`90af3e836c81bd0dc9a27dcea076f19ce7ee15e6`](https://github.com/mtalhak003/FIRMAVEX/commit/90af3e836c81bd0dc9a27dcea076f19ce7ee15e6),
+empty index, no scoped tracked changes and all three drafts present. They were
+extended without resetting, reconstructing or changing branches. Earlier
+43-pass/1-failure and interrupted test runs remain historical, not current passes.
+
+**Changes:** a native PowerShell 7 entry, portable Python assessment/archive
+helpers and synthetic harness regressions. The operator checks exact delivery
+revision, named branch, reviewed Batch 34 ancestry/source bytes, clean checkout,
+existing venv, controlled local inputs and fresh separated output. It runs the
+fixed preflight/file-state suites, repeats four generated assessments plus optional
+supplied manifests, records unchanged observed inputs and preserves private
+logs/results/checksums and failures. No supplied runtime or application executes.
+
+**Repairs and reasoning:** consistently propagate the wrapper-validated absolute
+Git executable, with no unsafe fallback; preserve original or newly raised
+control-flow exceptions through cleanup and failure-record persistence; retain
+the initial supplied-input inventory across the synthetic-test phase. Additional
+review closed Git environment/helper/replacement and redirected-root gaps, hidden
+index/source drift, Python bootstrap environment influence and encoded-XML DTD
+guard bypass. Actual pinned text bytes permit only LF/CRLF normalization and
+retain raw hashes. Existing source assertions remain; no test is disabled.
+
+**Actual final Linux validation:** new-harness suite **108 passed**, zero
+failures/errors/skips/deselections, **0.68 seconds**. Broader preflight, admission,
+file-state, import and selected reader/security regressions **355 passed,
+1 skipped**, zero failures/errors/deselections, **1.34 seconds**. The skip requires
+native NTFS change-time semantics. The selections overlap and are not additive
+or a complete repository suite.
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 /workspace/firmavex-batch7-venv/bin/python -B -m pytest -q -ra -p no:cacheprovider tests/product/test_windows_preflight_validation.py
+
+PYTHONDONTWRITEBYTECODE=1 /workspace/firmavex-batch7-venv/bin/python -B -m pytest -q -ra -p no:cacheprovider \
+  tests/product/test_windows_preflight_validation.py tests/product/test_windows_runtime_preflight.py \
+  tests/product/test_platform_support.py tests/product/test_file_state.py \
+  tests/product/test_windows_candidate_closure.py \
+  tests/backends/test_records_security.py::test_unsafe_path_spellings_rejected \
+  tests/backends/test_records_security.py::test_source_and_parent_symlinks_are_rejected \
+  tests/backends/test_records_security.py::test_special_file_rejected_without_blocking \
+  tests/backends/test_records_security.py::test_mid_read_changes_fail_closed \
+  tests/backends/test_records_security.py::test_same_size_rewrite_with_deferred_metadata_fails_closed
+```
+
+**Portable integration:** actual supervised Python-only execution of the fixed
+162-case selection reported **161 passed, 1 native-NTFS skip**, zero failures/errors.
+All four repeated assessments matched expected diagnostic states; input snapshots
+and listed checksums agreed. The private temporary archive is explicitly
+`portable_synthetic_validation`, `native_windows_verified=false`,
+`checkout_verified=false`, `working_tree_dirty=true`: the uncommitted portable
+helpers were exercised, not the native operator gate. The guide records the
+ephemeral location/source hash; no generated archive is committed. This is not
+firmware or native Windows evidence.
+
+An actual read-only Linux Git smoke additionally passed revision/root binding,
+configuration/index guards and baseline-blob versus working-byte comparisons for
+15 pinned source files using the explicit existing `/usr/bin/git`. This exercised
+the harness's real Git arguments/environment, not mocked dispatch, without Git
+mutation or native Windows claims.
+
+**Failures and review:** recovered 66-case tests passed before the added repair
+coverage. Intermediate fixture-layout and nonexistent-basetemp assertion failures
+were corrected without relaxing production or source checks. The dedicated
+admission-time input mutation regression and original-exception identity/priority
+regressions now pass. Static PowerShell source contracts were checked; actual
+PowerShell parsing/PSScriptAnalyzer and native execution were **NOT RUN** because
+`pwsh`/Windows were unavailable. Python syntax, local documentation links/anchors,
+commit references and whitespace were validated for delivery.
+
+**Limitations and next steps:** preserve the MEDIUM hostile-parent-replacement
+finding. Controlled input/staging is a precondition, not access isolation.
+FAILED overrides a complete-looking marker, checksums cover listed members only,
+raw logs are private and not hard-capped live, and native ACL/privacy behavior
+remains unverified. Run the exact reviewed operator revision on controlled Windows
+and retain original actual results/skips; do not infer runtime, signature, SAC,
+firmware, installer or production qualification from this harness.
+
+**Approval/traceability:** the user authorized recovery, scoped implementation,
+tests/documentation and normal fast-forward development publication. No production
+pin/admission/signing/release rule, shared engine behavior, frozen research,
+protected/original evidence or main change is included. No QEMU/GDB, firmware,
+installer or signer ran, and no workflow was manually dispatched.
