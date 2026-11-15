@@ -902,3 +902,63 @@ tests/documentation and normal fast-forward development publication. No producti
 pin/admission/signing/release rule, shared engine behavior, frozen research,
 protected/original evidence or main change is included. No QEMU/GDB, firmware,
 installer or signer ran, and no workflow was manually dispatched.
+
+## 2026-11-15 — Batch 36 offline preflight archive verifier
+
+**Date basis:** implementation/review and actual Linux validation, UTC. Native
+Windows Batch 35 validation remains PENDING; no Windows execution date is claimed.
+
+**Objective and starting evidence:** add an offline, read-only consistency check
+for the [Batch 35 archive writer](../../tools/windows_preflight_validation.py),
+starting at [`c5f3b879fa2043fd2aedd6ccaf61fb3f87e088a8`](https://github.com/mtalhak003/FIRMAVEX/commit/c5f3b879fa2043fd2aedd6ccaf61fb3f87e088a8).
+The approved worktree was clean outside excluded evidence paths, at detached HEAD;
+no branch switch, reset, replacement checkout or original evidence inspection was
+performed. The remote development branch matched that baseline before work.
+
+**Implementation and reasoning:** the new
+[administrative verifier](../../tools/windows_preflight_archive.py) accepts an
+explicit local directory and derives its supported members from the implemented
+writer contract. It bounds enumeration/reads/parsing, refuses static links and
+ambiguous paths, verifies listed hashes and completion references, cross-checks
+JUnit accounting, repeated assessments, fixed inert fixtures and recorded input
+identities, and preserves failed/incomplete/skipped states. FAILED overrides
+completion when safely assessable. Temporary pytest trees remain explicitly
+uncovered and are never enumerated. Supplied originals are not consulted.
+Machine-readable JSON and the human summary expose fixed classifications and
+counts, not private log contents or selected host paths.
+
+**Failures, repairs and review:** synthetic regressions initially exposed changed
+fixture semantics, bool/integer aliases, unknown assessment states and missing or
+contradictory supplied inventory rows. They passed after targeted checks were
+added. Independent review also identified the shared Windows file-handle reader's
+lack of directory-open flags; verifier-only directory metadata now uses `lstat`,
+with a modeled regression keeping the file reader away from directories. No
+shared production implementation was changed, and this modeled test establishes
+no actual Windows filesystem result.
+
+**Actual Linux validation:** new archive tests **118 passed**, zero failures,
+errors, skips or deselections, **5.06 seconds**. The overlapping broader preflight,
+Batch 35, admission, file-state and selected reader/security suite reported
+**473 passed, 1 skipped**, zero failures/errors/deselections, **6.06 seconds**.
+The skip requires native NTFS change-time semantics. Exact reproducible commands,
+accepted layout, state meanings, limits and security findings are retained in the
+[Batch 36 operator/security report](batch36-offline-archive-verifier.md). These are
+invented synthetic evidence tests, not verification of an original Windows archive
+or the full repository suite. Syntax, documentation links/commit references and
+whitespace are validated before publication.
+
+**Limits and next step:** archive consistency does not authenticate its creator,
+recorded native host, source revision, historical input immutability, signatures
+or firmware execution. Preserve the unresolved MEDIUM concurrent parent-replacement
+limitation; stable controlled inputs are a precondition, not an atomic snapshot or
+hostile-filesystem sandbox. Obtain actual controlled native Windows Batch 35
+evidence, then verify an explicitly authorized stable archive and review remaining
+native filesystem/PowerShell limitations. No runtime qualification follows.
+
+**Approval/traceability:** the user authorized this administrative implementation,
+synthetic tests, documentation and normal fast-forward development publication.
+Production admission/pins, signing/release rules, frozen research, original
+archives, protected evidence and main remain unchanged. No QEMU/GDB, firmware,
+installer, signer, package acquisition or CI dispatch occurred. The scoped delivery
+commit is identifiable in Git by the Batch 36 archive-verifier message; no future
+SHA or independently verified Windows result is invented here.
