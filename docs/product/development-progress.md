@@ -1101,3 +1101,69 @@ Its delivery commit is recorded by Git; no future SHA is fabricated here. Main,
 ARM execution/accounting/signatures, production pins/admission/signing controls,
 frozen research and protected/original evidence remain untouched. No hardware,
 installer, release operation or security-policy bypass was used.
+
+## 2026-11-24 — Batch 39 CI reliability and failure investigation
+
+**Date basis:** actual investigation/review and Linux validation, using the client
+date in Asia/Karachi. Normal Git timestamps are retained; this is not a claim of
+development hours or native Windows execution.
+
+**Objective and starting evidence:** investigate the four failed Batch 38 runs
+without concealing qualification failures. The approved detached worktree was
+clean outside excluded evidence paths at
+[`7c9d5bdb29a59ce5283ec08cf577860eecb17b13`](https://github.com/mtalhak003/FIRMAVEX/commit/7c9d5bdb29a59ce5283ec08cf577860eecb17b13),
+matching the remote development branch. Public run/job annotations exposed the
+procfs traceback, nested namespace diagnostic and Windows qualification rejection.
+GitHub CLI/API requests returned Forbidden and full logs required sign-in; no
+original uploaded artifact was independently downloaded or verified. Exact run
+links, observations and missing evidence are in the
+[Batch 39 investigation](batch39-ci-reliability.md).
+
+**Repairs and reasoning:**
+[`207a9bced85738d65ec4f523e6c25e1fb2db37b9`](https://github.com/mtalhak003/FIRMAVEX/commit/207a9bced85738d65ec4f523e6c25e1fb2db37b9)
+removes the descendant test's existence/read race. A missing/reaped procfs entry
+or validated zombie remains acceptable; live, malformed, unreadable and ambiguous
+records still fail. Timeout, cleanup and parent-reaping assertions remain intact.
+A forced synthetic race reproduced the old exception; five fresh actual
+owned-Python cleanup invocations each passed. No production process change was
+needed. Separately,
+[`79c6be8a899dcce548effb4631e1be334decb53a`](https://github.com/mtalhak003/FIRMAVEX/commit/79c6be8a899dcce548effb4631e1be334decb53a)
+adds failure-only Windows identity comparison retention to the versioned installer
+tool. Expected values and comparisons are rebuilt from unchanged policy; only
+allowlisted observations are copied. Missing identities remain unknown, the
+original gate still fails, cancellation propagates and ordinary projection errors
+retain the original failure. Existing private diagnostic text still requires
+review before publication; the whole receipt is not claimed sanitized.
+
+**Actual validation:** focused cleanup tests **29 passed, 70 deselected**, zero
+failures/errors/skips, **0.77 seconds**. Installer-receipt regressions **44 passed**,
+zero failures/errors/skips/deselections, **0.14 seconds**. The overlapping wider
+backend, process/security, isolation, runtime-policy/setup/pack, diagnostics,
+supervisor and build-input selection reported **405 passed, 23 skipped**, zero
+failures/errors/deselections, **30.30 seconds**. Of those skips, 21 lacked existing
+ARM/RV32/Icarus prerequisites; one requires native Windows and one local fixed
+unprivileged namespace probe was blocked at UID-map setup. Exact commands and
+groups are in the report. Synthetic parser/lifecycle fixtures are not actual
+firmware, installer or Windows evidence. These selections are not a full
+repository test run. Syntax, documentation references and whitespace are checked
+before publication; actionlint is unavailable and no workflow was changed.
+
+**Failures and unresolved blockers:** hosted isolation reported
+`bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted`, after fixed quota
+checks passed. Namespace boundaries were not established, and the aggregate gate
+correctly failed. The current kernel/LSM cause is not proven by similar historical
+AppArmor denials. The local read-only UID-map denial is a different observation.
+Windows provider and lifecycle runs stopped at the required QEMU 11.1.2 / GDB 18.1
+identity gate; exact current observed identities require the original diagnostic
+artifacts. Historical QEMU 11.1.3 evidence is not substituted. No unsafe downgrade,
+runtime approval, capability grant or skipped security assertion was introduced.
+
+**Next steps and publication limits:** obtain authorized original artifact/audit
+access, inspect the exact hosted denial and failed Windows identity comparisons,
+then pursue immutable admitted-runtime recovery or separately authorized candidate
+qualification. Check automatic CI against the actual published revision; local
+passes and queued jobs do not establish green CI. Main, frozen research, protected
+evidence, runtime pins/admission/signing and security policy remain unchanged.
+The user authorized scoped commits and a normal fast-forward development push
+after remote verification. No manual CI dispatch, firmware execution, installer,
+runtime substitution or release promotion occurred in this batch.
