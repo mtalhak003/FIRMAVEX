@@ -18,6 +18,7 @@ import time
 from firmavex.backends.api import Limits
 from firmavex.backends.process import Processes,Cancelled
 from firmavex.product.release_bundle import canonical
+from firmavex.product.errors import ProductError
 
 BASELINE='19cd45736337243c64a2298285781a27499981fa'
 
@@ -76,6 +77,39 @@ def windows_installer_command(args, env):
     child_env={**env,'FIRMAVEX_INSTALLER_WAIT':json.dumps({
         'executable':str(args[0]),'command_line':subprocess.list2cmdline(list(map(str,args[1:])))})}
     return [str(Path(shell).resolve(strict=True)),'-NoLogo','-NoProfile','-NonInteractive','-Command',INSTALLER_WAIT_SCRIPT],child_env
+
+
+def _runtime_qualification_failure(error):
+    """Failure-only identity comparison; never copy raw exception details.
+
+    This retains allowlisted observations after runtime-pack rejection, not proof
+    of native execution, package provenance or authorization of another profile.
+    Missing/unsupported diagnostic contracts remain unavailable.
+    """
+    from firmavex.product.platform_support import (
+        WINDOWS_PROFILE_ID, WINDOWS_PROFILE_VERSION, _qualification_details,
+    )
+    if (type(error) is not ProductError or error.category != 'unsupported_platform'
+            or type(error.details) is not dict):
+        return None
+    value=error.details.get('qualification')
+    if (type(value) is not dict or type(value.get('schema_version')) is not int
+            or value['schema_version'] != 1 or type(value.get('profile_version')) is not int
+            or value['profile_version'] != WINDOWS_PROFILE_VERSION
+            or type(value.get('required_profile')) is not str
+            or value['required_profile'] != WINDOWS_PROFILE_ID):
+        return None
+    tools=value.get('tools')
+    tools=tools if type(tools) is dict else {}
+    identities={}
+    for name in ('qemu','gdb'):
+        row=tools.get(name)
+        observed=row.get('observed') if type(row) is dict else None
+        identities[name]=({field:observed.get(field) for field in ('version','sha256')}
+                          if type(observed) is dict else {})
+    # Expected identities and match booleans come only from current admission
+    # constants. The caller cannot supply or replace them through an exception.
+    return _qualification_details(identities,value.get('host_architecture'))
 
 
 class Qualification:
@@ -265,7 +299,18 @@ class Qualification:
             return record
         except BaseException as exc:
             primary=exc
-            record['failure']={'type':type(exc).__name__,'diagnostic':str(exc)};raise
+            record['failure']={'type':type(exc).__name__,'diagnostic':str(exc)}
+            if type(exc) is ProductError and exc.category == 'unsupported_platform':
+                try:
+                    qualification=_runtime_qualification_failure(exc)
+                    if qualification is not None:
+                        record['failure']['runtime_qualification']=qualification
+                except Exception:
+                    # Optional presentation cannot replace the original failed gate.
+                    # Control-flow exceptions still propagate normally.
+                    record['failure']['runtime_qualification_status']='projection_unavailable'
+                    exc.add_note('Runtime qualification identity projection was unavailable.')
+            raise
         finally:
             try:(self.root/'versioned-lifecycle.json').write_bytes(canonical(record))
             except BaseException as failure:
