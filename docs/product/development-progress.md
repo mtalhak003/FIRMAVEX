@@ -1035,3 +1035,69 @@ remote verification. The delivery commit is identified in Git by its daily-repor
 message; no future SHA is fabricated. Main, production admission/pins, frozen
 research and protected/original evidence remain untouched. No firmware, QEMU/GDB,
 installer, signer, release operation or manual CI dispatch occurred.
+
+## 2026-11-23 — Batch 38 RV32 primary failure diagnostics
+
+**Date basis:** actual implementation/review and Linux validation on November 23,
+2026, Asia/Karachi. Native Windows, actual ARM/RV32 execution and installer
+qualification are not established by this entry.
+
+**Objective and starting evidence:** improve one practical firmware diagnosis
+without duplicating the existing Batch 18 Summary. The approved detached worktree
+was clean outside excluded evidence paths at
+[`d97cfed271142cf06a8a879f8906b2220b820290`](https://github.com/mtalhak003/FIRMAVEX/commit/d97cfed271142cf06a8a879f8906b2220b820290),
+matching remote `product/desktop-batch11`. Architecture, README/capability and
+release-readiness guidance, adapters, diagnosis helpers, GUI and tests were
+reviewed first. The pre-change focused suite passed 118 tests in 4.89 seconds.
+No work was discarded or branch switched; no other checkout was modified.
+
+**Changes and reasoning:** RV32 primary failures previously persisted a broad
+infrastructure outcome and error string, insufficient to identify a timeout
+without guessing from prose. The adapter now retains optional versioned phase,
+category, tool context and exit-code metadata from actual typed exceptions,
+explicit return-code checks and identity comparisons. It does not change terminal
+outcomes, commands, limits, inputs, admission or cleanup. The existing shared
+read-only diagnosis helper validates those fields and uses the existing desktop
+Summary for fresh/reopened runs; no second UI is added. Legacy or contradictory
+metadata remains unavailable. Build results are unassessed on this ELF-import
+path, and a configured failure flag is not promoted to a C assertion or guest
+crash. Full JSON/export retention remains compatible; the readable exported
+report format is unchanged. See the [Batch 38 guide](batch38-riscv-failure-diagnostics.md).
+
+**Unsuccessful attempt and repair:** the first combined run reported 202 passed
+and one failure in 5.39 seconds. Inserting the new section before retained errors
+pushed an existing WinError 267 diagnostic outside the first 1,024-character
+preview. The section was moved after retained diagnostics, preserving the original
+assertion and cause-first behavior. Typed-cause/context, unknown/malformed data,
+empty version output, cancellation, cleanup, read-only UI, stale-state clearing
+and export consistency regressions were added. No failing test or admission
+control was weakened.
+
+**Actual final local validation:** focused adapter/diagnosis/compiler/Qt tests
+**208 passed**, zero failures/errors/skips/deselections, **6.26 seconds**. The wider
+backend, product review/security, desktop, packaging-input selection reported
+**479 passed, 21 skipped**, zero failures/errors/deselections, **11.15 seconds**.
+All 21 skips are existing missing ARM/RV32/Icarus tool prerequisites; exact groups
+and commands are in the guide. Separate wheel/source-distribution/installed-Python
+entry-point regressions reported **4 passed**, zero failures/errors/skips/
+deselections, **5.06 seconds**. These overlapping selections are not a full
+repository or native qualification suite. Synthetic adapter processes/inputs and
+Qt records are test doubles, never actual firmware evidence. Python syntax,
+documentation links/references and whitespace are validated before publication.
+
+**Limitations and next steps:** required compiler, QEMU, GDB and Icarus tools are
+absent here; no real firmware was executed. The new metadata covers the primary
+failure inside the existing RV32 recording boundary, not earlier import/tool
+selection or cleanup-only failures. Cleanup remains separately recorded. Recorded
+metadata is not authenticated by rendering it. Recheck the unchanged real RV32
+completion, triggering/non-triggering, cancellation and cleanup workflow in a
+compatible trusted environment. Native Windows/PowerShell and current-commit CI
+remain unverified; no workflow was manually dispatched or runtime promoted.
+
+**Approval/traceability:** the user authorized this scoped implementation,
+regressions, documentation and normal fast-forward development publication after
+remote verification. The feature is one cohesive adapter/presentation change.
+Its delivery commit is recorded by Git; no future SHA is fabricated here. Main,
+ARM execution/accounting/signatures, production pins/admission/signing controls,
+frozen research and protected/original evidence remain untouched. No hardware,
+installer, release operation or security-policy bypass was used.

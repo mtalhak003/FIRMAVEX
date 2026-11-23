@@ -11,7 +11,7 @@ from types import SimpleNamespace
 from firmavex.product.tools import file_identity
 from firmavex.product.runtime import _allocate_port, _debugger_script, _parse_completion
 from .api import Result, profiles
-from .process import Processes, emit_process_event, inspect_artifacts
+from .process import Processes, Cancelled, emit_process_event, inspect_artifacts
 
 
 def tool(name):
@@ -154,16 +154,21 @@ class RiscvBackend:
             "tools": {},
             "completion_observed": False,
         }
+        stage, selected_tool = "tool_probe", None
+        failure_category, failure_return_code = None, None
         try:
             qemu, gdb = selections["qemu-system-riscv32"], selections["gdb-multiarch"]
             for name, path in (("qemu", qemu), ("gdb", gdb)):
+                selected_tool = name
                 code, stdout, stderr = processes.run([path, "--version"], output)
                 if code:
+                    failure_category, failure_return_code = "tool_exit", code
                     raise RuntimeError(f"{name} version probe failed: {stderr}")
                 evidence["tools"][name] = {
                     "identity": file_identity(path),
                     "version": stdout.splitlines()[0],
                 }
+            stage, selected_tool = "qemu_startup", "qemu"
             port = _allocate_port()
             child, qout, qerr = processes.spawn(
                 [
@@ -195,7 +200,8 @@ class RiscvBackend:
             deadline = time.monotonic() + min(5, request.limits.timeout_seconds)
             while True:
                 processes.check()
-                if child.poll() is not None:
+                if (code := child.poll()) is not None:
+                    failure_category, failure_return_code = "tool_exit", code
                     raise RuntimeError("QEMU startup failed: " + qerr.text())
                 try:
                     with socket.create_connection(("127.0.0.1", port), 0.05):
@@ -205,6 +211,7 @@ class RiscvBackend:
                         raise TimeoutError("Debugger endpoint timeout")
                     time.sleep(0.02)
             emit_process_event({"type": "backend_stage", "stage": "debugger_ready", "pid": child.pid})
+            stage, selected_tool = "debugger_observation", "gdb"
             config = SimpleNamespace(
                 input_symbols=("input_a", "input_b"),
                 ready_breakpoint="input_ready",
@@ -235,21 +242,37 @@ class RiscvBackend:
             )
             evidence.update(stdout=stdout, stderr=stderr)
             if code:
+                failure_category, failure_return_code = "tool_exit", code
                 raise RuntimeError("GDB observation failed: " + stderr)
+            stage = "completion_validation"
             observed = _parse_completion(stdout, marker, config, request.values)
             evidence.update(
                 observation=observed,
                 completion_observed=True,
                 measurement_mode="real_firmware",
             )
+            stage, selected_tool = "identity_validation", None
             if identity["sha256"] != file_identity(image)["sha256"]:
+                failure_category = "identity_changed"
                 raise RuntimeError("Firmware snapshot changed")
-            for record in evidence["tools"].values():
+            for name, record in evidence["tools"].items():
+                selected_tool = name
                 if file_identity(record["identity"]["path"]) != record["identity"]:
+                    failure_category = "identity_changed"
                     raise RuntimeError("Runtime executable changed during execution")
             return Result("triggered" if observed["triggered"] else "passed", evidence)
         except BaseException as exc:
             primary = exc
+            # Administrator-owned facts from this execution boundary, never a
+            # guessed firmware cause, strategy signal or changed outcome.
+            category = ("cancelled" if isinstance(exc, (Cancelled, KeyboardInterrupt, SystemExit)) else
+                        "timeout" if isinstance(exc, TimeoutError) else
+                        "invalid_observation" if stage == "completion_validation" and isinstance(exc, ValueError) else
+                        failure_category or "infrastructure_error")
+            evidence["failure_diagnostic"] = {
+                "schema_version": 1, "backend": self.profile.id, "stage": stage,
+                "category": category, "tool": selected_tool, "return_code": failure_return_code,
+            }
             exc.backend_evidence = evidence
             raise
         finally:

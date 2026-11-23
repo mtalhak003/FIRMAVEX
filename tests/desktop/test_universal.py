@@ -899,3 +899,66 @@ def test_diagnostic_artifact_picker_never_dispatches(view, tmp_path, monkeypatch
     assert 'Last timestamp: 12' in window.artifact_view.toPlainText()
     assert window.artifact_view.isReadOnly() and not controller.calls
     assert path.read_bytes() == original
+
+
+@pytest.mark.parametrize('command', ['backend_execute', 'backend_inspect'], ids=['fresh', 'saved'])
+def test_rv_typed_failure_detail_uses_existing_read_only_summary_without_dispatch(view, command):
+    import copy
+    window, controller = view
+    # This is an invented worker record, not native firmware execution evidence.
+    record = {'status': 'infrastructure_failure', 'evidence': {
+        'backend': 'riscv32-virt', 'measurement_mode': 'synthetic_test',
+        'admission': {'profile': {'id': 'riscv32-virt'}, 'attempt_id': 'synthetic-rv-diagnostic'},
+        'failure_diagnostic': {'schema_version': 1, 'backend': 'riscv32-virt',
+            'stage': 'debugger_observation', 'category': 'timeout', 'tool': 'gdb', 'return_code': None}}}
+    before = copy.deepcopy(record)
+    window._job = command
+    window._result(record)
+    shown = window.summary_view.toPlainText()
+    assert 'RV32 execution diagnostic' in shown
+    assert 'Recorded phase: Debugger observation' in shown
+    assert 'Recorded cause: Timeout' in shown
+    assert 'Measurement: synthetic_test' in shown
+    assert 'Build outcome: not assessed' in shown
+    assert 'Assertion cause: not established' in shown
+    assert window.summary_view.isReadOnly() and not controller.calls
+    assert record == before
+
+
+def test_rv_result_inspection_clears_stale_failure_detail_and_preserves_unknowns(view):
+    window, controller = view
+    def show(status, diagnostic=None):
+        evidence = {'backend': 'riscv32-virt', 'measurement_mode': 'synthetic_test',
+                    'admission': {'profile': {'id': 'riscv32-virt'}}}
+        if diagnostic is not None:
+            evidence['failure_diagnostic'] = diagnostic
+        window._job = 'backend_inspect'
+        window._result({'status': status, 'evidence': evidence})
+        return window.summary_view.toPlainText()
+    detail = {'schema_version': 1, 'backend': 'riscv32-virt', 'stage': 'qemu_startup',
+              'category': 'tool_exit', 'tool': 'qemu', 'return_code': 7}
+    first = show('infrastructure_failure', detail)
+    assert 'Recorded cause: Tool process exited' in first and 'Recorded exit code: 7' in first
+    second = show('passed')
+    assert 'Recorded cause: Tool process exited' not in second and 'Recorded exit code: 7' not in second
+    assert 'Recorded cause: unavailable' in second
+    assert 'Failure category: no failure recorded' in second
+    detail['schema_version'] = True
+    third = show('infrastructure_failure', detail)
+    assert 'Recorded cause: unavailable' in third
+    assert 'Recorded cause: Tool process exited' not in third
+    assert window.summary_view.isReadOnly() and not controller.calls
+
+
+def test_rv_result_inspection_does_not_infer_cause_from_legacy_error_prose(view):
+    window, controller = view
+    window._job = 'backend_inspect'
+    record = {'status': 'infrastructure_failure', 'evidence': {
+        'backend': 'riscv32-virt', 'measurement_mode': 'synthetic_test',
+        'admission': {'profile': {'id': 'riscv32-virt'}},
+        'error': 'TimeoutError: assert failed in a legacy diagnostic\x1b'}}
+    window._result(record)
+    shown = window.summary_view.toPlainText()
+    assert 'Recorded cause: unavailable' in shown and 'Recorded cause: Timeout' not in shown
+    assert 'Assertion cause: not established' in shown and '\x1b' not in shown
+    assert not controller.calls

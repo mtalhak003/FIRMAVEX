@@ -48,6 +48,69 @@ def replay_explanation(backend):
     return 'Replay guarantees unavailable for this record.'
 
 
+def _riscv_failure_detail(record, evidence):
+    """Present supported adapter metadata, never infer a cause from log words.
+
+    This is a primary execution-pipeline diagnostic, not proof of guest dispatch,
+    an assertion, a build result or archive authenticity. Older or contradictory
+    metadata remains unavailable. Cleanup has its existing separate evidence.
+    """
+    identities = []
+    if 'backend' in evidence:
+        identities.append(evidence['backend'])
+    admission = evidence.get('admission')
+    if type(admission) is dict and 'profile' in admission:
+        profile = admission['profile']
+        identities.append(profile.get('id') if type(profile) is dict else None)
+    if record.get('kind') == 'firmavex_product_result':
+        identities.append('cortex-m3-mps2')
+    if not any(type(value) is str and value == 'riscv32-virt' for value in identities):
+        return []
+    stages = {'tool_probe': 'Runtime version probe', 'qemu_startup': 'QEMU startup',
+              'debugger_observation': 'Debugger observation', 'completion_validation': 'Completion validation',
+              'identity_validation': 'Identity validation'}
+    causes = {'timeout': 'Timeout', 'tool_exit': 'Tool process exited',
+              'invalid_observation': 'Invalid completion observation',
+              'identity_changed': 'Retained input or runtime identity changed',
+              'infrastructure_error': 'Infrastructure error; specific cause not established',
+              'cancelled': 'Cancellation'}
+    value = evidence.get('failure_diagnostic')
+    # The record has six fields. Check length before iterating arbitrary metadata.
+    valid = (type(value) is dict and len(value) == 6
+             and set(value) == {'schema_version', 'backend', 'stage', 'category', 'tool', 'return_code'})
+    if valid:
+        phase, cause, tool, code = (value[key] for key in ('stage', 'category', 'tool', 'return_code'))
+        valid = (type(value['schema_version']) is int and value['schema_version'] == 1
+                 and value['backend'] == 'riscv32-virt'
+                 and all(type(identity) is str and identity == 'riscv32-virt' for identity in identities)
+                 and type(phase) is str and 0 < len(phase) <= 32 and phase in stages
+                 and type(cause) is str and 0 < len(cause) <= 32 and cause in causes
+                 and (tool is None or type(tool) is str and len(tool) <= 4 and tool in {'qemu', 'gdb'}))
+    if valid:
+        expected_tools = {'tool_probe': {'qemu', 'gdb'}, 'qemu_startup': {'qemu'},
+                          'debugger_observation': {'gdb'}, 'completion_validation': {'gdb'},
+                          'identity_validation': {None, 'qemu', 'gdb'}}
+        valid = (tool in expected_tools[phase]
+                 and record.get('status') == ('cancelled' if cause == 'cancelled' else 'infrastructure_failure')
+                 and (cause != 'invalid_observation' or phase == 'completion_validation')
+                 and (cause != 'identity_changed' or phase == 'identity_validation'))
+        if cause == 'tool_exit':
+            valid = (valid and phase in {'tool_probe', 'qemu_startup', 'debugger_observation'}
+                     and type(code) is int and -(2**31) <= code <= 2**32 - 1
+                     and (code != 0 or phase == 'qemu_startup'))
+        else:
+            valid = valid and code is None
+    lines = ['RV32 execution diagnostic',
+             'Recorded phase: ' + (stages[phase] if valid else 'unavailable'),
+             'Recorded cause: ' + (causes[cause] if valid else 'unavailable'),
+             'Recorded tool: ' + (tool if valid and tool is not None else 'unavailable'),
+             'Recorded exit code: ' + (str(code) if valid and code is not None else 'unavailable'),
+             'Build outcome: not assessed (this run imports an ELF; it does not compile firmware).',
+             'Assertion cause: not established by a configured failure flag.',
+             'This is retained primary pipeline metadata, not proof of a firmware crash, hang or assertion.']
+    return lines
+
+
 def diagnosis(record):
     if type(record) is not dict:
         record = {}
@@ -86,6 +149,8 @@ def diagnosis(record):
     for key in ('error', 'stderr', 'stdout', 'compile_stderr', 'compile_stdout'):
         if type(evidence.get(key)) is str and evidence[key]:
             lines.append('Retained ' + key + ':\n' + text(evidence[key], 1200))
+    # Preserve existing cause-first excerpts, including short saved-run previews.
+    lines.extend(_riscv_failure_detail(record, evidence))
     lines.append('Next investigation: ' + ('Review retained partial logs and cleanup evidence before an explicit rerun.' if status == 'cancelled' else
                  'Compare retained inputs, runtime identities and logs; inspect missing evidence before drawing a conclusion.'))
     lines.append(replay_explanation(backend))
