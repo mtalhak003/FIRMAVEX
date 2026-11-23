@@ -24,6 +24,7 @@ passing test is evidence only for its stated revision and scope.
 | Review preflight security and native validation limits | [Batch 34 security review](product/batch34-preflight-security-review.md): repaired lexical/schema defects, stronger synthetic guards and an unresolved concurrent path-isolation limitation; controlled native functional validation only. |
 | Run the controlled developer preflight validation workflow | [Batch 35 operator guide and actual evidence](product/batch35-native-preflight-validation.md): recovered/repaired harness, exclusive archives, repeat comparisons and fixed synthetic suites; portable Linux validation completed, native Windows/PowerShell execution pending. |
 | Check an existing preflight archive without executing its contents | [Batch 36 offline verifier](product/batch36-offline-archive-verifier.md): bounded listed-file checksums, marker/accounting consistency and explicit unassessed evidence; no authenticity, native execution or runtime qualification claim. |
+| Collect truthful daily Git progress without creating activity | [Batch 37 daily reporter](product/batch37-daily-development-report.md): Asia/Karachi commit/statistics reporting and current scoped worktree state; supplied successful/failed/pending/untested declarations remain attributed, with no inferred tests or contribution credit. |
 
 The latest original Batch 27 ZIP pass is **user-reported**, not independently
 verified in this environment: 19 receipts, 97 JUnit passed, 10 skipped and zero

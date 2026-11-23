@@ -962,3 +962,76 @@ archives, protected evidence and main remain unchanged. No QEMU/GDB, firmware,
 installer, signer, package acquisition or CI dispatch occurred. The scoped delivery
 commit is identifiable in Git by the Batch 36 archive-verifier message; no future
 SHA or independently verified Windows result is invented here.
+
+## 2026-11-23 — Batch 37 read-only daily development reporting
+
+**Date basis:** actual implementation/review and Linux validation on November 23,
+2026, Asia/Karachi. Committer timestamps are reporting metadata, not development
+hours or independently proven activity dates.
+
+**Prior attempt and starting evidence:** [Issue #6](https://github.com/mtalhak003/FIRMAVEX/issues/6)
+records an external 149-line reporter/89-line test draft and seven reported passes
+in 0.19 seconds under Python 3.13.5 Linux, before a DNS/checkout-access blocker.
+That is a historical issue claim, not this worktree's result. Neither draft was
+present here; equivalent functionality was implemented from the task and existing
+conventions. GitHub API requests returned Forbidden, but the public issue body
+was retrieved and reviewed. The approved worktree was clean outside excluded
+evidence paths, at detached HEAD
+[`6efbd010fb31333dba26cbc8d0b13ac80ae0f13c`](https://github.com/mtalhak003/FIRMAVEX/commit/6efbd010fb31333dba26cbc8d0b13ac80ae0f13c),
+matching the remote development branch. No unfinished work was discarded or
+silently represented as recovered, and no branch switch was made.
+
+**Changes and reasoning:** add an [offline reporter](../../tools/daily_development_report.py),
+[isolated regression tests](../../tests/product/test_daily_development_report.py)
+and [operator/security guide](batch37-daily-development-report.md), plus a route
+from the documentation index. It records actual reachable commit metadata and
+scoped file/line statistics for an Asia/Karachi day, using committer timestamps;
+root commits and first-parent merge statistics are explicit. The current checkout's
+staged, unstaged, untracked and conflicted states remain separate from historical
+commit facts. Binary/conflicted line counts remain unknown rather than invented
+zeros. Optional successful/failed/pending/untested declarations are explicitly
+supplied and unverified; Git never becomes proof of passing tests, completed
+milestones, Windows qualification or contribution eligibility.
+
+**Security and repairs:** require an absolute operator-trusted Git executable;
+reuse existing lexical/path/environment policy; disable helpers, external diffs,
+text conversion, transports and optional locks; refuse filters/includes and hidden
+index flags. Fixed argument arrays, NUL records, bounded captures/deadlines and
+control-flow-preserving cleanup support read-only operation. Initial tests exposed
+two ordering assumptions and a legacy admission-error inconsistency; sorted
+expectations and the reporter's fixed error type resolved them. Independent review
+reproduced unmerged duplicate-numstat rejection and identified missing aggregate
+bounds and reader-control priority. Targeted repairs preserve conflicts with
+unassessed counts, cap cumulative work and retain original cancellation semantics.
+All have regression coverage; no production boundary was relaxed.
+
+**Actual validation:** the new focused selection reported **92 passed**, zero
+failures/errors/skips/deselections, **4.28 seconds**. The overlapping related
+reporter, Batch 35/36, preflight, admission, file-state and selected reader/security
+selection reported **565 passed, 1 skipped**, zero failures/errors/deselections,
+**10.56 seconds**. The skip requires actual native NTFS change-time semantics.
+Exact commands and limitations are in the linked Batch 37 guide. Test Git commits,
+authors and timestamps belong only to invented temporary repositories, not this
+project's contribution record. A repeated actual CLI check reproduced Batch 36's
+five changed files/1,740 additions/zero deletions with deterministic output, while
+leaving test/CI/contribution evidence unassessed. The prepublication current-day
+report honestly showed zero daily commits at the baseline and a modified worktree.
+Syntax, documentation links/commit references and whitespace are checked for
+publication; this is not a complete repository or firmware-execution suite.
+
+**Remaining blockers and next steps:** native Windows/PowerShell validation
+remains PENDING; IANA timezone data and trusted existing Git/Python are prerequisites.
+GitHub API access remains unavailable, though public issue content and Git transport
+were accessible. The reporter operates offline and cannot verify CI, supplied
+claims or profile-contribution eligibility. Stable controlled metadata is a
+precondition; preserve the MEDIUM parent-replacement limitation and no atomic or
+hostile-filesystem isolation claim. Use real daily facts and reviewed evidence for
+future entries rather than empty commits, backdating or promised contribution
+squares. No scheduler or automatic publication is added.
+
+**Approval/traceability:** the user authorized this implementation, tests,
+documentation and normal fast-forward delivery to `product/desktop-batch11` after
+remote verification. The delivery commit is identified in Git by its daily-reporter
+message; no future SHA is fabricated. Main, production admission/pins, frozen
+research and protected/original evidence remain untouched. No firmware, QEMU/GDB,
+installer, signer, release operation or manual CI dispatch occurred.
