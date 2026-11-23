@@ -3,6 +3,7 @@
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import threading
@@ -407,6 +408,30 @@ def test_frozen_execution_explicitly_blocked(tmp_path, monkeypatch):
     assert not processes.children
 
 
+def _assert_proc_stopped(pid):
+    """Missing/reaped or zombie is stopped; unreadable/ambiguous is not proof.
+
+    Read once instead of checking existence first: procfs can report ENOENT or
+    ESRCH while a process is being reaped. This never sends signals or treats
+    permission errors as termination evidence.
+    """
+    assert type(pid) is int and pid > 0, "Expected an owned positive PID"
+    try:
+        record = Path(f"/proc/{pid}/stat").read_text()
+    except (FileNotFoundError, ProcessLookupError):
+        return
+    prefix = f"{pid} ("
+    boundary = record.rfind(") ")
+    assert record.startswith(prefix) and boundary >= len(prefix), "Malformed procfs PID/name record"
+    # Field 2 (comm) may itself contain spaces and ')'. Remaining fields are
+    # state followed by numbers; require at least through field 22 (starttime).
+    fields = record[boundary + 2:].split()
+    assert len(fields) >= 20 and len(fields[0]) == 1, "Truncated procfs state record"
+    assert all(re.fullmatch(r"-?[0-9]+", value) for value in fields[1:]), "Malformed procfs numeric fields"
+    assert int(fields[19]) >= 0, "Malformed procfs process start time"
+    assert fields[0] == "Z", "Owned descendant remained running or termination is not established"
+
+
 def test_owned_descendant_cleanup(tmp_path):
     if os.name != "posix":
         pytest.skip("POSIX ownership test")
@@ -423,8 +448,65 @@ def test_owned_descendant_cleanup(tmp_path):
         processes.close()
     assert all(p["reaped"] for p in processes.cleanup)
     if Path("/proc").exists():
-        state = Path(f"/proc/{descendant}/stat")
-        assert not state.exists() or state.read_text().split()[2] == "Z"
+        _assert_proc_stopped(descendant)
+
+
+def _synthetic_proc_stat(pid=9255, name="python", state="Z"):
+    return f"{pid} ({name}) {state} " + " ".join(["0"] * 49) + "\n"
+
+
+@pytest.mark.parametrize("error", [FileNotFoundError("invented ENOENT"), ProcessLookupError("invented ESRCH")],
+                         ids=["disappeared-on-read", "reaped-during-read"])
+def test_proc_stopped_accepts_disappearance_without_exists_check(monkeypatch, error):
+    def read(path, *args, **kwargs):
+        assert path == Path("/proc/9255/stat")
+        raise error
+    monkeypatch.setattr(Path, "read_text", read)
+    monkeypatch.setattr(Path, "exists", lambda *args: pytest.fail("Do not check procfs existence before reading"))
+    _assert_proc_stopped(9255)
+
+
+@pytest.mark.parametrize("name", ["python", "with spaces", "with ) embedded", "nested (name) ) space", ""],
+                         ids=["ordinary", "spaces", "close-paren", "mixed-parens", "empty"])
+def test_proc_stopped_parses_zombie_name_delimiters(monkeypatch, name):
+    monkeypatch.setattr(Path, "read_text", lambda *args, **kwargs: _synthetic_proc_stat(name=name))
+    _assert_proc_stopped(9255)
+
+
+@pytest.mark.parametrize("state", ["R", "S", "D", "T", "I"])
+def test_proc_stopped_rejects_live_or_non_zombie_state(monkeypatch, state):
+    monkeypatch.setattr(Path, "read_text", lambda *args, **kwargs: _synthetic_proc_stat(state=state))
+    with pytest.raises(AssertionError, match="Owned descendant"):
+        _assert_proc_stopped(9255)
+
+
+@pytest.mark.parametrize("record", ["", "9255 (python) Z\n", _synthetic_proc_stat(pid=9256),
+    _synthetic_proc_stat().replace(") ", ")", 1), _synthetic_proc_stat().replace(" Z ", " ZZ ", 1),
+    _synthetic_proc_stat().rstrip() + " invalid\n", "9255 (python) Z " + "0 " * 18 + "-1\n"],
+    ids=["empty", "truncated", "wrong-pid", "bad-delimiter", "bad-state", "bad-number", "negative-start"])
+def test_proc_stopped_rejects_malformed_or_truncated_evidence(monkeypatch, record):
+    monkeypatch.setattr(Path, "read_text", lambda *args, **kwargs: record)
+    with pytest.raises(AssertionError):
+        _assert_proc_stopped(9255)
+
+
+@pytest.mark.parametrize("error", [PermissionError("invented permission denial"), OSError("invented read failure"),
+    KeyboardInterrupt("invented cancellation"), SystemExit(17), BaseException("invented control flow")],
+    ids=["permission", "io-failure", "interrupt", "exit", "base-control"])
+def test_proc_stopped_propagates_unknown_io_and_control_flow(monkeypatch, error):
+    def read(*args, **kwargs):
+        raise error
+    monkeypatch.setattr(Path, "read_text", read)
+    with pytest.raises(type(error)) as caught:
+        _assert_proc_stopped(9255)
+    assert caught.value is error
+
+
+@pytest.mark.parametrize("pid", [True, 0, -1, "9255"])
+def test_proc_stopped_rejects_invalid_pid_before_read(monkeypatch, pid):
+    monkeypatch.setattr(Path, "read_text", lambda *args, **kwargs: pytest.fail("Invalid PID reached procfs"))
+    with pytest.raises(AssertionError):
+        _assert_proc_stopped(pid)
 
 
 def test_persistence_error_preserves_original_interrupt(tmp_path, monkeypatch):
