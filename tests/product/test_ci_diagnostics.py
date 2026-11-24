@@ -1,5 +1,6 @@
 """Real host pytest subprocesses: diagnostics are not firmware evidence."""
 import os
+import io
 from pathlib import Path
 import subprocess
 import sys
@@ -307,3 +308,197 @@ def test_long_failure_identity_is_bounded_in_annotations_and_summary(tmp_path, m
     full = 'module.' + 'x' * 1048577
     assert hashlib.sha256(full.encode()).hexdigest() in label
     assert len(case.get('name')) == 1048577
+
+
+@pytest.mark.parametrize('encoding,text', [
+    ('cp1252', 'replacement: \ufffd\n'),
+    ('cp1252', 'supported: caf\u00e9 \u20ac\n'),
+    ('cp1252', 'unsupported: \u2603 \u4e2d \U0001f642\n'),
+    ('cp1252', ''),
+    ('cp1252', 'x' * 65520 + '\ufffd\n'),
+    ('utf-8', 'Unicode: caf\u00e9 \ufffd \u2603 \U0001f642\n'),
+], ids=['replacement', 'supported', 'unsupported', 'empty', 'long', 'utf8'])
+def test_console_rendering_preserves_supported_text_and_visibly_escapes_unsupported(monkeypatch, encoding, text):
+    from tools import product_ci_tests as ci
+    data = io.BytesIO()
+    stream = io.TextIOWrapper(data, encoding=encoding, errors='strict', write_through=True)
+    with monkeypatch.context() as patch:
+        patch.setattr(ci.sys, 'stdout', stream)
+        ci.console_print(text, end='')
+    assert data.getvalue() == text.encode(encoding, errors='backslashreplace')
+
+
+def test_console_without_encoding_keeps_unicode(monkeypatch):
+    from tools import product_ci_tests as ci
+    stream = io.StringIO()
+    with monkeypatch.context() as patch:
+        patch.setattr(ci.sys, 'stdout', stream)
+        ci.console_print('original \ufffd \u2603')
+    assert stream.getvalue() == 'original \ufffd \u2603\n'
+
+
+def test_console_unknown_encoding_is_not_replaced_with_an_unsafe_fallback(monkeypatch):
+    from tools import product_ci_tests as ci
+    class UnknownEncoding:
+        encoding = 'invented-unavailable-console-codec'
+        def write(self, value):
+            pytest.fail('Unknown codec reached console output')
+        def flush(self):
+            pytest.fail('Unknown codec reached console flush')
+    with monkeypatch.context() as patch:
+        patch.setattr(ci.sys, 'stdout', UnknownEncoding())
+        with pytest.raises(LookupError):
+            ci.console_print('original \ufffd')
+
+
+@pytest.mark.parametrize('error', [OSError('synthetic metadata failure'),
+                                  KeyboardInterrupt('synthetic metadata cancellation')],
+                         ids=['io-failure', 'interrupt'])
+def test_console_encoding_metadata_failure_propagates_without_output(monkeypatch, error):
+    from tools import product_ci_tests as ci
+    class BrokenMetadata:
+        @property
+        def encoding(self):
+            raise error
+        def write(self, value):
+            pytest.fail('Unavailable encoding metadata reached console output')
+        def flush(self):
+            pytest.fail('Unavailable encoding metadata reached console flush')
+    with monkeypatch.context() as patch:
+        patch.setattr(ci.sys, 'stdout', BrokenMetadata())
+        with pytest.raises(type(error)) as caught:
+            ci.console_print('original \ufffd')
+    assert caught.value is error
+
+
+@pytest.mark.parametrize('phase', ['write', 'flush'])
+@pytest.mark.parametrize('error', [
+    OSError('synthetic unavailable console'),
+    BrokenPipeError('synthetic closed pipe'),
+    ValueError('synthetic closed stream'),
+    UnicodeEncodeError('cp1252', 'ASCII', 0, 1, 'synthetic stream failure'),
+    KeyboardInterrupt('synthetic cancellation'),
+    SystemExit(23),
+    BaseException('synthetic control flow'),
+], ids=['os-error', 'broken-pipe', 'closed', 'encoding-error', 'interrupt', 'exit', 'base-control'])
+def test_console_does_not_suppress_or_retry_stream_failures(monkeypatch, phase, error):
+    from tools import product_ci_tests as ci
+    class FailingStream:
+        encoding = 'cp1252'
+        calls = 0
+        def write(self, value):
+            if phase == 'write':
+                self.calls += 1
+                raise error
+            return len(value)
+        def flush(self):
+            if phase == 'flush':
+                self.calls += 1
+                raise error
+    stream = FailingStream()
+    with monkeypatch.context() as patch:
+        patch.setattr(ci.sys, 'stdout', stream)
+        with pytest.raises(type(error)) as caught:
+            ci.console_print('ASCII')
+    assert caught.value is error
+    assert stream.calls == 1
+
+
+@pytest.mark.parametrize('returncode', [0, 1, 2, 124, -9], ids=['passed', 'failed', 'collection', 'timeout', 'signal'])
+def test_console_encoding_preserves_selection_status_junit_and_utf8_summary(tmp_path, monkeypatch, returncode):
+    import xml.etree.ElementTree as ET
+    from tools import product_ci_tests as ci
+    report = tmp_path/'pytest.xml'
+    summary = tmp_path/'summary.md'
+    message = 'actual \ufffd caf\u00e9 \u2603 %\nnext line'
+    transcript = message.encode('utf-8') + b'\xff\n'
+    report.with_suffix('.log').write_bytes(transcript)
+    tree = ET.Element('testsuites')
+    suite = ET.SubElement(tree, 'testsuite', tests='1')
+    case = ET.SubElement(suite, 'testcase', classname='synthetic', name='unicode_\u2603')
+    if returncode:
+        ET.SubElement(case, 'failure').text = message
+    original_junit = ET.tostring(tree, encoding='utf-8')
+    report.write_bytes(original_junit)
+    decoded = transcript.decode('utf-8', errors='replace')
+    calls = []
+    def completed(args, selected_report, *, bounded):
+        calls.append((args, selected_report, bounded))
+        return subprocess.CompletedProcess(['invented pytest'], returncode, stdout=decoded)
+    data = io.BytesIO()
+    stream = io.TextIOWrapper(data, encoding='cp1252', errors='strict', write_through=True)
+    with monkeypatch.context() as patch:
+        patch.setenv('GITHUB_STEP_SUMMARY', str(summary))
+        patch.setattr(ci, 'run_tests', completed)
+        patch.setattr(ci.sys, 'stdout', stream)
+        status = ci.complete_selection(['-q', 'synthetic-selection'], report, bounded=True)
+    assert status == returncode
+    assert calls == [(['-q', 'synthetic-selection'], report, True)]
+    assert report.read_bytes() == original_junit
+    assert report.with_suffix('.log').read_bytes() == transcript
+    rendered = data.getvalue().decode('cp1252')
+    assert decoded.encode('cp1252', errors='backslashreplace').decode('cp1252') in rendered
+    text = summary.read_text(encoding='utf-8')
+    assert f'Actual pytest exit status: **{returncode}**' in text
+    assert 'JUnit cases: 1; failures/errors: ' + str(bool(returncode) * 1) + '; skipped: 0.' in text
+    if returncode:
+        assert '::error title=FIRMAVEX test process failure::pytest exited ' + str(returncode) in rendered
+        assert '::error title=FIRMAVEX regression failure::synthetic.unicode_\\u2603' in rendered
+        assert '%25%0Anext line' in rendered
+        assert message in text
+    else:
+        assert '::error' not in rendered
+
+
+@pytest.mark.parametrize('has_stacks', [False, True], ids=['state-only', 'timeout'])
+def test_retained_diagnostics_render_cp1252_without_changing_originals(tmp_path, monkeypatch, has_stacks):
+    from tools import product_ci_tests as ci
+    root = tmp_path/'firmavex-ci-synthetic'
+    root.mkdir()
+    contents = {'launcher-stacks.log': b'trace \xff\n' if has_stacks else b'',
+                'launcher-state.log': 'phase \ufffd %\n'.encode('utf-8'),
+                'pytest.log': 'output caf\u00e9 \u2603\n'.encode('utf-8')}
+    for name, content in contents.items():
+        (root/name).write_bytes(content)
+    data = io.BytesIO()
+    stream = io.TextIOWrapper(data, encoding='cp1252', errors='strict', write_through=True)
+    with monkeypatch.context() as patch:
+        patch.setenv('FIRMAVEX_CI_DIAGNOSTICS', str(tmp_path))
+        patch.setattr(ci.sys, 'stdout', stream)
+        assert ci.report_diagnostics() == 0
+    rendered = data.getvalue().decode('cp1252')
+    assert '\\ufffd' in rendered and '%25%0A' in rendered
+    assert ('::error title=Native CI launcher timeout::' if has_stacks else
+            '::notice title=Retained CI launcher state::') in rendered
+    for name, content in contents.items():
+        assert (root/name).read_bytes() == content
+
+
+@pytest.mark.parametrize('fails', [False, True], ids=['passing-child', 'failing-child'])
+def test_real_pytest_cp1252_launcher_retains_original_transcript_and_exit_code(tmp_path, fails):
+    import xml.etree.ElementTree as ET
+    source = tmp_path/'test_encoding_probe.py'
+    payload = 'original caf\u00e9 \u2603 '.encode('utf-8') + b'\xff\n'
+    body = ('import os\ndef test_encoding():\n'
+            f' os.write(1, {payload!r})\n'
+            + (' assert False, "actual failure"\n' if fails else ' assert True\n'))
+    source.write_text(body, encoding='utf-8')
+    archive = tmp_path/'retained'
+    summary = tmp_path/'summary.md'
+    environment = probe_environment(PYTEST_DISABLE_PLUGIN_AUTOLOAD='1',
+                                    PYTHONIOENCODING='cp1252:strict',
+                                    FIRMAVEX_CI_DIAGNOSTICS=str(archive),
+                                    GITHUB_STEP_SUMMARY=str(summary))
+    result = subprocess.run([sys.executable, str(REPO/'tools/product_ci_tests.py'),
+                             '--ci-watchdog', '-q', '-s', str(source)], cwd=REPO,
+                            env=environment, capture_output=True, timeout=25)
+    assert result.returncode == int(fails), result.stderr.decode('cp1252')
+    rendered = result.stdout.decode('cp1252')
+    assert 'original caf\u00e9 \\u2603 \\ufffd' in rendered
+    logs = list(archive.glob('firmavex-ci-*/pytest.log'))
+    assert len(logs) == 1 and payload in logs[0].read_bytes()
+    cases = ET.parse(logs[0].with_suffix('.xml')).findall('.//testcase')
+    assert len(cases) == 1
+    assert (cases[0].find('failure') is not None) is fails
+    assert ('::error title=FIRMAVEX test process failure::' in rendered) is fails
+    assert f'Actual pytest exit status: **{int(fails)}**' in summary.read_text(encoding='utf-8')

@@ -92,12 +92,12 @@ def report_diagnostics():
         if not stack.stat().st_size:
             state = tail(stack.with_name('launcher-state.log'), 1024)
             state = state.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
-            print('::notice title=Retained CI launcher state::'+state, flush=True)
+            console_print('::notice title=Retained CI launcher state::'+state)
             continue
         detail = (tail(stack.with_name('launcher-state.log'), 1024) + '\n'
                   + tail(stack, 10000) + '\n' + tail(stack.with_name('pytest.log'), 4000))
         escaped = detail.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
-        print('::error title=Native CI launcher timeout::'+escaped, flush=True)
+        console_print('::error title=Native CI launcher timeout::'+escaped)
     return 0
 
 
@@ -142,16 +142,29 @@ def case_label(case):
     return label
 
 
+def console_print(text, *, end='\n'):
+    """Render unsupported console characters visibly; never rewrite evidence.
+
+    Encode before writing so a strict console cannot fail halfway through a
+    diagnostic. Other stream/encoding errors and control-flow exceptions propagate.
+    """
+    stream = sys.stdout
+    encoding = getattr(stream, 'encoding', None)
+    if encoding:
+        text = text.encode(encoding, errors='backslashreplace').decode(encoding)
+    print(text, end=end, file=stream, flush=True)
+
+
 def complete_selection(args, report, *, bounded):
-    print('::notice title=FIRMAVEX CI launcher::entered supervised test selection', flush=True)
+    console_print('::notice title=FIRMAVEX CI launcher::entered supervised test selection')
     process = run_tests(args, report, bounded=bounded)
     # Publish a bounded tail only after execution and ownership cleanup finish.
     # The full, continuously written transcript remains in the retained archive.
-    print(process.stdout, end='', flush=True)
+    console_print(process.stdout, end='')
     if process.returncode:
         diagnostic = ('pytest exited ' + str(process.returncode) + '; actual final process output: ' + process.stdout[-7000:])
         escaped = diagnostic.replace('%','%25').replace('\r','%0D').replace('\n','%0A')
-        print('::error title=FIRMAVEX test process failure::'+escaped, flush=True)
+        console_print('::error title=FIRMAVEX test process failure::'+escaped)
     if report.exists():
         tree = ET.parse(report)
         for case in tree.findall('.//testcase'):
@@ -162,7 +175,7 @@ def complete_selection(args, report, *, bounded):
                 # Public Actions annotations remain visible when access to
                 # raw logs/job summaries requires authentication.
                 escaped = diagnostic.replace('%','%25').replace('\r','%0D').replace('\n','%0A')
-                print('::error title=FIRMAVEX regression failure::'+escaped, flush=True)
+                console_print('::error title=FIRMAVEX regression failure::'+escaped)
     destination = os.environ.get('GITHUB_STEP_SUMMARY')
     if destination:
         lines=['## FIRMAVEX regression selection', '',
