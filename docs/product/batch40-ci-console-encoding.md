@@ -100,7 +100,7 @@ failures/errors/skips. These overlapping counts must not be summed.
 PYTHONDONTWRITEBYTECODE=1 /workspace/firmavex-batch7-venv/bin/python -B -m pytest -q -ra -p no:cacheprovider tests/product/test_ci_diagnostics.py -k 'console or encoding or retained_diagnostics_render or real_pytest_cp1252'
 ```
 
-The [33 added regression cases](../../tests/product/test_ci_diagnostics.py) cover
+The [initial 33 added regression cases](../../tests/product/test_ci_diagnostics.py) cover
 CP1252 and UTF-8, supported/unsupported Unicode, U+FFFD, empty/long output, unknown
 codecs and stream metadata, write/flush failures and control flow. Selection
 fixtures retain statuses `0`, `1`, `2`, `124` and `-9`, original bytes/JUnit,
@@ -135,16 +135,52 @@ path-alias test and 11 missing ARM/RV32/Icarus prerequisites:
   sharing/attributes/locking cases.
 
 These are overlapping focused/wider selections, not a full repository suite.
-Final static validation passed two Python AST parses, all six intended files'
+Initial prepublication static validation passed two Python AST parses, all six intended files'
 newline/trailing-whitespace checks, 167 local documentation links including 23
 heading anchors, and 106 unique locally resolved commit references.
 `git diff --check` passed. No workflow was modified or manually dispatched.
 
+## Native CI follow-up and newline-fixture repair
+
+The normal fast-forward publication at
+[`0a6894027f1b99ee38eac6ed915b0d4eac203a37`](https://github.com/mtalhak003/FIRMAVEX/commit/0a6894027f1b99ee38eac6ed915b0d4eac203a37)
+automatically started [product run 45388541130](https://github.com/mtalhak003/FIRMAVEX/actions/runs/45388541130).
+The [Windows Python 3.11 job](https://github.com/mtalhak003/FIRMAVEX/actions/runs/45388541130/job/138425791487)
+and [Windows Python 3.12 job](https://github.com/mtalhak003/FIRMAVEX/actions/runs/45388541130/job/138425791483)
+failed in **Exercise platform-neutral product behavior**. Public annotations show
+the new byte assertions receiving CRLF instead of LF; exact native pytest totals
+were not independently recovered. Annotation counts are not test counts. These
+jobs did not reach the original later desktop failure.
+
+This was a portability defect in the new tests, not permission to change console
+newline behavior or remove assertions. Their `TextIOWrapper` fixtures used the
+default `newline=None`, which translates LF to the Windows line separator. The
+three byte-exact fixtures now explicitly use `newline=''`. A separate added case
+uses `newline='\r\n'` and requires exact CRLF bytes, supported accented text and
+the visible U+FFFD escape on every host. A local explicit-CRLF probe reproduced
+the difference. Production `console_print()` and all assertions are preserved.
+
+After that repair, the focused command above reported **35 passed, 20 deselected**,
+zero failures/errors/skips, **1.11 seconds**. There are now 34 added cases and
+55 launcher cases overall. The failed native attempt is retained as evidence of
+the fixture defect; the repaired revision still requires its own Windows result.
+The unchanged wider command then reported **629 passed, 25 skipped, 4 deselected**,
+zero failures/errors, **43.92 seconds**. All 55 launcher cases are included;
+the skip/exclusion reasons above are unchanged. Earlier counts remain historical.
+Final repair checks passed two ASTs, six-file whitespace, 167 local links/23
+anchors, 107 locally resolved commit references and `git diff --check`.
+
+The authorized Issue #7 update was attempted through both `gh issue comment`
+(GraphQL) and the REST comments endpoint. Both returned `Forbidden`; no update is
+claimed. The factual draft was retained outside the repository for later posting
+with authorized issue-write access. Git transport remained available.
+
 ## Native Windows and remaining blockers
 
-The execution host is Linux/Python 3.12.14. Actual native Windows Python 3.12
-validation is **pending**, not inferred from a CP1252 stream or environment
-variable. No new Windows test result is fabricated. The existing product matrix
+The local execution host is Linux/Python 3.12.14. Native Windows CI ran after
+publication and exposed the fixture failure above; validation of the subsequent
+test repair is **pending**, not inferred from a CP1252 stream or environment
+variable. No successful Windows result is fabricated. The existing product matrix
 already selects `test_ci_diagnostics.py`; a normal development push exercises the
 new cases without workflow changes or a manual dispatch. Match any subsequent
 CI result to its actual source revision and run/attempt before calling it passing.

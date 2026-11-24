@@ -1225,3 +1225,20 @@ fast-forward publication and an issue update with genuine findings; no manual CI
 dispatch, runtime qualification or release promotion is authorized by this repair.
 Production pins/admission/signing, security controls, main, frozen research and
 protected evidence remain untouched. No other checkout was accessed or modified.
+
+**Native CI follow-up and repair:** initial normal fast-forward publication at
+[`0a6894027f1b99ee38eac6ed915b0d4eac203a37`](https://github.com/mtalhak003/FIRMAVEX/commit/0a6894027f1b99ee38eac6ed915b0d4eac203a37)
+triggered [run 45388541130](https://github.com/mtalhak003/FIRMAVEX/actions/runs/45388541130).
+Windows Python 3.11 and 3.12 failed during the platform-neutral selection: the new
+byte-exact stream fixtures inherited Windows LF-to-CRLF translation. The public
+annotations establish those mismatches, not exact native pytest totals. The
+original later desktop failure was not reached. The three fixtures now explicitly
+disable translation; an additional cross-platform test requires exact CRLF bytes
+when the stream explicitly requests translation. Production behavior and all
+existing assertions remain unchanged. The final focused result is **35 passed,
+20 deselected**, zero failures/errors/skips, **1.11 seconds**. The same wider
+command reported **629 passed, 25 skipped, 4 deselected**, zero failures/errors,
+**43.92 seconds**, including all 55 launcher cases. Native validation of this
+test repair remains pending; the failed first attempt is not erased. The
+authorized Issue #7 comment failed with `Forbidden` through GraphQL and REST;
+its factual draft remains outside the repository and is not represented as posted.

@@ -321,11 +321,22 @@ def test_long_failure_identity_is_bounded_in_annotations_and_summary(tmp_path, m
 def test_console_rendering_preserves_supported_text_and_visibly_escapes_unsupported(monkeypatch, encoding, text):
     from tools import product_ci_tests as ci
     data = io.BytesIO()
-    stream = io.TextIOWrapper(data, encoding=encoding, errors='strict', write_through=True)
+    stream = io.TextIOWrapper(data, encoding=encoding, errors='strict', newline='', write_through=True)
     with monkeypatch.context() as patch:
         patch.setattr(ci.sys, 'stdout', stream)
         ci.console_print(text, end='')
     assert data.getvalue() == text.encode(encoding, errors='backslashreplace')
+
+
+def test_console_preserves_explicit_stream_newline_translation(monkeypatch):
+    from tools import product_ci_tests as ci
+    data = io.BytesIO()
+    stream = io.TextIOWrapper(data, encoding='cp1252', errors='strict',
+                              newline='\r\n', write_through=True)
+    with monkeypatch.context() as patch:
+        patch.setattr(ci.sys, 'stdout', stream)
+        ci.console_print('first \ufffd\ncaf\u00e9')
+    assert data.getvalue() == b'first \\ufffd\r\ncaf\xe9\r\n'
 
 
 def test_console_without_encoding_keeps_unicode(monkeypatch):
@@ -426,7 +437,7 @@ def test_console_encoding_preserves_selection_status_junit_and_utf8_summary(tmp_
         calls.append((args, selected_report, bounded))
         return subprocess.CompletedProcess(['invented pytest'], returncode, stdout=decoded)
     data = io.BytesIO()
-    stream = io.TextIOWrapper(data, encoding='cp1252', errors='strict', write_through=True)
+    stream = io.TextIOWrapper(data, encoding='cp1252', errors='strict', newline='', write_through=True)
     with monkeypatch.context() as patch:
         patch.setenv('GITHUB_STEP_SUMMARY', str(summary))
         patch.setattr(ci, 'run_tests', completed)
@@ -461,7 +472,7 @@ def test_retained_diagnostics_render_cp1252_without_changing_originals(tmp_path,
     for name, content in contents.items():
         (root/name).write_bytes(content)
     data = io.BytesIO()
-    stream = io.TextIOWrapper(data, encoding='cp1252', errors='strict', write_through=True)
+    stream = io.TextIOWrapper(data, encoding='cp1252', errors='strict', newline='', write_through=True)
     with monkeypatch.context() as patch:
         patch.setenv('FIRMAVEX_CI_DIAGNOSTICS', str(tmp_path))
         patch.setattr(ci.sys, 'stdout', stream)
