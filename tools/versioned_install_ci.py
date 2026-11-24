@@ -19,6 +19,7 @@ from firmavex.backends.api import Limits
 from firmavex.backends.process import Processes,Cancelled
 from firmavex.product.release_bundle import canonical
 from firmavex.product.errors import ProductError
+from tools.product_ci_tests import console_print
 
 BASELINE='19cd45736337243c64a2298285781a27499981fa'
 
@@ -110,6 +111,23 @@ def _runtime_qualification_failure(error):
     # Expected identities and match booleans come only from current admission
     # constants. The caller cannot supply or replace them through an exception.
     return _qualification_details(identities,value.get('host_architecture'))
+
+
+def _runtime_qualification_notice(error):
+    """Publish only rejected-profile comparisons, never raw private receipts."""
+    if type(error) is not ProductError or error.category != 'unsupported_platform':
+        return None
+    try:
+        comparison=_runtime_qualification_failure(error)
+        if comparison is None:
+            return None
+        payload=json.dumps({'admission':'rejected','comparison':comparison},
+                           sort_keys=True,ensure_ascii=True,separators=(',',':'))
+    except Exception:
+        # Optional diagnostics cannot change rejection or expose formatter errors.
+        # Cancellation and other control-flow exceptions are not swallowed.
+        payload='comparison unavailable'
+    return '::notice title=Windows runtime admission rejected::'+payload
 
 
 class Qualification:
@@ -326,6 +344,10 @@ def main(argv=None):
         print(json.dumps(result,sort_keys=True));return 0
     except Exception as exc:
         message=str(exc)[-3500:].replace('%','%25').replace('\n','%0A').replace('\r','%0D')
-        print('::error title=Versioned installer qualification::'+message);return 1
+        console_print('::error title=Versioned installer qualification::'+message)
+        notice=_runtime_qualification_notice(exc)
+        if notice is not None:
+            console_print(notice)
+        return 1
 
 if __name__=='__main__':raise SystemExit(main())
