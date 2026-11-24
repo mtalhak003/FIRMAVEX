@@ -168,6 +168,9 @@ def assess(*,source,python,user,output):
                 except BaseException as cleanup_error:
                     row['cleanup_verified']=False;row['cleanup_failure']=repr(cleanup_error)
                     if original is None:raise
+                    if isinstance(original,Exception) and not isinstance(cleanup_error,Exception):
+                        cleanup_error.add_note('Independent unit cleanup interrupted after: '+repr(original))
+                        raise
                     original.add_note('Independent unit cleanup failed: '+repr(cleanup_error))
             if row.get('cleanup_verified') is not True:raise RuntimeError('Supervisor cleanup unverified; no further probes admitted')
             if not all(record['checks'].values()):raise RuntimeError('Fixed quota/boundary check failed; no further probes admitted')
@@ -181,6 +184,9 @@ def assess(*,source,python,user,output):
         try:(output/'assessment.json').write_text(json.dumps(record,indent=2)+'\n')
         except BaseException as persistence:
             if primary is None:raise
+            if isinstance(primary,Exception) and not isinstance(persistence,Exception):
+                persistence.add_note('Isolation assessment persistence interrupted after: '+repr(primary))
+                raise
             primary.add_note('Isolation assessment persistence failed: '+repr(persistence))
     return record
 
