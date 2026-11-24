@@ -29,6 +29,16 @@ report. Do not interpret missing reports as a passed selection. Python stacks
 identify Python waits; further native process diagnostics may still be needed
 for a kernel or debugger stall.
 
+Console rendering uses the stream's declared encoding and `backslashreplace`
+before writing. Supported Unicode remains unchanged; unsupported characters are
+visible escapes such as `\ufffd`, rather than dropped output. This applies to the
+bounded transcript preview and launcher annotations, including retained timeout
+diagnostics. Original transcript bytes, JUnit and UTF-8 summaries are not rewritten.
+The existing preview still decodes UTF-8 with replacement; retained bytes are not
+guaranteed to be valid UTF-8. Stream/codec failures and cancellation still propagate,
+and pytest's real exit status remains authoritative. See the
+[Batch 40 investigation and regressions](batch40-ci-console-encoding.md).
+
 To run all seven jobs manually, open **Actions → Product desktop and engine →
 Run workflow**, select `product/desktop-batch7`, then **Run workflow**. Alternatively:
 

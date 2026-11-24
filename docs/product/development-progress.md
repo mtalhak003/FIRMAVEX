@@ -1167,3 +1167,61 @@ evidence, runtime pins/admission/signing and security policy remain unchanged.
 The user authorized scoped commits and a normal fast-forward development push
 after remote verification. No manual CI dispatch, firmware execution, installer,
 runtime substitution or release promotion occurred in this batch.
+
+## 2026-11-24 — Batch 40 strict Windows-console CI diagnostics
+
+**Date basis:** actual implementation/review and Linux validation, November 24,
+2026, Asia/Karachi. Native Windows validation is not inferred from a codec test.
+
+**Starting evidence and objective:** continue from the clean approved detached
+worktree at
+[`4d6aef91b1ad28a848d70a3c928d27d932e0d5c6`](https://github.com/mtalhak003/FIRMAVEX/commit/4d6aef91b1ad28a848d70a3c928d27d932e0d5c6),
+matching the remote development branch. [Issue #7](https://github.com/mtalhak003/FIRMAVEX/issues/7)
+records the strict CP1252 console failure while relaying a UTF-8-decoded tail.
+Public CI pages independently show the Windows Python 3.12 synthetic desktop
+step failing, a retained `completed: pytest status=1`, and success for the other
+six jobs. Full logs require sign-in; the precise traceback and prior four-pass
+selection remain attributed to the issue's historical investigation, not a newly
+verified original archive. The nonzero underlying desktop selection is unresolved
+and must remain visible after the relay repair.
+
+**Changes and reasoning:** one launcher-only console helper converts unsupported
+characters to visible backslash escapes using the current stream's declared
+encoding before writing. Supported Unicode is retained; no partial-write retry,
+global reconfiguration or silent output dropping is used. All six launcher output
+sites use it, including process/JUnit and timeout/state annotations. Original
+transcript bytes, JUnit, UTF-8 summaries, real pytest statuses, ownership, cleanup,
+timeouts and annotation escaping are unchanged. Unknown codecs, stream failures
+and cancellation propagate. See the [Batch 40 technical record](batch40-ci-console-encoding.md)
+and [CI diagnostics contract](ci-diagnostics.md).
+The implementation and its regressions are in
+[`205404bebd1ce5e23cf715a613b46d1443b3970e`](https://github.com/mtalhak003/FIRMAVEX/commit/205404bebd1ce5e23cf715a613b46d1443b3970e).
+
+**Failed and successful attempts:** a local strict CP1252 `TextIOWrapper` reproduced
+the original `UnicodeEncodeError`; the repaired console preserved supported text
+and escaped U+FFFD. This expected-negative reproducer is not Windows evidence.
+Three existing smoke tests passed in **0.68 seconds**. The first new focused run
+reported **31 passed, 20 deselected** in **0.96 seconds**; adding three codec/metadata
+guards produced **34 passed, 20 deselected**, zero failures/errors/skips, in
+**0.97 seconds**. The 33 new cases include real trusted pytest child processes
+forced to strict CP1252, preserving both expected passing and failing outcomes,
+original logs and JUnit. No firmware or original evidence is used as a fixture.
+
+**Wider actual validation:** **628 passed, 25 skipped, 4 deselected**, zero
+failures/errors, **44.81 seconds**, on Linux/Python 3.12.14 with offscreen Qt.
+All 54 launcher tests are included. Skips comprise 13 Windows-only prerequisites,
+one macOS-specific path check and 11 unavailable ARM/RV32/Icarus runtime cases.
+The existing `not real_desktop` CI selector accounts for four deselections.
+Exact commands and skip groups are in the technical record. These overlapping
+selections are not a full repository or native qualification suite. Syntax,
+documentation references and whitespace are checked for publication.
+
+**Remaining blockers and next steps:** native Windows Python 3.12 validation
+remains pending until an actual matching run completes. The newly visible desktop
+failure, Windows runtime admission and Linux namespace blockers must not be
+relabeled as passes. Inspect automatic CI against its published SHA and retain
+unknown original transcript/JUnit details as unknown. The user authorized normal
+fast-forward publication and an issue update with genuine findings; no manual CI
+dispatch, runtime qualification or release promotion is authorized by this repair.
+Production pins/admission/signing, security controls, main, frozen research and
+protected evidence remain untouched. No other checkout was accessed or modified.
