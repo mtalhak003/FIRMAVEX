@@ -1258,3 +1258,111 @@ All six Python matrix jobs displayed success at that code revision; the separate
 Ubuntu real-product job was still running, so whole-workflow success was not
 claimed. The subsequent publication records this evidence with documentation-only
 changes; it does not change the tested launcher or regression code.
+
+## 2026-11-24 — Batch 41 qualification evidence and diagnostic reliability
+
+**Date basis:** actual investigation, implementation/review and Linux validation,
+November 24, 2026, Asia/Karachi. Normal Git dates and configured identity are kept;
+no native qualification, development-hours or release claim follows.
+
+**Starting evidence:** the approved detached worktree was clean outside excluded
+evidence paths at
+[`7b8dfd61a9fd64c550a74f9b9b29124d7e6e3995`](https://github.com/mtalhak003/FIRMAVEX/commit/7b8dfd61a9fd64c550a74f9b9b29124d7e6e3995),
+matching remote `product/desktop-batch11`. README, current runtime/readiness plan,
+threat model, CI and diagnostic contracts were reviewed. Public run/job pages for
+aggregate run `45390608611` and Windows lifecycle run `45390608438` identify that
+revision. Their original-artifact metadata API requests returned `Forbidden`;
+failed Windows raw-log access was also forbidden. No original ZIP was retrieved,
+hashed, reconstructed or substituted. Full evidence references and classifications
+are in the [Batch 41 investigation](batch41-qualification-evidence.md).
+
+**Confirmed observations and limits:** namespace preparation failed with bubblewrap
+`RTM_NEWADDR: Operation not permitted`, after fixed quota checks passed. The nested
+assessment was blocked, cleanup was recorded verified, and the outer gate
+correctly failed. The current kernel/LSM cause remains unknown; historical AppArmor
+denials are not this VM's audit evidence. Windows rejected the unchanged exact
+QEMU 11.1.2 / GDB 18.1 profile before the first installer transition. Actual
+versions, digests and packages in that historical run remain NOT PROVEN. Rolling
+signed acquisition versus a frozen profile is a known structural conflict, not
+evidence of a particular mismatch or permission to approve another runtime.
+
+**Reproducible bug and repair:** trusted Python supervisor stubs demonstrated
+that an aggregate cleanup interruption could be swallowed when an ordinary error
+was pending; the persistence handler had the same pattern. The small repair
+re-raises the new control exception, retaining prior diagnostic information.
+An original pending control exception keeps priority; failed cleanup remains
+unverified and no later probe is admitted. Added synthetic cases preserve both
+ordinary-error and multi-fault behavior. No command, deadline, quota, guest code,
+admission or isolation verdict was changed. This fixes cancellation integrity,
+not the loopback denial.
+
+**Future evidence visibility:** the Windows lifecycle CLI retained only a generic
+public rejection although its private receipt already held the sanitized identity
+comparison. A failure-only notice now reuses that projection, rebuilds expectations
+from unchanged policy and explicitly says admission is rejected. Missing values
+stay unknown; unsupported contracts and private extras are not copied. Projection
+errors remain unavailable and new reporting controls propagate. Return code `1`,
+success behavior, original receipts, acquisition and qualification policy are
+unchanged. The Batch 40 console helper is reused. Only the new comparison is
+sanitized; inherited raw diagnostics and lifecycle cleanup/persistence semantics
+remain unchanged. Synthetic CLI tests dispatch no installer or runtime.
+
+**Actual validation:** before edits, the existing installer/aggregate/namespace
+selection passed **57 tests**, zero failures/errors/skips/deselections, **0.21
+seconds**. Final combined focused validation passed **120 tests**, zero failures/
+errors/skips/deselections, **0.33 seconds**, including 63 added cases. Individual
+overlapping selections reported 42 aggregate passes and 71 installer passes;
+these counts must not be summed. Wider relevant regressions reported **421 passed,
+6 skipped**, zero failures/errors/deselections, **30.23 seconds**. Five skips
+require native Windows; one local namespace-timeout case was blocked at UID-map
+setup with `Read-only file system`. That is not the hosted loopback error.
+Exact commands and groups are in the technical report. No local project regression
+failure is invented from the intentionally reproduced cancellation defect.
+The aggregate repair is
+[`21bc0e83ff7f8f443cacd04a3cfde49bff2a1561`](https://github.com/mtalhak003/FIRMAVEX/commit/21bc0e83ff7f8f443cacd04a3cfde49bff2a1561);
+the failure-only Windows notice is
+[`2bfd66dfdb7fc455d3871280586f9fcef17bd632`](https://github.com/mtalhak003/FIRMAVEX/commit/2bfd66dfdb7fc455d3871280586f9fcef17bd632).
+
+**Environment and next gates:** local Linux/Python 3.12.14 has bubblewrap but no
+running systemd, administrator authority or writable unprivileged cgroup. The
+privileged hosted contract cannot be established here. Obtain authorized exact-run
+original archives and current audit evidence; inspect any future public Windows
+identity notice as new CI observations, not recovery of missing historical facts.
+No qualification issue is closed. Main, frozen research, protected evidence,
+production admission/pins/signatures and host security remain unchanged. No other
+checkout, runtime substitution, privileged probe or manual CI dispatch was used.
+
+**Publication and fresh CI:** both code commits were pushed normally at
+`2bfd66dfdb7fc455d3871280586f9fcef17bd632`. Fresh aggregate
+[run 45418176318, job 138530038693](https://github.com/mtalhak003/FIRMAVEX/actions/runs/45418176318/job/138530038693)
+failed in **1 minute 1 second**, retaining the same loopback denial, passed fixed
+quotas and verified cleanup. The fail-closed gate remains intact; the current
+kernel/LSM cause and original artifact remain unverified. Final syntax, whitespace,
+documentation links/references and static invariants were checked before the
+documentation publication. No workflow success is inferred from a queued job.
+
+**Related current audit evidence:** existing sibling namespace-diagnostic jobs
+at both the original and new source revisions completed successfully and exposed
+AppArmor `unprivileged_userns` denials for bubblewrap `setpcap` and `net_admin`.
+Their containing release workflows were cancelled; successful diagnostic recording
+does not establish working isolation. These are current observations on separate
+VMs, not proof of the exact aggregate runner's cause. Public 3,500-character tails
+do not recover full host/sysctl/case records. Exact job links and sanitized denial
+fields are in the report. No policy change or new workflow dispatch occurred.
+Native Windows Python 3.11/3.12 product regression jobs at `2bfd66df` also displayed
+success and pytest status `0`; native JUnit counts remain unverified. The entire
+seven-job product workflow subsequently displayed success. These CI observations
+do not qualify Windows runtime identities, installer behavior or sandbox isolation.
+
+**Fresh runtime identity result:** Windows lifecycle
+[job 138530036955 in run 45418175773](https://github.com/mtalhak003/FIRMAVEX/actions/runs/45418175773/job/138530036955)
+failed admission at `2bfd66df` while successfully exposing the new notice. It
+reported QEMU **11.1.3**, digest
+`15368eeab939a3ffb29ffdf73572faa0ab180d76997d00d68ea077c938552c4c`
+(version/hash both mismatch), and GDB **18.1**, digest
+`4f9000b35fcd3f41e1fa6b6e530bb05e16e0c817b1b6ff19ad2a3647fbfb2efe`
+(version matches, hash mismatches). The public JSON source binding, expected pins
+and per-field comparisons were independently checked. Matching GDB version is
+not matching identity. These fresh CI observations do not recover the historical
+run's missing identities, original package inventory, signed closure or ZIP.
+Production rejection and exit `1` remain intact; no runtime was promoted.

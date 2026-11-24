@@ -28,6 +28,7 @@ passing test is evidence only for its stated revision and scope.
 | Inspect recorded RV32 execution failures | [Batch 38 RV32 diagnostics](product/batch38-riscv-failure-diagnostics.md): typed primary phase/cause details in the existing result Summary; no log-based cause inference, assertion verdict or runtime qualification. |
 | Understand the Batch 38 CI failures and bounded repairs | [Batch 39 CI reliability investigation](product/batch39-ci-reliability.md): race-safe descendant observation and failure-only Windows identity retention; hosted isolation and Windows runtime qualification remain blocked. |
 | Understand strict Windows-console CI output handling | [Batch 40 console encoding repair](product/batch40-ci-console-encoding.md): visible escapes, unchanged retained bytes/statuses, preserved failed fixture attempt and native Windows Python 3.12 regression pass at the recorded revision; runtime qualification remains separate. |
+| Review current qualification evidence gaps and diagnostic repairs | [Batch 41 evidence investigation](product/batch41-qualification-evidence.md): exact-run namespace/runtime rejection observations, inaccessible original artifacts, aggregate cancellation integrity and failure-only public identity comparisons; no runtime or isolation promotion. |
 
 The latest original Batch 27 ZIP pass is **user-reported**, not independently
 verified in this environment: 19 receipts, 97 JUnit passed, 10 skipped and zero
