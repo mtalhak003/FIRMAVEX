@@ -177,13 +177,27 @@ with authorized issue-write access. Git transport remained available.
 
 ## Native Windows and remaining blockers
 
-The local execution host is Linux/Python 3.12.14. Native Windows CI ran after
-publication and exposed the fixture failure above; validation of the subsequent
-test repair is **pending**, not inferred from a CP1252 stream or environment
-variable. No successful Windows result is fabricated. The existing product matrix
-already selects `test_ci_diagnostics.py`; a normal development push exercises the
-new cases without workflow changes or a manual dispatch. Match any subsequent
-CI result to its actual source revision and run/attempt before calling it passing.
+The local execution host is Linux/Python 3.12.14. Native Windows CI first exposed
+the fixture failure above. After the test repair, native Windows Python 3.12
+regression validation **PASSED** at
+[`2ab543003681f06f666c19792402a4e378f9591a`](https://github.com/mtalhak003/FIRMAVEX/commit/2ab543003681f06f666c19792402a4e378f9591a),
+[run 45389653686, job 138429664158](https://github.com/mtalhak003/FIRMAVEX/actions/runs/45389653686/job/138429664158),
+in **2 minutes 50 seconds**, as independently observed on the public job page.
+Both platform-neutral and synthetic-desktop selections report pytest status `0`;
+all four retained completed-selection statuses are `0`. No original artifact/JUnit
+totals were independently recovered, so no exact native per-test count is claimed.
+The prior underlying desktop failure did not recur; its original cause is not
+retroactively established by this successful run.
+All six Windows/Ubuntu/macOS Python matrix jobs displayed success; Windows 3.11
+completed in 3 minutes 34 seconds. The separate Ubuntu real-product job was still
+running at inspection, so the entire seven-job workflow is not claimed green.
+
+This is native host pytest/offscreen-Qt regression evidence, not a manual consumer
+trial, Windows Batch 35 preflight completion, firmware-runtime qualification,
+frozen installer acceptance or a release. The subsequent documentation update
+records this exact tested revision; it does not extend the result to future code.
+The existing product matrix selects the new cases without workflow changes or
+manual dispatch. Match later conclusions to their actual revision and attempt.
 
 The [Batch 39 report](batch39-ci-reliability.md) retains the separate unresolved
 Linux namespace denial and Windows admitted-runtime acquisition blockers. This

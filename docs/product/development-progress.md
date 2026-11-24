@@ -1242,3 +1242,19 @@ command reported **629 passed, 25 skipped, 4 deselected**, zero failures/errors,
 test repair remains pending; the failed first attempt is not erased. The
 authorized Issue #7 comment failed with `Forbidden` through GraphQL and REST;
 its factual draft remains outside the repository and is not represented as posted.
+
+**Native Windows regression result:** the repaired source
+[`2ab543003681f06f666c19792402a4e378f9591a`](https://github.com/mtalhak003/FIRMAVEX/commit/2ab543003681f06f666c19792402a4e378f9591a)
+subsequently **PASSED** the native Windows Python 3.12 job in
+[automatic run 45389653686, job 138429664158](https://github.com/mtalhak003/FIRMAVEX/actions/runs/45389653686/job/138429664158),
+**2 minutes 50 seconds**. Public CI independently shows status `0` for the
+platform-neutral and synthetic-desktop selections and all four completed-selection
+phases. Original artifact/JUnit totals were not recovered, so native per-test
+counts remain unverified. The earlier desktop failure did not recur; this does
+not prove its original cause. This follow-up records actual native host
+pytest/offscreen-Qt regression evidence only, not consumer acceptance, Batch 35
+preflight completion, firmware execution or production-runtime qualification.
+All six Python matrix jobs displayed success at that code revision; the separate
+Ubuntu real-product job was still running, so whole-workflow success was not
+claimed. The subsequent publication records this evidence with documentation-only
+changes; it does not change the tested launcher or regression code.

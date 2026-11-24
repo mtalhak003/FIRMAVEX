@@ -27,7 +27,7 @@ passing test is evidence only for its stated revision and scope.
 | Collect truthful daily Git progress without creating activity | [Batch 37 daily reporter](product/batch37-daily-development-report.md): Asia/Karachi commit/statistics reporting and current scoped worktree state; supplied successful/failed/pending/untested declarations remain attributed, with no inferred tests or contribution credit. |
 | Inspect recorded RV32 execution failures | [Batch 38 RV32 diagnostics](product/batch38-riscv-failure-diagnostics.md): typed primary phase/cause details in the existing result Summary; no log-based cause inference, assertion verdict or runtime qualification. |
 | Understand the Batch 38 CI failures and bounded repairs | [Batch 39 CI reliability investigation](product/batch39-ci-reliability.md): race-safe descendant observation and failure-only Windows identity retention; hosted isolation and Windows runtime qualification remain blocked. |
-| Understand strict Windows-console CI output handling | [Batch 40 console encoding repair](product/batch40-ci-console-encoding.md): visible escapes for unencodable preview/annotation text, unchanged retained bytes and pytest statuses; native Windows rerun and underlying desktop failure remain pending. |
+| Understand strict Windows-console CI output handling | [Batch 40 console encoding repair](product/batch40-ci-console-encoding.md): visible escapes, unchanged retained bytes/statuses, preserved failed fixture attempt and native Windows Python 3.12 regression pass at the recorded revision; runtime qualification remains separate. |
 
 The latest original Batch 27 ZIP pass is **user-reported**, not independently
 verified in this environment: 19 receipts, 97 JUnit passed, 10 skipped and zero
