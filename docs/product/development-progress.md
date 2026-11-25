@@ -1496,3 +1496,126 @@ still pending at inspection. This scoped native host evidence does not assess th
 original ZIPs, qualify vendor binaries or establish consumer/firmware/sandbox
 acceptance. The documentation publication preserves the tested code and the
 failed first attempt; no passing result is fabricated for a later revision.
+
+## 2026-11-26 — Batch 43 bounded original-artifact integrity intake
+
+**Date and starting state:** November 26, 2026, Asia/Karachi. The approved
+detached worktree and remote development branch both matched
+[`258ae57d7ecbd4f66c63ea1363bb3d80ed3cea70`](https://github.com/mtalhak003/FIRMAVEX/commit/258ae57d7ecbd4f66c63ea1363bb3d80ed3cea70).
+There were no changes in the inspected scope. Existing work, ordinary Git dates
+and configured identity were preserved; no other checkout or protected evidence
+was inspected. [Issue #9](https://github.com/mtalhak003/FIRMAVEX/issues/9) tracks
+the scoped work. The [Batch 43 report](batch43-artifact-integrity.md) records exact
+commands, identities, source links and limitations.
+
+**Recovered evidence versus missing inputs:** Issue #9's November 25 comments
+report ten standalone prototype tests, twelve Windows and fourteen Linux member
+identities, and original ZIP/member checks in another environment. The supplied
+prototype package, full manifests and original ZIPs were absent from the available
+intake. Both exact original-artifact ZIP requests returned `Forbidden` here;
+no original was reconstructed or its checks represented as independently repeated.
+Only reported selected member digests are documented, with attribution and no
+invented sizes. Current public CI status is separate from archive authenticity.
+
+**Implementation and reasoning:** the successful Windows-candidate verifier
+has deliberately specific schema and root contracts. A separate read-only
+manifest-pinned ZIP/member integrity component fills the failed-artifact intake
+gap without relaxing those contracts or duplicating receipt/package/PE semantics.
+It requires an independently reviewed manifest digest, bounds compressed and
+expanded data, validates all local/central entry structures, names, CRCs and
+complete raw-DEFLATE consumption, and compares selected expected size/digests.
+Complete versus partial inventory is explicit. No member is extracted or executed.
+Reports contain fixed classifications, bounded declared source IDs, hashes,
+counts and selected indices; private paths/names and raw diagnostics are omitted.
+Existing stable-file helpers provide observable before/after checks, not an atomic
+snapshot or hostile-parent-replacement containment. Source/run declarations,
+ZIP integrity and vendor authenticity remain distinct.
+
+**Failures found before publication:** a crafted draft probe showed Python's
+`ZipExtFile` could accept a forged smaller advertised size and matching prefix CRC.
+The new checker now validates actual bounded DEFLATE EOF, consumption, size and
+CRC directly. A second independent review found a LOW unsupported-ZIP64 policy
+gap via a forged low version and central extra-field override. Extra-field
+validation and five regressions close it. A stale test hook was corrected to
+guard the actual decoder. Neither draft defect is portrayed as original-artifact
+evidence or a modified production qualification policy.
+
+**Actual portable validation:** Linux/Python 3.12.14, existing environment.
+Initial existing regressions: **377 passed, 1 skipped**, **7.08 seconds**.
+Final new module: **173 passed**, zero skips/failures/errors, **0.42 seconds**.
+Final focused selection: **550 passed, 1 skipped**, **7.63 seconds**.
+Final wider relevant selection: **1,367 passed, 11 skipped**, **29.86 seconds**.
+Both selections had zero failures, errors and deselections. The independent
+review selection reported **23 passed, 149 deselected**, **0.29 seconds**.
+These overlapping counts are not additive and are not the full repository suite.
+Earlier draft counts and repairs remain in the technical report. Skips require
+explicit native candidate dispatch, Windows sharing/locking/NTFS, ARM tools or
+unavailable namespace admission (`bwrap` UID-map read-only-filesystem failure).
+No Windows success is inferred from Linux tests. Two real module-CLI smoke calls
+against invented fixtures returned `0`/`2` and left inputs unchanged.
+
+**Publisher-source investigation:** independently retrieved immutable MSYS2
+documentation and official source recipes support full upgrades, recursively
+compatible older dependencies, and declared QEMU `11.1.3-2` / GDB `18.1-4`
+generations. Pinned URLs and text digests are in the report. Text/recipe agreement
+does not authenticate binary archives, establish installed-file ownership, prove
+DLL closure or fulfill license/source delivery. No vendor binary was downloaded
+or executed, no rolling downgrade was recommended and no trust material invented.
+
+**Publication and next gates:** implementation commit
+[`3c4ba13c784fb5f64e674d8ec9023fa57d199173`](https://github.com/mtalhak003/FIRMAVEX/commit/3c4ba13c784fb5f64e674d8ec9023fa57d199173)
+was normally fast-forward pushed and remote SHA verified. The existing seven-job
+product workflow adds only the new synthetic test selection; it removes no checks.
+Build-input verification and PyYAML 6.0.3 parsing passed; actionlint and PowerShell
+were unavailable. Final documentation checks and resulting automatic CI are
+recorded separately when actually observed. No manual dispatch, main/frozen
+research change, runtime/admission/signing change or qualification occurred.
+Original intake, authentic package/signature/ownership and license closure,
+same-host correlated audit evidence and consumer/native qualification remain
+blocked or unassessed. Issue updates must retain access failures and these scopes.
+
+**Fresh observation and access failure:** the starting revision's
+[product run 45566579906](https://github.com/mtalhak003/FIRMAVEX/actions/runs/45566579906)
+now shows all seven jobs successful, distinct from new-checker validation.
+New-source automatic [product run 45691432972](https://github.com/mtalhak003/FIRMAVEX/actions/runs/45691432972)
+and [lifecycle run 45691432964](https://github.com/mtalhak003/FIRMAVEX/actions/runs/45691432964)
+must retain their actual completion status. New-source
+[aggregate job 139477611997](https://github.com/mtalhak003/FIRMAVEX/actions/runs/45691433080/job/139477611997)
+failed in 27 seconds with the unchanged loopback denial, blocked namespace and
+recorded descendant cleanup. No host-policy cause is inferred. GraphQL and REST
+attempts to post the authorized Issue #9 update both returned `Forbidden`; no
+comment was posted. Final documentation validation checked 175 local links,
+23 anchors and 115 local commit references; whitespace and Python syntax passed.
+No unavailable original or pending CI result is presented as a pass.
+
+**Native fixture failure and repair:** first-source Windows Python 3.11 and 3.12
+jobs in run `45691432972` failed the crafted-backslash refusal test. Native
+`ZipInfo` normalized the fixture's backslash before writing the ZIP, so the
+refusal guard received safe archive bytes. The test-only repair
+[`7007cb9a2de2e13b29973630b3bdbb411e9d600d`](https://github.com/mtalhak003/FIRMAVEX/commit/7007cb9a2de2e13b29973630b3bdbb411e9d600d)
+preserves the crafted raw ZIP name and compression method and adds a portable
+Windows-constructor/raw-header regression. All rejection assertions and production
+code are preserved. Pre-repair Linux counts were 172 new, 549 focused/1 skipped
+and 1,366 wider/11 skipped; they were not native Windows qualification. Final
+counts above include the repair. The next automatic
+[product run 45692212087](https://github.com/mtalhak003/FIRMAVEX/actions/runs/45692212087)
+requires its own results; no manual dispatch occurred. Fresh first-source Windows
+lifecycle failure-only diagnostics still show QEMU version/hash and GDB hash
+mismatch before installer transitions. Linux lifecycle success is separate.
+Independent fixture-repair review reported **15 passed, 158 deselected**, **0.18
+seconds**, with no weakened checks. A supplementary stdlib source-shape probe
+failed twice because normalization was factored into `_sanitize_filename`;
+inspection located the helper and the behavioral regression remains passing.
+These failed inspection assumptions are separate from project-test results.
+
+**Repaired native host results:** at source `7007cb9a`, all six matrix jobs in
+run `45692212087` passed. Windows
+[Python 3.11 job 139480319549](https://github.com/mtalhak003/FIRMAVEX/actions/runs/45692212087/job/139480319549)
+and [Python 3.12 job 139480318460](https://github.com/mtalhak003/FIRMAVEX/actions/runs/45692212087/job/139480318460)
+passed the new selection, debugger, package build/installed-package checks,
+synthetic desktop, smoke and retention steps. Both Ubuntu jobs and both macOS
+preview jobs passed. Original JUnit counts remain unverified; native Windows
+firmware/runtime and consumer acceptance do not follow. The separate repaired
+Linux real-product/research job was still running at this observation; the
+first-source Linux real-product/research/installed-CLI job had fully passed.
+No pending result is substituted for a completed run or qualification.
