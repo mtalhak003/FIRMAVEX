@@ -1366,3 +1366,133 @@ and per-field comparisons were independently checked. Matching GDB version is
 not matching identity. These fresh CI observations do not recover the historical
 run's missing identities, original package inventory, signed closure or ZIP.
 Production rejection and exit `1` remain intact; no runtime was promoted.
+
+## 2026-11-25 — Batch 42 runtime evidence consistency and verification
+
+**Date basis and recovery:** investigation/drafts began November 24; the existing
+worktree was recovered and final validation performed November 25, 2026,
+Asia/Karachi. The approved detached checkout and remote remained at
+[`408ea67a901c4053d2a7c4ac4c3053c05ba0d4a6`](https://github.com/mtalhak003/FIRMAVEX/commit/408ea67a901c4053d2a7c4ac4c3053c05ba0d4a6).
+All intended drafts survived; no reset, reconstruction, branch switch or discarded
+work occurred. Existing configured identity and normal commit dates are retained.
+
+**Evidence-access update:** the latest
+[Issue #8 comment](https://github.com/mtalhak003/FIRMAVEX/issues/8#issuecomment-7137019684)
+reports original Windows artifact `14933359923` from run `45420108864` and Linux
+artifact `14933782277` from run `45420108955` retrieved and checked in another
+environment. Reported ZIP digests/CRC checks, receipt source/phase consistency,
+package inventory and aggregate cleanup are recorded in the
+[Batch 42 technical report](batch42-runtime-evidence.md). These are attributed
+original-artifact checks, not independently repeated here. This checkout's metadata
+and direct ZIP requests still returned `Forbidden`, including both exact ZIP IDs
+after recovery. No original bytes were reconstructed or evidence installer run.
+
+**What changed in the evidence:** reported QEMU/QEMU-common packages are
+`11.1.3-2`, and GDB/GDB-multiarch `18.1-4`. The failed Windows receipt records no
+installer transitions; that does not imply no discovery subprocess executed.
+QEMU version/hash mismatch and GDB hash mismatch remain enforced. Package revision
+context and ZIP integrity do not authenticate vendor binaries, explain every
+changed byte, establish ownership/DLL closure or approve a profile. The Linux
+archive reportedly lacks same-host kernel audit data; separate-VM AppArmor records
+are still not proof of its precise cause. Historical access failures are preserved.
+
+**Minimal read-only implementation:** separate strict package-inventory syntax
+parsing from the exact existing candidate pins. The candidate wrapper still rejects
+the newly observed generation. Add a bounded receipt/inventory consistency assessor
+that checks supplied digests/revision, known failed/empty-phase receipt fields and
+policy-derived comparisons. It reuses existing lexical/path, stable-file, JSON and
+console helpers, emits sanitized fixed-role metadata and preserves cancellation.
+Unknown observed identities remain null. Source authenticity, publisher trust,
+original ZIP provenance, binary ownership, closure, licensing and native capability
+remain explicitly unassessed. Exit `0` means consistent records, never admission.
+No ZIP extraction, network access, execution or evidence writing is performed.
+
+**Independent verifier defect:** the outer aggregate check could accept an empty
+check dictionary or truthy non-Boolean values. A strict completeness/type guard
+now requires the existing twelve checks and supported schema/status/security
+fields. It does not authenticate guest JSON or fix the recorded namespace denial.
+Fixed guests, commands, quotas, deadlines, host controls and production pins are
+unchanged. The product workflow adds only the new synthetic assessor test module;
+it removes no assertion or limit.
+
+**Actual tests and unsuccessful attempts:** initial existing-suite validation
+reported **234 passed, 2 skipped**, zero failures/errors, **1.93 seconds**.
+Recovered focused validation first reported **272 passed, 2 skipped**, **1.67
+seconds**; initial wider validation reported **768 passed, 5 skipped**, **21.68
+seconds**. Three missing-identity cases and an explicit source-authenticity label
+were added after review. Final focused validation reported **275 passed, 2 skipped**,
+zero failures/errors/deselections, **1.84 seconds**. Final wider validation reported
+**771 passed, 5 skipped**, zero failures/errors/deselections, **21.23 seconds**.
+Skipped prerequisites are the explicit native candidate workflow (two), NTFS
+semantics, ARM tools and locally blocked UID-map setup. Counts overlap and are not
+additive or a full repository suite. API denials are preserved as failed evidence
+access; intentionally malformed fixtures are not fabricated original records.
+
+**Review and limits:** independent review found no blocking findings. Existing
+MEDIUM concurrent-parent-replacement limitations remain; stable capture is not an
+atomic snapshot or hostile-filesystem isolation. Build-input verification passed.
+Python syntax, bounded path/data-hygiene contracts, documentation references and
+whitespace are validated for publication. Actionlint/standalone YAML parsing were
+unavailable locally; automatic CI must validate actual platform behavior. Native
+Windows qualification and original-artifact assessment were not performed here.
+
+**Next gates:** obtain reviewed member files and digests through authorized
+read-only intake, authentic package/signature sets with independent trust inputs
+and actual runtime bytes, and separately scoped same-host audit correlation.
+No runtime admission/pin/signing change, main or frozen-research modification,
+protected-evidence access, manual CI dispatch, qualification closure or release
+promotion is part of this work. Publication and issue updates must report actual
+results and access limitations rather than imply that pending CI passed.
+
+**Implementation references:** the strict aggregate verification is
+[`9d5c4c57f2b7a08c79887573627214cac28e1597`](https://github.com/mtalhak003/FIRMAVEX/commit/9d5c4c57f2b7a08c79887573627214cac28e1597);
+the read-only assessor, preserved candidate wrapper and CI selection are
+[`69cbf9281ef17093b295ff138fe1bcde4d940aa1`](https://github.com/mtalhak003/FIRMAVEX/commit/69cbf9281ef17093b295ff138fe1bcde4d940aa1).
+Both are meaningful scoped changes; no date, author or contribution activity was
+fabricated. Two actual module-CLI smoke invocations against invented temporary
+records returned the expected `0`/`2` statuses without changing input files.
+Final static validation passed six Python AST parses, ten-file whitespace checks,
+176 local links/23 anchors and 114 commit references. Nine fixed guest/candidate
+contracts match the baseline; the workflow diff is exactly one added test-module
+argument. Production admission/acquisition/signature pins and qualification
+workflows remain unchanged. No original record assessor run is claimed.
+
+**Native CI failure and test-only repair:** source `69cbf928` triggered
+[product run 45564176037](https://github.com/mtalhak003/FIRMAVEX/actions/runs/45564176037).
+Windows Python 3.12 passed, and Windows 3.11 passed the platform-neutral selection
+including the new assessor. Its later existing desktop writer-lock test failed
+before application assertions: the parent observed an empty readiness file while
+the child was still writing `locked`. Public annotations establish that fixture
+race, not a production lock defect or exact native JUnit totals.
+The repair
+[`3d40ca1b7a2362a7b52d97fb3f9a589bc77b89c3`](https://github.com/mtalhak003/FIRMAVEX/commit/3d40ca1b7a2362a7b52d97fb3f9a589bc77b89c3)
+publishes a closed complete marker by rename, rejects stale markers and preserves
+the real Windows lock operations, exact parent assertion, deadlines and cleanup.
+Five portable regressions reuse the same producer script; they do not establish
+native locking. Final focused validation reported **285 passed, 8 skipped**,
+zero failures/errors/deselections, **2.25 seconds**. Final wider validation reported
+**781 passed, 11 skipped**, zero failures/errors/deselections, **21.61 seconds**.
+The additional six skips require actual Windows. The failed CI attempt is
+preserved; the repaired revision requires its own native evidence. No production
+code or security control was changed to obtain a pass.
+The repaired source was pushed normally at `3d40ca1b`; seven Python ASTs,
+eleven-file whitespace, 176 links/23 anchors, 115 commit references and
+`git diff --check` passed. The authorized Issue #8 update was attempted through
+GraphQL and REST; both returned `Forbidden`. Its factual draft remains outside
+the repository and is not represented as posted. Native repair results remain
+separate from portable tests and the first failed run.
+
+**Native repair result:** at exact source
+`3d40ca1b7a2362a7b52d97fb3f9a589bc77b89c3`, the repaired automatic
+[product run 45565508260](https://github.com/mtalhak003/FIRMAVEX/actions/runs/45565508260)
+passed native Windows
+[Python 3.11 job 139039185813](https://github.com/mtalhak003/FIRMAVEX/actions/runs/45565508260/job/139039185813)
+and [Python 3.12 job 139039186007](https://github.com/mtalhak003/FIRMAVEX/actions/runs/45565508260/job/139039186007).
+Public job headers show successful completion and retained/session pytest statuses
+`0` for the new platform-neutral module and later synthetic-desktop checks.
+Original native JUnit counts remain unverified. All six matrix jobs displayed
+success; the separate Linux real-product job and overall workflow completion were
+still pending at inspection. This scoped native host evidence does not assess the
+original ZIPs, qualify vendor binaries or establish consumer/firmware/sandbox
+acceptance. The documentation publication preserves the tested code and the
+failed first attempt; no passing result is fabricated for a later revision.
