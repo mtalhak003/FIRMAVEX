@@ -31,8 +31,28 @@ def packed(rows, *, compression=zipfile.ZIP_STORED):
         warnings.simplefilter('ignore', UserWarning)
         with zipfile.ZipFile(target, 'w', compression=compression) as archive:
             for name, data in rows:
-                archive.writestr(name, data)
+                if isinstance(name, str):
+                    entry = zipfile.ZipInfo(name)
+                    # ZipInfo normalizes os.sep on Windows. These are crafted
+                    # ZIP bytes, never extracted paths: retain the exact unsafe
+                    # spelling so native tests actually exercise rejection.
+                    entry.filename = entry.orig_filename = name
+                    entry.compress_type = compression
+                    archive.writestr(entry, data)
+                else:
+                    archive.writestr(name, data)
     return target.getvalue()
+
+
+def test_zip_fixture_preserves_unsafe_backslash_under_windows_constructor_rules(monkeypatch):
+    with monkeypatch.context() as patch:
+        patch.setattr(zipfile.os, 'sep', '\\')
+        assert zipfile.ZipInfo('a\\b').filename == 'a/b'
+        raw = packed([('a\\b', b'crafted unsafe name')])
+    # Both local and central names must contain the actual malicious spelling.
+    assert raw.count(b'a\\b') == 2
+    with pytest.raises(ValueError):
+        audit._members(raw, None)
 
 
 def raw_member_zip(data, compressed, *, advertised=None, method=zipfile.ZIP_DEFLATED):
