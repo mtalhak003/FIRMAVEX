@@ -216,3 +216,163 @@ def test_original_control_wins_across_both_secondary_control_failures(synthetic_
     assert any(repr(state.cleanup) in note for note in state.primary.__notes__)
     assert any(repr(state.persistence) in note for note in state.primary.__notes__)
     assert assert_no_later_probe(state)['diagnostic']==repr(state.primary)
+
+
+def complete_namespace_record():
+    """Invented complete diagnostic record; not namespace enforcement evidence."""
+    return {'schema_version':1,'kind':'firmavex_isolation_feasibility',
+            'status':'mechanism_checks_passed_not_qualified','return_code':0,
+            'sandbox_qualification':'not_established','untrusted_execution_authorized':False,
+            'checks':dict.fromkeys(p.REQUIRED_CHECKS | {'namespace_descendants_absent'},True)}
+
+
+def test_complete_namespace_record_accepts_only_existing_check_contract():
+    nested=complete_namespace_record()
+    before=json.dumps(nested,sort_keys=True)
+    assert len(nested['checks'])==12
+    assert p._namespace_checks_passed(nested) is True
+    assert json.dumps(nested,sort_keys=True)==before
+
+
+@pytest.mark.parametrize('nested',[None,[],True,'not a record',{}],
+                         ids=['missing','list','boolean','string','empty'])
+def test_namespace_record_rejects_nonrecords_and_empty_contracts(nested):
+    assert p._namespace_checks_passed(nested) is False
+
+
+@pytest.mark.parametrize('checks',[None,[],True,'true',{},
+    {'namespace_descendants_absent':True}],
+    ids=['missing','list','boolean','string','empty','blocked-prefix-only'])
+def test_namespace_record_rejects_incomplete_or_malformed_checks(checks):
+    nested=complete_namespace_record();nested['checks']=checks
+    assert p._namespace_checks_passed(nested) is False
+
+
+@pytest.mark.parametrize('change',['missing','extra','wrong-key'])
+def test_namespace_record_requires_exact_check_names(change):
+    nested=complete_namespace_record()
+    if change=='missing':nested['checks'].pop('input_readable')
+    elif change=='extra':nested['checks']['invented_boundary']=True
+    else:nested['checks'][1]=nested['checks'].pop('input_readable')
+    assert p._namespace_checks_passed(nested) is False
+
+
+@pytest.mark.parametrize('value',[False,1,2,'true','false',None,[],{}],
+                         ids=['false','one','two','true-string','false-string','null','list','object'])
+def test_namespace_record_never_treats_truthiness_as_a_pass(value):
+    nested=complete_namespace_record();nested['checks']['input_readable']=value
+    assert p._namespace_checks_passed(nested) is False
+
+
+@pytest.mark.parametrize('field,value',[
+    ('schema_version',True),('schema_version',1.0),('schema_version','1'),('schema_version',2),
+    ('kind','different_diagnostic'),('kind',None),
+    ('status','blocked'),('status','boundary_check_failed'),('status',True),
+    ('return_code',False),('return_code',0.0),('return_code','0'),('return_code',1),
+    ('untrusted_execution_authorized',True),('untrusted_execution_authorized',0),
+    ('sandbox_qualification','qualified'),('sandbox_qualification',None),
+], ids=['bool-schema','float-schema','string-schema','future-schema','wrong-kind','missing-kind',
+        'blocked','boundary-failed','bool-status','bool-code','float-code','string-code','nonzero-code',
+        'authorized','integer-authorization','qualified','missing-qualification'])
+def test_namespace_record_rejects_invalid_identity_status_and_security_fields(field,value):
+    nested=complete_namespace_record();nested[field]=value
+    assert p._namespace_checks_passed(nested) is False
+
+
+@pytest.fixture
+def synthetic_complete_units(tmp_path,monkeypatch):
+    # Exercise the real orchestration and persistence with no systemd process,
+    # kernel quota operation, namespace guest or external command execution.
+    from types import SimpleNamespace
+    state=SimpleNamespace(nested=complete_namespace_record(),units={},admitted=[],stopped=[],output=tmp_path/'out')
+    monkeypatch.setattr(p,'admission',lambda:{'linux':True,'administrator':True,
+        'systemd_running':True,'systemd_run_available':True})
+    monkeypatch.setattr(p,'guest_account',lambda user:SimpleNamespace(pw_uid=1234,pw_gid=1234))
+    monkeypatch.setattr(p.os,'chown',lambda *args:None,raising=False)
+    original_command=p.unit_command
+    def unit_command(unit,user,mode,**kwargs):
+        state.units[unit]=mode
+        return original_command(unit,user,mode,**kwargs)
+    monkeypatch.setattr(p,'unit_command',unit_command)
+    def limits(mode):
+        return {'memory.max':str((256 if mode=='namespace' else 128)*1024**2),
+                'memory.swap.max':'0','pids.max':'8' if mode=='pids' else '64','cpu.max':'50000 100000'}
+    read=Path.read_text
+    def read_text(path,*args,**kwargs):
+        if path.parent.name in state.units and path.name in limits(state.units[path.parent.name]):
+            return limits(state.units[path.parent.name])[path.name]
+        return read(path,*args,**kwargs)
+    monkeypatch.setattr(Path,'read_text',read_text)
+    exists=Path.exists
+    monkeypatch.setattr(Path,'exists',lambda path:False if path.name=='cgroup.procs' and
+                        path.parent.name in state.units else exists(path))
+    def run(command,**kwargs):
+        if command[0]=='systemd-run':
+            unit=next(value.split('=',1)[1] for value in command if value.startswith('--unit='))
+            mode=state.units[unit];state.admitted.append(mode)
+            stdout=Path(next(value.split('append:',1)[1] for value in command if value.startswith('--property=StandardOutput=')))
+            result=({'wall':2.0,'cpu':1.0} if mode=='cpu' else
+                    {'spawned':1,'denied':True,'quota_write_denied':True,'rlimit_nproc':[-1,-1]})
+            stdout.write_text('fixed-memory-probe-admitted\n' if mode=='memory' else json.dumps(result))
+            if mode=='namespace':
+                (state.output/'guest/namespace.json').write_text(json.dumps(state.nested))
+            return SimpleNamespace(returncode=0,stdout=b'',stderr=b'')
+        if command[:2]==['systemctl','show']:
+            unit=command[2];mode=state.units[unit]
+            if 'MemoryMax' in command:
+                quota=limits(mode)
+                fields={'ActiveState':'active','SubState':'exited','ControlGroup':'/system.slice/'+unit,
+                    'MemoryMax':quota['memory.max'],'MemorySwapMax':'0','TasksMax':quota['pids.max'],
+                    'CPUQuotaPerSecUSec':'500ms','ExecMainCode':'1',
+                    'ExecMainStatus':'137' if mode=='memory' else '0',
+                    'Result':'oom-kill' if mode=='memory' else 'success'}
+                return SimpleNamespace(returncode=0,stdout='\n'.join(key+'='+value for key,value in fields.items())+'\n')
+            return SimpleNamespace(returncode=0,stdout='ActiveState=inactive\nControlGroup=\n')
+        if command[:2]==['systemctl','stop']:
+            state.stopped.append(state.units[command[2]])
+            return SimpleNamespace(returncode=0,stdout='',stderr='')
+        if command[:2]==['systemctl','reset-failed']:
+            return SimpleNamespace(returncode=0,stdout='',stderr='')
+        pytest.fail('Unexpected supervisor command')
+    monkeypatch.setattr(p.subprocess,'run',run)
+    return state
+
+
+@pytest.mark.parametrize('fault',['none','empty','missing','truthy','authorized','blocked'],
+                         ids=['complete','empty-checks','missing-check','truthy-value','authorized','blocked'])
+def test_namespace_validation_controls_aggregate_verdict_and_retains_original_record(synthetic_complete_units,fault):
+    state=synthetic_complete_units
+    if fault=='empty':state.nested['checks']={}
+    elif fault=='missing':state.nested['checks'].pop('input_readable')
+    elif fault=='truthy':state.nested['checks']['input_readable']='true'
+    elif fault=='authorized':state.nested['untrusted_execution_authorized']=True
+    elif fault=='blocked':state.nested['status']='blocked'
+    result=assess_synthetic(state)
+    assert state.admitted==state.stopped==['cpu','pids','memory','namespace']
+    assert len(result['units'])==4 and all(row['cleanup_verified'] is True for row in result['units'])
+    assert result['units'][-1]['namespace_assessment']==state.nested
+    assert result['checks']['filesystem_process_network_boundaries'] is (fault=='none')
+    assert result['status']==('fixed_checks_passed_not_qualified' if fault=='none' else 'failed')
+    assert result['sandbox_qualification']=='not_established'
+    assert result['untrusted_execution_authorized'] is False
+    assert json.loads((state.output/'assessment.json').read_text())==result
+    if fault!='none':
+        assert 'supervisor_cleanup' not in result['checks']
+        assert 'Fixed quota/boundary check failed' in result['diagnostic']
+
+
+@pytest.mark.parametrize('factory',[KeyboardInterrupt,SystemExit,SyntheticControl],
+                         ids=['keyboard','exit','other-control'])
+def test_namespace_validation_interruption_preserves_cancellation_and_failed_evidence(synthetic_complete_units,monkeypatch,factory):
+    state=synthetic_complete_units;control=factory('synthetic namespace validation interruption')
+    def interrupted(nested):raise control
+    monkeypatch.setattr(p,'_namespace_checks_passed',interrupted)
+    with pytest.raises(type(control)) as caught:assess_synthetic(state)
+    assert caught.value is control
+    assert state.admitted==state.stopped==['cpu','pids','memory','namespace']
+    result=json.loads((state.output/'assessment.json').read_text())
+    assert result['status']=='failed' and result['diagnostic']==repr(control)
+    assert all(row['cleanup_verified'] is True for row in result['units'])
+    assert 'filesystem_process_network_boundaries' not in result['checks']
+    assert result['sandbox_qualification']=='not_established'
+    assert result['untrusted_execution_authorized'] is False

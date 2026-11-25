@@ -15,6 +15,8 @@ import tempfile
 import time
 import uuid
 
+from tools.isolation_feasibility import REQUIRED_CHECKS
+
 GUESTS={
  'cpu':"import time,json;s=time.monotonic();c=time.process_time();\nwhile time.monotonic()-s<2: pass\nprint(json.dumps({'wall':time.monotonic()-s,'cpu':time.process_time()-c}))",
  'pids':"""import os,time,json,resource
@@ -74,6 +76,22 @@ def unit_command(unit,user,mode,*,source,python,namespace_output):
 def guest_account(user):
     import pwd
     return pwd.getpwnam(user)
+
+
+def _namespace_checks_passed(nested):
+    """Require complete fixed checks and verdict fields, not authenticated evidence."""
+    if type(nested) is not dict:
+        return False
+    checks=nested.get('checks')
+    return (type(nested.get('schema_version')) is int and nested['schema_version']==1
+            and nested.get('kind')=='firmavex_isolation_feasibility'
+            and nested.get('status')=='mechanism_checks_passed_not_qualified'
+            and type(nested.get('return_code')) is int and nested['return_code']==0
+            and nested.get('untrusted_execution_authorized') is False
+            and nested.get('sandbox_qualification')=='not_established'
+            and type(checks) is dict
+            and set(checks)==REQUIRED_CHECKS | {'namespace_descendants_absent'}
+            and all(value is True for value in checks.values()))
 
 
 def assess(*,source,python,user,output):
@@ -151,7 +169,7 @@ def assess(*,source,python,user,output):
                 else:
                     if not namespace_output.exists():raise RuntimeError('No fixed namespace assessment was produced')
                     nested=json.loads(namespace_output.read_text());row['namespace_assessment']=nested
-                    record['checks']['filesystem_process_network_boundaries']=(row['returncode']==0 and nested['status']=='mechanism_checks_passed_not_qualified' and all(nested['checks'].values()) and nested['untrusted_execution_authorized'] is False)
+                    record['checks']['filesystem_process_network_boundaries']=(row['returncode']==0 and _namespace_checks_passed(nested))
             finally:
                 original=sys.exception()
                 try:
