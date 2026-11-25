@@ -46,8 +46,9 @@ def context(env, system, machine, head):
             'host': {'os': 'Windows', 'architecture': 'x86_64'}}
 
 
-def package_inventory(data):
-    if len(data) > 1024**2:
+def parse_package_inventory(data):
+    """Parse bounded supplied pacman-Q declarations without approving a profile."""
+    if type(data) is not str or len(data) > 1024**2:
         raise ValueError('Package inventory exceeds bound')
     result = {}
     for line in data.splitlines():
@@ -57,6 +58,12 @@ def package_inventory(data):
                 or fields[0] in result or len(result) >= 4096):
             raise ValueError('Invalid or duplicate package inventory entry')
         result[fields[0]] = fields[1]
+    return result
+
+
+def package_inventory(data):
+    # Candidate admission retains its exact roots; the parser alone is no gate.
+    result = parse_package_inventory(data)
     if any(result.get(name) != version for name, version in PACKAGES.items()):
         raise ValueError('Candidate package versions changed; review required')
     return result

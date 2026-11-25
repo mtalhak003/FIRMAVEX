@@ -187,6 +187,32 @@ def test_required_trusted_publisher_signatures_and_exact_packages():
         with pytest.raises(ValueError): candidate.package_inventory(changed)
 
 
+def test_inventory_parser_records_current_declarations_without_relaxing_candidate_gate():
+    observed = {'mingw-w64-ucrt-x86_64-qemu': '11.1.3-2',
+                'mingw-w64-ucrt-x86_64-gdb-multiarch': '18.1-4'}
+    data = '\n'.join(f'{name} {version}' for name, version in observed.items())
+    assert candidate.parse_package_inventory(data) == observed
+    with pytest.raises(ValueError, match='Candidate package versions changed'):
+        candidate.package_inventory(data)
+    old = '\n'.join(f'{name} {version}' for name, version in candidate.PACKAGES.items())
+    assert candidate.package_inventory(old) == candidate.PACKAGES
+
+
+@pytest.mark.parametrize('value', [None, [], b'not text', True],
+                         ids=['none', 'list', 'bytes', 'bool'])
+def test_inventory_parser_refuses_nontext_values(value):
+    with pytest.raises(ValueError):
+        candidate.parse_package_inventory(value)
+
+
+@pytest.mark.parametrize('data', ['same 1.0-1\nsame 1.0-2', 'only-name',
+                                 'name https://private.invalid', 'x' * (1024**2 + 1)],
+                         ids=['duplicate', 'malformed', 'url', 'over-bound'])
+def test_inventory_parser_reuses_strict_syntax_and_bounds(data):
+    with pytest.raises(ValueError):
+        candidate.parse_package_inventory(data)
+
+
 def test_pacman_inventory_accepts_case_sensitive_dependency_names():
     # Publisher QEMU dependencies include SDL2 and SDL2_image, not lowercase names.
     dependencies = {'mingw-w64-ucrt-x86_64-SDL2': '2.32.10-1',
