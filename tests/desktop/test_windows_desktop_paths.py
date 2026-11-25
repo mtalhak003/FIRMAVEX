@@ -173,23 +173,31 @@ def test_windows_readonly_recent_preferences_remain_intact_until_explicit_attrib
     assert recents.load(root) == []
 
 
-@contextmanager
-def competing_windows_project_writer(project, temporary):
-    """A real second interpreter holds one byte; no subprocess can wait forever."""
-    ready = temporary / 'writer-ready'
-    script = '''
+WINDOWS_PROJECT_WRITER_SCRIPT = '''
 import msvcrt, pathlib, sys
 with open(sys.argv[1], 'r+b') as stream:
     msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
     try:
-        pathlib.Path(sys.argv[2]).write_text('locked', encoding='ascii')
+        ready = pathlib.Path(sys.argv[2])
+        pending = ready.with_name(ready.name + '.pending')
+        with pending.open('x', encoding='ascii') as marker:
+            marker.write('locked')
+        pending.rename(ready)
         sys.stdin.buffer.readline()
     finally:
         stream.seek(0)
         msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
 '''
+
+
+@contextmanager
+def competing_windows_project_writer(project, temporary):
+    """A real second interpreter holds one byte; no subprocess can wait forever."""
+    ready = temporary / 'writer-ready'
+    pending = ready.with_name(ready.name + '.pending')
+    assert not ready.exists() and not pending.exists(), 'Expected fresh readiness markers'
     with tempfile.TemporaryFile() as diagnostics:
-        process = subprocess.Popen([sys.executable, '-B', '-c', script,
+        process = subprocess.Popen([sys.executable, '-B', '-c', WINDOWS_PROJECT_WRITER_SCRIPT,
                                     str(project.root / '.project.lock'), str(ready)],
                                    stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
                                    stderr=diagnostics, cwd=temporary)
@@ -212,6 +220,72 @@ with open(sys.argv[1], 'r+b') as stream:
                     process.kill()
                 process.wait(timeout=5)
             assert process.poll() is not None
+
+
+@pytest.mark.parametrize('fault', ['none', 'write', 'publish'])
+def test_windows_writer_marker_publication_is_complete_or_absent(tmp_path, monkeypatch, fault):
+    """Same producer script, simulated Win32 lock API; no native locking claim."""
+    from types import SimpleNamespace
+    from pathlib import Path
+    lock = tmp_path / '.project.lock'; lock.write_bytes(b'0')
+    ready = tmp_path / 'writer-ready'; pending = tmp_path / 'writer-ready.pending'
+    locks = []; handles = []; waited = []
+    def locking(fd, operation, count):
+        assert count == 1 and os.lseek(fd, 0, os.SEEK_CUR) == 0
+        locks.append(operation)
+    native = SimpleNamespace(LK_NBLCK=1, LK_UNLCK=2, locking=locking)
+    monkeypatch.setitem(sys.modules, 'msvcrt', native)
+    monkeypatch.setattr(sys, 'argv', ['synthetic writer', str(lock), str(ready)])
+    def release():
+        assert ready.read_bytes() == b'locked' and not pending.exists()
+        waited.append(True)
+        return b'release\n'
+    monkeypatch.setattr(sys, 'stdin', SimpleNamespace(buffer=SimpleNamespace(readline=release)))
+    original_open, original_rename = Path.open, Path.rename
+    class PartialMarker:
+        def __init__(self, handle): self.handle = handle
+        def __enter__(self): return self
+        def __exit__(self, *args): return self.handle.__exit__(*args)
+        def write(self, text):
+            assert text == 'locked'
+            self.handle.write(text[:2]); self.handle.flush()
+            assert pending.read_bytes() == b'lo' and not ready.exists()
+            if fault == 'write': raise OSError('synthetic incomplete marker write')
+            return 2 + self.handle.write(text[2:])
+    def opened(path, mode='r', *args, **kwargs):
+        handle = original_open(path, mode, *args, **kwargs)
+        if path == pending and mode == 'x':
+            handles.append(handle)
+            return PartialMarker(handle)
+        return handle
+    def publish(path, target):
+        assert path == pending and target == ready
+        assert handles[0].closed and pending.read_bytes() == b'locked'
+        assert not ready.exists() and locks == [native.LK_NBLCK]
+        if fault == 'publish': raise OSError('synthetic marker publication failure')
+        return original_rename(path, target)
+    monkeypatch.setattr(Path, 'open', opened)
+    monkeypatch.setattr(Path, 'rename', publish)
+    if fault == 'none':
+        exec(WINDOWS_PROJECT_WRITER_SCRIPT, {})
+        assert ready.read_bytes() == b'locked' and waited == [True]
+    else:
+        with pytest.raises(OSError, match='synthetic'):
+            exec(WINDOWS_PROJECT_WRITER_SCRIPT, {})
+        assert not ready.exists() and waited == []
+    assert handles[0].closed and locks == [native.LK_NBLCK, native.LK_UNLCK]
+    assert lock.read_bytes() == b'0'
+
+
+@pytest.mark.parametrize('name', ['writer-ready', 'writer-ready.pending'])
+def test_windows_writer_rejects_stale_markers_before_process_start(tmp_path, monkeypatch, name):
+    from types import SimpleNamespace
+    stale = tmp_path / name; stale.write_bytes(b'preserve')
+    monkeypatch.setattr(subprocess, 'Popen', lambda *a, **k: pytest.fail('Stale marker started child'))
+    with pytest.raises(AssertionError, match='fresh readiness markers'):
+        with competing_windows_project_writer(SimpleNamespace(root=tmp_path), tmp_path):
+            pytest.fail('Stale marker announced ownership')
+    assert stale.read_bytes() == b'preserve'
 
 
 @native_windows
