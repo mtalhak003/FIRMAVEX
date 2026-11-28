@@ -6,6 +6,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import threading
 
 import pytest
 
@@ -106,16 +107,16 @@ def bundle(tmp_path, monkeypatch):
         metadata[str(path)] = f'pkgname = {name}\npkgver = {version}\narch = any\nlicense = MIT\n'
     manifest = tmp_path / 'manifest.json'; manifest.write_text(json.dumps({'schema_version': 1, 'packages': rows}))
     calls = []
-    def run(argv, cwd, deadline):
+    def run(argv, cwd, deadline, **kwargs):
         calls.append(argv)
         if argv[0] == str(tools['gpg']): return valid_status()
         if argv[0] == str(tools['bsdtar']): return metadata[argv[2]]
         if argv[0] == str(tools['vercmp']): return '0\n'
         pytest.fail('Unexpected verifier command')
     monkeypatch.setattr(packages, '_run', run)
-    def verify():
+    def verify(**kwargs):
         return packages.verify(directory, manifest, hashlib.sha256(manifest.read_bytes()).hexdigest(),
-                               keyring, [SIGNER], trusted_tool_sha256=hashes, **tools)
+                               keyring, [SIGNER], trusted_tool_sha256=hashes, **tools, **kwargs)
     return directory, manifest, keyring, tools, hashes, calls, metadata, verify
 
 
@@ -156,7 +157,7 @@ def test_bundle_rejects_missing_tampered_or_unsafe_inputs_before_approval(bundle
 
 def test_signature_failure_prevents_metadata_parser_execution(bundle, monkeypatch):
     *_, verify = bundle
-    def rejected(argv, cwd, deadline):
+    def rejected(argv, cwd, deadline, **kwargs):
         assert '--verify' in argv
         return '[GNUPG:] BADSIG bad\n'
     monkeypatch.setattr(packages, '_run', rejected)
@@ -165,7 +166,7 @@ def test_signature_failure_prevents_metadata_parser_execution(bundle, monkeypatc
 
 def test_changed_archive_during_read_is_rejected(bundle, monkeypatch):
     directory, manifest, keyring, tools, hashes, calls, metadata, verify = bundle
-    def changing(argv, cwd, deadline):
+    def changing(argv, cwd, deadline, **kwargs):
         if argv[0] == str(tools['gpg']): return valid_status()
         path = Path(argv[2]); text = metadata[str(path)]; path.write_bytes(b'changed during verification')
         return text
@@ -184,9 +185,9 @@ def test_input_byte_bounds_are_enforced_before_archive_hashing(bundle, monkeypat
         with path.open('wb') as stream:
             stream.truncate(65537 if boundary == 'signature' else 512 * 1024**2 + 1)
     original = packages._identity
-    def guarded(path, *args):
+    def guarded(path, *args, **kwargs):
         if path.parent == directory: pytest.fail('Oversized package input must not be hashed')
-        return original(path, *args)
+        return original(path, *args, **kwargs)
     monkeypatch.setattr(packages, '_identity', guarded)
     with pytest.raises(ValueError, match='byte bound'): verify()
     assert calls == []
@@ -197,6 +198,314 @@ def test_identity_hash_checks_size_before_reading_and_detects_growth(tmp_path):
     with pytest.raises(ValueError, match='size bound'): packages._identity(path, 1)
     with pytest.raises(ValueError, match='size bound'): packages._identity(path, 1024, 1)
     assert packages._identity(path, 1024)['sha256'] == hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+@pytest.mark.parametrize('fault', ['manifest', 'earlier-archive', 'earlier-signature',
+                                 'source-keyring', 'new-keyring-file'])
+def test_later_package_cannot_mask_changed_earlier_input(bundle, monkeypatch, fault):
+    # All package bytes, signatures and verifier output here are invented.
+    # This tests capture integrity, not real publisher authentication.
+    directory, manifest, keyring, tools, hashes, calls, metadata, verify = bundle
+    rows = json.loads(manifest.read_text())['packages']
+    first = directory / rows[0]['archive']
+    second = directory / rows[1]['archive']
+    original = packages._run
+    changed = []
+    def changing(argv, cwd, deadline, **kwargs):
+        result = original(argv, cwd, deadline, **kwargs)
+        if argv[0] == str(tools['bsdtar']) and argv[2] == str(second) and not changed:
+            changed.append(True)
+            if fault == 'manifest': manifest.write_bytes(b'{"unrelated":"changed"}')
+            elif fault == 'earlier-archive': first.write_bytes(b'changed after package verification')
+            elif fault == 'earlier-signature': Path(str(first) + '.sig').write_bytes(b'changed signature')
+            elif fault == 'source-keyring': (keyring / 'trustdb.gpg').write_bytes(b'changed trust input')
+            else: (keyring / 'pubring.kbx').write_bytes(b'appeared after initial capture')
+        return result
+    monkeypatch.setattr(packages, '_run', changing)
+    with pytest.raises(ValueError):
+        verify()
+    assert changed == [True]
+
+
+def change_during_second_package(bundle, monkeypatch, action):
+    directory, manifest, keyring, tools, hashes, calls, metadata, verify = bundle
+    rows = json.loads(manifest.read_text())['packages']
+    second = directory / rows[1]['archive']
+    original = packages._run
+    changes = []
+    def run(argv, cwd, deadline, **kwargs):
+        result = original(argv, cwd, deadline, **kwargs)
+        if argv[0] == str(tools['bsdtar']) and argv[2] == str(second) and not changes:
+            changes.append(True)
+            action()
+        return result
+    monkeypatch.setattr(packages, '_run', run)
+    return changes
+
+
+@pytest.mark.parametrize('selected', ['manifest', 'archive', 'signature', 'keyring'])
+@pytest.mark.parametrize('mutation', ['same-size', 'same-bytes-replacement', 'remove'])
+def test_final_capture_detects_late_content_identity_or_existence_changes(bundle, monkeypatch,
+                                                                         selected, mutation):
+    directory, manifest, keyring, tools, hashes, calls, metadata, verify = bundle
+    row = json.loads(manifest.read_text())['packages'][0]
+    archive = directory / row['archive']
+    target = {'manifest': manifest, 'archive': archive, 'signature': Path(str(archive) + '.sig'),
+              'keyring': keyring / 'trustdb.gpg'}[selected]
+    before = target.stat()
+    content = target.read_bytes()
+    def change():
+        if mutation == 'remove':
+            target.unlink()
+            return
+        if mutation == 'same-bytes-replacement':
+            replacement = target.with_name('replacement.tmp')
+            replacement.write_bytes(content)
+            replacement.replace(target)
+        else:
+            value = bytearray(content); value[-1] ^= 1
+            target.write_bytes(value)
+        os.utime(target, ns=(before.st_atime_ns, before.st_mtime_ns))
+    changes = change_during_second_package(bundle, monkeypatch, change)
+    with pytest.raises((OSError, ValueError)):
+        verify()
+    assert changes == [True]
+
+
+def test_success_retains_lock_schema_and_all_source_inputs(bundle, monkeypatch):
+    directory, manifest, keyring, tools, hashes, calls, metadata, verify = bundle
+    sources = [manifest, *directory.iterdir(), *keyring.iterdir(), *tools.values()]
+    before = {path: path.read_bytes() for path in sources}
+    def forbidden(*args, **kwargs):
+        pytest.fail('Synthetic package verification attempted a real process or network request')
+    import socket
+    import urllib.request
+    monkeypatch.setattr(packages, 'Processes', forbidden)
+    monkeypatch.setattr(socket, 'socket', forbidden)
+    monkeypatch.setattr(urllib.request, 'urlopen', forbidden)
+    record = verify()
+    assert set(record) == {'schema_version', 'kind', 'candidate_only', 'production_qualified',
+        'status', 'manifest_sha256', 'trusted_keyring_sha256', 'allowed_signers',
+        'verification_tool_sha256', 'packages', 'runtime_dependencies', 'atomic_snapshot',
+        'installed_or_executed_firmware', 'limitations'}
+    assert record['status'] == 'verified_listed_package_closure'
+    assert record['production_qualified'] is False and record['atomic_snapshot'] is False
+    assert record['installed_or_executed_firmware'] is False
+    assert record['manifest_sha256'] == hashlib.sha256(before[manifest]).hexdigest()
+    assert all(path.read_bytes() == data for path, data in before.items())
+    assert str(directory) not in json.dumps(record) and str(keyring) not in json.dumps(record)
+
+
+def test_cancelled_verification_does_not_dispatch_a_verifier(bundle):
+    *_, calls, metadata, verify = bundle
+    event = threading.Event(); event.set()
+    with pytest.raises(KeyboardInterrupt):
+        verify(cancel_event=event)
+    assert calls == []
+
+
+@pytest.mark.parametrize('field', ['bundle', 'manifest', 'keyring', 'gpg', 'bsdtar', 'vercmp'])
+@pytest.mark.parametrize('unsafe', ['/workspace/FIRMAVEX/private', 'evidence/windows-sandbox/private',
+    'EVIDENCE\\WINDOWS-SANDBOX\\private', '../private'],
+    ids=['original-checkout', 'protected', 'protected-backslashes', 'parent'])
+def test_all_supplied_path_exclusions_precede_input_access(bundle, monkeypatch, field, unsafe):
+    directory, manifest, keyring, tools, hashes, calls, metadata, verify = bundle
+    pin = hashlib.sha256(manifest.read_bytes()).hexdigest()
+    selected = {'bundle': directory, 'manifest': manifest, 'keyring': keyring, **tools}
+    selected[field] = unsafe
+    def forbidden(*args, **kwargs):
+        pytest.fail('Lexically refused verification input accessed the filesystem')
+    for name in ('checked_path', 'read_bytes', '_identity', 'path_state'):
+        monkeypatch.setattr(packages, name, forbidden)
+    with pytest.raises(ValueError):
+        packages.verify(selected['bundle'], selected['manifest'], pin, selected['keyring'], [SIGNER],
+                        gpg=selected['gpg'], bsdtar=selected['bsdtar'], vercmp=selected['vercmp'],
+                        trusted_tool_sha256=hashes)
+    assert calls == []
+
+
+def test_expired_identity_deadline_precedes_filesystem_access(tmp_path, monkeypatch):
+    def forbidden(*args, **kwargs): pytest.fail('Expired hash deadline accessed input')
+    monkeypatch.setattr(packages, 'checked_path', forbidden)
+    with pytest.raises(TimeoutError):
+        packages._identity(tmp_path / 'never-created', 1024, deadline=0)
+
+
+def test_expired_subprocess_deadline_precedes_process_ownership(tmp_path, monkeypatch):
+    def forbidden(*args, **kwargs): pytest.fail('Expired deadline created a process owner')
+    monkeypatch.setattr(packages, 'Processes', forbidden)
+    with pytest.raises(TimeoutError):
+        packages._run(['synthetic-no-process'], tmp_path, 0)
+
+
+def test_late_deadline_expiration_prevents_capture_success(bundle, monkeypatch):
+    *_, verify = bundle
+    original = packages._Capture.finish
+    expired = []
+    def finish(capture):
+        expired.append(True); capture.deadline = 0
+        return original(capture)
+    monkeypatch.setattr(packages._Capture, 'finish', finish)
+    with pytest.raises(TimeoutError):
+        verify()
+    assert expired == [True]
+
+
+def test_cancellation_during_later_package_prevents_lock_result(bundle, monkeypatch):
+    *_, verify = bundle
+    event = threading.Event()
+    changed = change_during_second_package(bundle, monkeypatch, event.set)
+    with pytest.raises(KeyboardInterrupt):
+        verify(cancel_event=event)
+    assert changed == [True]
+
+
+def test_cancellation_during_final_capture_prevents_lock_result(bundle, monkeypatch):
+    *_, verify = bundle
+    event = threading.Event()
+    original = packages._Capture.finish
+    finished = []
+    def finish(capture):
+        finished.append(True); event.set()
+        return original(capture)
+    monkeypatch.setattr(packages._Capture, 'finish', finish)
+    with pytest.raises(KeyboardInterrupt):
+        verify(cancel_event=event)
+    assert finished == [True]
+
+
+def test_identity_cancellation_during_hashing_propagates(tmp_path, monkeypatch):
+    path = tmp_path / 'hash-input'; path.write_bytes(b'bounded synthetic bytes')
+    event = threading.Event()
+    original = packages.hashlib.sha256
+    updates = []
+    class Hash:
+        def __init__(self): self.value = original()
+        def update(self, value):
+            updates.append(True); self.value.update(value); event.set()
+        def hexdigest(self): return self.value.hexdigest()
+    monkeypatch.setattr(packages.hashlib, 'sha256', Hash)
+    with pytest.raises(KeyboardInterrupt):
+        packages._identity(path, 1024, cancel_event=event)
+    assert updates == [True]
+
+
+class SyntheticControl(BaseException):
+    """Invented cancellation behavior, never runtime or publisher evidence."""
+
+
+@pytest.mark.parametrize('factory', [KeyboardInterrupt, SystemExit, SyntheticControl],
+                         ids=['keyboard', 'exit', 'other-control'])
+def test_identity_hash_control_flow_keeps_original_object(tmp_path, monkeypatch, factory):
+    path = tmp_path / 'hash-input'; path.write_bytes(b'synthetic bytes')
+    control = factory('PRIVATE-CONTROL')
+    original = packages.hashlib.sha256
+    class Hash:
+        def __init__(self): self.value = original()
+        def update(self, value): raise control
+        def hexdigest(self): return self.value.hexdigest()
+    monkeypatch.setattr(packages.hashlib, 'sha256', Hash)
+    with pytest.raises(type(control)) as caught:
+        packages._identity(path, 1024)
+    assert caught.value is control
+
+
+@pytest.mark.parametrize('cancel_during_run', [False, True], ids=['normal', 'cancelled'])
+def test_reviewed_subprocess_receives_caller_event_and_cleanup(tmp_path, monkeypatch, cancel_during_run):
+    event = threading.Event(); owners = []
+    class Owner:
+        def __init__(self, selected, limits):
+            assert selected is event
+            assert limits.memory_bytes == 1024**3 and limits.log_bytes == 131072
+            self.closed = False; owners.append(self)
+        def run(self, argv, cwd):
+            assert argv == ['synthetic-no-process'] and cwd == tmp_path
+            if cancel_during_run: event.set()
+            return 0, 'synthetic verifier output', ''
+        def close(self): self.closed = True
+    monkeypatch.setattr(packages, 'Processes', Owner)
+    if cancel_during_run:
+        with pytest.raises(KeyboardInterrupt):
+            packages._run(['synthetic-no-process'], tmp_path, packages.time.monotonic() + 5,
+                          cancel_event=event)
+    else:
+        assert packages._run(['synthetic-no-process'], tmp_path, packages.time.monotonic() + 5,
+                             cancel_event=event) == 'synthetic verifier output'
+    assert len(owners) == 1 and owners[0].closed is True
+
+
+@pytest.mark.parametrize('factory', [KeyboardInterrupt, SystemExit, SyntheticControl],
+                         ids=['keyboard', 'exit', 'other-control'])
+@pytest.mark.parametrize('secondary_factory', [OSError, KeyboardInterrupt, SystemExit, SyntheticControl],
+                         ids=['os-cleanup', 'keyboard-cleanup', 'exit-cleanup', 'other-cleanup'])
+def test_original_subprocess_control_is_preserved_during_cleanup(tmp_path, monkeypatch,
+                                                               factory, secondary_factory):
+    control = factory('PRIVATE-PRIMARY'); secondary = secondary_factory('PRIVATE-SECONDARY')
+    closed = []
+    class Owner:
+        def __init__(self, event, limits): pass
+        def run(self, argv, cwd): raise control
+        def close(self): closed.append(True); raise secondary
+    monkeypatch.setattr(packages, 'Processes', Owner)
+    with pytest.raises(type(control)) as caught:
+        packages._run(['synthetic-no-process'], tmp_path, packages.time.monotonic() + 5)
+    assert caught.value is control and closed == [True]
+
+
+@pytest.mark.parametrize('factory', [KeyboardInterrupt, SystemExit, SyntheticControl],
+                         ids=['keyboard', 'exit', 'other-control'])
+@pytest.mark.parametrize('secondary_factory', [OSError, KeyboardInterrupt, SystemExit, SyntheticControl],
+                         ids=['os-cleanup', 'keyboard-cleanup', 'exit-cleanup', 'other-cleanup'])
+def test_original_verification_control_is_preserved_during_temporary_cleanup(bundle, monkeypatch,
+                                                                          factory, secondary_factory):
+    *_, verify = bundle
+    control = factory('PRIVATE-PRIMARY'); secondary = secondary_factory('PRIVATE-SECONDARY')
+    original = packages.tempfile.TemporaryDirectory
+    cleaned = []
+    class Temporary:
+        def __init__(self, *args, **kwargs):
+            self.actual = original(*args, **kwargs)
+            self.name = self.actual.name
+        def cleanup(self):
+            self.actual.cleanup(); cleaned.append(True)
+            raise secondary
+    def interrupted(*args, **kwargs): raise control
+    monkeypatch.setattr(packages.tempfile, 'TemporaryDirectory', Temporary)
+    monkeypatch.setattr(packages, '_run', interrupted)
+    with pytest.raises(type(control)) as caught:
+        verify()
+    assert caught.value is control and cleaned == [True]
+
+
+def package_cli_arguments(bundle):
+    directory, manifest, keyring, tools, hashes, calls, metadata, verify = bundle
+    command = ['--bundle', str(directory), '--manifest', str(manifest),
+        '--expected-manifest-sha256', hashlib.sha256(manifest.read_bytes()).hexdigest(),
+        '--keyring', str(keyring), '--signer', SIGNER]
+    for name in tools:
+        command += ['--' + name, str(tools[name]), '--' + name + '-sha256', hashes[name]]
+    return command
+
+
+def test_cli_does_not_publish_failure_diagnostics_or_private_paths(bundle, monkeypatch, capsys):
+    def rejected(*args, **kwargs): raise ValueError('PRIVATE-PATH-TOKEN-CREDENTIAL')
+    monkeypatch.setattr(packages, 'verify', rejected)
+    assert packages.main(package_cli_arguments(bundle)) == 1
+    captured = capsys.readouterr()
+    assert json.loads(captured.out) == {'candidate_only': True, 'production_qualified': False,
+                                      'status': 'rejected', 'error_type': 'ValueError'}
+    assert 'PRIVATE' not in captured.out + captured.err
+
+
+@pytest.mark.parametrize('factory', [KeyboardInterrupt, SystemExit, SyntheticControl],
+                         ids=['keyboard', 'exit', 'other-control'])
+def test_cli_does_not_convert_control_flow_to_ordinary_failure(bundle, monkeypatch, capsys, factory):
+    control = factory('PRIVATE-CONTROL')
+    def interrupted(*args, **kwargs): raise control
+    monkeypatch.setattr(packages, 'verify', interrupted)
+    with pytest.raises(type(control)) as caught:
+        packages.main(package_cli_arguments(bundle))
+    assert caught.value is control and capsys.readouterr().out == ''
 
 
 def test_cli_rejection_is_nonzero_and_does_not_publish_private_paths(bundle):

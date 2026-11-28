@@ -5,6 +5,7 @@ an independent trusted channel, never from the package payload. Only listed
 archives are read. Legal/source obligations and dynamic DLL closure are separate.
 """
 import argparse
+from contextlib import contextmanager
 import hashlib
 import json
 import re
@@ -17,7 +18,9 @@ from firmavex.backends.api import Limits
 from firmavex.backends.process import Processes
 from firmavex.backends.security import checked_path, read_bytes
 from firmavex.product.file_state import handle_state, path_state
+from firmavex.product.verification import check_cancel
 from tools.windows_runtime_candidate import PACKAGES
+from tools.windows_runtime_preflight import _lexical_path
 
 MAX_PACKAGES = 1024
 MAX_BYTES = 8 * 1024**3
@@ -46,8 +49,15 @@ def _name(value):
     return value
 
 
-def _identity(path, maximum, expected_size=None):
+def _poll(cancel_event, deadline):
+    check_cancel(cancel_event)
+    if deadline is not None and time.monotonic() >= deadline:
+        raise TimeoutError('Package-set verification deadline exceeded')
+
+
+def _identity(path, maximum, expected_size=None, *, cancel_event=None, deadline=None):
     """Bound bytes before and during hashing; reject observable file changes."""
+    _poll(cancel_event, deadline)
     path = checked_path(path)
     before = path.stat()
     if (not 0 < before.st_size <= maximum
@@ -59,6 +69,7 @@ def _identity(path, maximum, expected_size=None):
         if handle_state(stream.fileno()) != initial:
             raise ValueError('Verification input changed before hashing')
         while chunk := stream.read(min(1024**2, before.st_size + 1 - size)):
+            _poll(cancel_event, deadline)
             size += len(chunk)
             if size > before.st_size:
                 raise ValueError('Verification input grew during hashing')
@@ -68,7 +79,94 @@ def _identity(path, maximum, expected_size=None):
     checked_path(path)
     if path_state(path) != initial:
         raise ValueError('Verification input changed after hashing')
+    _poll(cancel_event, deadline)
     return {'path': str(path), 'sha256': digest.hexdigest(), 'size_bytes': size}
+
+
+class _Capture:
+    """Recheck the complete selected set, not just the currently verified pair.
+
+    Records are bounded by the fixed tools/keyring names and package-count cap.
+    Identity/byte checks detect observable changes; they do not lock out writers.
+    """
+    def __init__(self, cancel_event, deadline):
+        self.cancel_event, self.deadline = cancel_event, deadline
+        self.files, self.missing = {}, set()
+
+    def _remember(self, path, maximum, identity, state):
+        if path in self.files or path in self.missing:
+            raise ValueError('Duplicate verification input')
+        self.files[path] = maximum, identity, state
+        return identity
+
+    def read(self, path, maximum, *, optional=False):
+        _poll(self.cancel_event, self.deadline)
+        try:
+            path = checked_path(path)
+        except FileNotFoundError:
+            if not optional:
+                raise
+            self.missing.add(Path(path).absolute())
+            return None
+        before = path_state(path)
+        data = read_bytes(path, maximum, cancel_event=self.cancel_event)
+        if before != path_state(checked_path(path)):
+            raise ValueError('Verification input changed during capture')
+        identity = {'path': str(path), 'sha256': hashlib.sha256(data).hexdigest(), 'size_bytes': len(data)}
+        self._remember(path, maximum, identity, before)
+        _poll(self.cancel_event, self.deadline)
+        return data
+
+    def identity(self, path, maximum, expected_size=None):
+        _poll(self.cancel_event, self.deadline)
+        path = checked_path(path)
+        before = path_state(path)
+        value = _identity(path, maximum, expected_size,
+                          cancel_event=self.cancel_event, deadline=self.deadline)
+        if before != path_state(checked_path(path)):
+            raise ValueError('Verification input changed during capture')
+        return self._remember(path, maximum, value, before)
+
+    def recheck(self, path):
+        _poll(self.cancel_event, self.deadline)
+        path = Path(path).absolute()
+        maximum, identity, state = self.files[path]
+        if path_state(checked_path(path)) != state:
+            raise ValueError('Verification input changed after capture')
+        value = _identity(path, maximum, identity['size_bytes'],
+                          cancel_event=self.cancel_event, deadline=self.deadline)
+        if value != identity or path_state(checked_path(path)) != state:
+            raise ValueError('Verification input changed after capture')
+
+    def finish(self):
+        for path in self.files:
+            self.recheck(path)
+        for path in self.missing:
+            _poll(self.cancel_event, self.deadline)
+            try:
+                checked_path(path)
+            except FileNotFoundError:
+                continue
+            raise ValueError('Verification input set changed during capture')
+        _poll(self.cancel_event, self.deadline)
+
+
+@contextmanager
+def _temporary():
+    temporary = tempfile.TemporaryDirectory(prefix='firmavex-candidate-package-check-')
+    primary = None
+    try:
+        yield Path(temporary.name)
+    except BaseException as error:
+        primary = error
+        raise
+    finally:
+        try:
+            temporary.cleanup()
+        except BaseException as cleanup:
+            if primary is None or (isinstance(primary, Exception) and not isinstance(cleanup, Exception)):
+                raise
+            primary.add_note('Package verifier temporary cleanup failed')
 
 
 def _constraint(value):
@@ -171,15 +269,18 @@ def closure(packages, compare):
     return resolved
 
 
-def _run(argv, cwd, deadline):
+def _run(argv, cwd, deadline, *, cancel_event=None):
+    _poll(cancel_event, deadline)
     remaining = deadline - time.monotonic()
     if remaining <= 0:
         raise TimeoutError('Package-set verification deadline exceeded')
-    owner = Processes(threading.Event(), Limits(timeout_seconds=min(60, remaining),
+    owner = Processes(cancel_event if cancel_event is not None else threading.Event(),
+        Limits(timeout_seconds=min(60, remaining),
         memory_bytes=1024**3, log_bytes=131072, artifact_bytes=1048576))
     primary = None
     try:
         code, stdout, _ = owner.run(argv, cwd)
+        _poll(cancel_event, deadline)
         if code:
             raise ValueError('External package verification command failed')
         return stdout
@@ -196,15 +297,25 @@ def _run(argv, cwd, deadline):
 
 
 def verify(bundle, manifest, expected_manifest_sha256, keyring, signers, *, gpg, bsdtar, vercmp,
-           trusted_tool_sha256):
+           trusted_tool_sha256, cancel_event=None):
     """Return a new verified lock record; do not write, install, download or approve."""
+    # Apply lexical exclusions to every supplied location before accessing any
+    # input. Parent/link checks remain in the existing bounded file helpers.
+    paths = (bundle, manifest, keyring, gpg, bsdtar, vercmp)
+    if any(not isinstance(path, (str, Path)) for path in paths):
+        raise ValueError('Explicit verification input paths required')
+    bundle, manifest, keyring, gpg, bsdtar, vercmp = (
+        _lexical_path(str(path), Path.cwd()) for path in paths)
+    deadline = time.monotonic() + 600
+    capture = _Capture(cancel_event, deadline)
+    _poll(cancel_event, deadline)
     bundle, keyring = checked_path(bundle, directory=True), checked_path(keyring, directory=True)
     if bundle == keyring or bundle in keyring.parents:
         raise ValueError('Trusted keyring must be independent of the package payload')
     signers = list(signers)
     if not signers or len(signers) > 64 or any(not re.fullmatch('[A-F0-9]{40}|[A-F0-9]{64}', s) for s in signers):
         raise ValueError('Independent publisher fingerprint allowlist required')
-    data = read_bytes(manifest, 1024**2)
+    data = capture.read(manifest, 1024**2)
     if hashlib.sha256(data).hexdigest() != _digest(expected_manifest_sha256):
         raise ValueError('Manifest digest mismatch')
     specification = json.loads(data, object_pairs_hook=_object)
@@ -215,27 +326,26 @@ def verify(bundle, manifest, expected_manifest_sha256, keyring, signers, *, gpg,
     tools = {name: checked_path(path) for name, path in {'gpg': gpg, 'bsdtar': bsdtar, 'vercmp': vercmp}.items()}
     if type(trusted_tool_sha256) is not dict or set(trusted_tool_sha256) != set(tools):
         raise ValueError('Independent verification-tool hashes required')
-    tool_records = {name: _identity(path, 512 * 1024**2) for name, path in tools.items()}
+    tool_records = {name: capture.identity(path, 512 * 1024**2) for name, path in tools.items()}
     identities = {name: value['sha256'] for name, value in tool_records.items()}
     if any(identities[name] != _digest(trusted_tool_sha256[name]) for name in tools):
         raise ValueError('Verification-tool digest mismatch')
     seen, size, records = set(), 0, []
-    deadline = time.monotonic() + 600
-    with tempfile.TemporaryDirectory(prefix='firmavex-candidate-package-check-') as temporary:
-        temporary = Path(temporary)
+    with _temporary() as temporary:
         home = temporary / 'keys'; home.mkdir(mode=0o700)
         work = temporary / 'work'; work.mkdir()
         trusted = {}
         for name in ('pubring.gpg', 'pubring.kbx', 'trustdb.gpg'):
             source = keyring / name
-            if not source.exists():
+            content = capture.read(source, 32 * 1024**2, optional=True)
+            if content is None:
                 continue
-            content = read_bytes(source, 32 * 1024**2)
             trusted[name] = hashlib.sha256(content).hexdigest()
             (home / name).write_bytes(content)
         if 'trustdb.gpg' not in trusted or not ({'pubring.gpg', 'pubring.kbx'} & trusted.keys()):
             raise ValueError('Independent public keyring and trust database required')
         for row in specification['packages']:
+            _poll(cancel_event, deadline)
             if type(row) is not dict or set(row) != {'archive', 'sha256', 'signature_sha256'}:
                 raise ValueError('Invalid package manifest entry')
             name = row['archive']
@@ -248,33 +358,33 @@ def verify(bundle, manifest, expected_manifest_sha256, keyring, signers, *, gpg,
             size += archive_size + signature_size
             if not (0 < archive_size <= 512 * 1024**2 and 0 < signature_size <= 65536 and size <= MAX_BYTES):
                 raise ValueError('Package archive/signature byte bound exceeded')
-            before = _identity(archive, 512 * 1024**2, archive_size)
-            sig_before = _identity(signature, 65536, signature_size)
+            before = capture.identity(archive, 512 * 1024**2, archive_size)
+            sig_before = capture.identity(signature, 65536, signature_size)
             if before['sha256'] != _digest(row['sha256']) or sig_before['sha256'] != _digest(row['signature_sha256']):
                 raise ValueError('Package archive/signature bound or digest mismatch')
             status = _run([str(tools['gpg']), '--batch', '--no-options', '--no-autostart',
                 '--no-auto-key-retrieve', '--no-auto-key-import', '--no-auto-check-trustdb',
-                '--homedir', str(home), '--status-fd', '1', '--verify', str(signature), str(archive)], work, deadline)
+                '--homedir', str(home), '--status-fd', '1', '--verify', str(signature), str(archive)],
+                work, deadline, cancel_event=cancel_event)
             signer = signature_status(status, signers)
-            if before != _identity(archive, 512 * 1024**2, archive_size):
-                raise ValueError('Package changed after signature verification')
-            text = _run([str(tools['bsdtar']), '-xOf', str(archive), '.PKGINFO'], work, deadline)
+            capture.recheck(archive)
+            text = _run([str(tools['bsdtar']), '-xOf', str(archive), '.PKGINFO'],
+                        work, deadline, cancel_event=cancel_event)
             package = metadata(text)
-            if before != _identity(archive, 512 * 1024**2, archive_size) or sig_before != _identity(signature, 65536, signature_size):
-                raise ValueError('Package or signature changed during verification')
+            capture.recheck(archive)
+            capture.recheck(signature)
             records.append({**package, **row, 'signature': signer})
         comparisons = {}
         def compare(a, b):
             if (a, b) not in comparisons:
-                answer = _run([str(tools['vercmp']), a, b], work, deadline).strip()
+                answer = _run([str(tools['vercmp']), a, b], work, deadline,
+                              cancel_event=cancel_event).strip()
                 if not re.fullmatch('-?[0-9]{1,10}', answer):
                     raise ValueError('Invalid native version-comparison result')
                 comparisons[a, b] = int(answer)
             return comparisons[a, b]
         dependencies = closure(records, compare)
-    for name, path in tools.items():
-        if _identity(path, 512 * 1024**2, tool_records[name]['size_bytes'])['sha256'] != identities[name]:
-            raise ValueError('Verification tool changed')
+    capture.finish()
     return {'schema_version': 1, 'kind': 'firmavex_candidate_package_lock',
         'candidate_only': True, 'production_qualified': False, 'status': 'verified_listed_package_closure',
         'manifest_sha256': expected_manifest_sha256, 'trusted_keyring_sha256': trusted,
