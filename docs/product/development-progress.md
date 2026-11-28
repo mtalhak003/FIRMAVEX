@@ -1619,3 +1619,118 @@ firmware/runtime and consumer acceptance do not follow. The separate repaired
 Linux real-product/research job was still running at this observation; the
 first-source Linux real-product/research/installed-CLI job had fully passed.
 No pending result is substituted for a completed run or qualification.
+
+## 2026-11-28 — Batch 44 runtime provenance and complete-set verification
+
+**Starting state and objective:** November 28, 2026, Asia/Karachi. The approved
+detached worktree and remote development branch both matched
+[`611dcf71e1858f3efc96b945c388510e3de90a35`](https://github.com/mtalhak003/FIRMAVEX/commit/611dcf71e1858f3efc96b945c388510e3de90a35),
+with no changes in the inspected scope. Existing work, configured identity and
+ordinary commit dates were preserved. [Issue #10](https://github.com/mtalhak003/FIRMAVEX/issues/10)
+tracks authenticated Windows provenance and separately correlated Linux audit
+evidence. The [Batch 44 technical report](batch44-runtime-provenance.md) records
+exact sources, commands, test outcomes and limits. No other checkout or protected
+evidence was inspected.
+
+**Original-input access and evidence:** exact required QEMU `11.1.2` and GDB
+`18.1` executable hashes remain unchanged. Neither matching authenticated payload
+nor complete compatible archive/signature/dependency set was recovered. MSYS2
+index/package/documentation requests failed at the CONNECT proxy with HTTP 403;
+an escalated official-index retry returned the same result. GitHub artifact and
+issue APIs returned `Forbidden`, while public issue/job HTML and official Git
+sources were readable. These failures do not prove that old packages do not
+exist. The previously guessed QEMU `11.1.2-1` filename remains a probe, not an
+authenticated package identity. No archive or original was fabricated.
+
+**Independently inspected published material:** pinned MSYS2 recipes still declare
+QEMU `11.1.3-2` and GDB `18.1-4`. The official keyring repository's published
+public `.gpg`, trusted and revoked data were retrieved outside the repository and
+hashed. They were not imported, activated or independently designated trusted;
+the advertised signed tag was not cryptographically authenticated. Source recipe
+`validpgpkeys` are not binary-package signer approval. Recipe declarations,
+published keys, version strings and `pacman -Qo` path metadata do not establish
+archive-to-installed ownership, DLL closure or license/source-delivery clearance.
+
+**Demonstrated engineering defect and repair:** five synthetic regressions failed
+against the existing package verifier when a later package processing step changed
+the manifest, an earlier archive/signature, original trust database, or a missing
+public-keyring file. The verifier could still return its old lock. The repair
+rechecks the entire selected set's hashes, sizes and file identity metadata before
+success, including fixed keyring files observed absent. It adds optional event
+cancellation to hashing and existing supervised verifier commands, enforces the
+existing deadline through final capture, and preserves control-flow exceptions
+during process and temporary cleanup. Existing lexical/path restrictions are
+reused before input access. The lock schema, signature algorithms/allowlist,
+candidate roots, runtime admission/pins and resource controls remain unchanged.
+This is a consistency repair, not a demonstrated signature/admission bypass or
+new publisher authentication. Originals remain read-only; existing independently
+pinned verification tools and private temporary keyring copies retain their scope.
+
+**Actual tests, including unsuccessful attempts:** Linux x86-64/Python 3.12.14.
+Initial existing selection: **162 passed**, zero skips/failures, **0.66 seconds**.
+Intentional RED selection: **5 failed, 41 deselected**, **0.14 seconds**, proving
+the input-set gap before implementation. An early expanded run reported **84
+passed, 12 failed**, **0.89 seconds**: the synthetic temporary-directory proxy
+still modeled its old context-manager interface and lacked `.name`/`.cleanup()`.
+The proxy was aligned with the actual public protocol; all cleanup assertions
+were retained. An intermediate run reported **96 passed**, **0.59 seconds**.
+Final package module: **123 passed**, no failures/errors/skips/deselections,
+**0.67 seconds**. Final focused selection: **420 passed, 1 skipped**, **1.74
+seconds**. Final wider selection: **1,449 passed, 11 skipped**, **29.97 seconds**.
+Focused/wider selections had zero failures/errors/deselections. Independent
+review reported **61 passed, 62 deselected**, **0.32 seconds**, with no blocking
+finding. Counts overlap and are not a complete repository suite or native Windows
+package verification. The existing real GnuPG test uses a synthetic local key,
+never MSYS2 trust. Skips require native candidate dispatch, Windows/NTFS, ARM tools
+or locally blocked UID-map namespace admission. No firmware or installer was run
+by local validation. Missing tools and historical failures are retained.
+
+**Separate Linux finding:** exact public starting-revision annotations confirm
+CPU/process/OOM checks passed and namespace boundaries failed at the bubblewrap
+loopback `RTM_NEWADDR` message, with recorded child/unit cleanup. The aggregate
+job contains no same-host boot/time/PID/unit-correlated kernel decision. Existing
+namespace diagnostics are collected on another VM. Pinned upstream source
+clarifies the reported operation but is not bound to the actual CI binary or
+kernel/LSM cause. No same-host cause is invented from sibling AppArmor records;
+no privilege expansion, new probe, sysctl/policy change or isolation weakening
+was performed. Additional collection needs separately reviewed authorization.
+
+**Publication and remaining gates:** substantive implementation
+[`d7b9420a2d66cb57e48e75c762cdd249947701c1`](https://github.com/mtalhak003/FIRMAVEX/commit/d7b9420a2d66cb57e48e75c762cdd249947701c1)
+was normally fast-forward pushed and remote SHA verified. Build-input checks,
+Python syntax and whitespace passed; metadata/signature/dependency algorithms
+and the successful record AST match the baseline. No workflow was changed or
+manually dispatched; actionlint and PowerShell are unavailable. Existing Linux
+CI selects the updated package tests; unchanged Windows matrix selection does
+not establish native execution of this verifier. Automatic CI and issue-update
+outcomes must retain their actual scopes. Obtain authenticated archives/signatures,
+independently approved trust inputs, exact binary ownership/DLL/license closure
+and same-host audit evidence before any qualification decision. The inherited
+MEDIUM hostile-parent-replacement/non-atomic limitation remains. Main, research,
+protected originals, signing, production pins/admission and release status are
+unchanged.
+
+**Access and first automatic-CI outcome:** fresh
+[aggregate job 140945346107](https://github.com/mtalhak003/FIRMAVEX/actions/runs/46134066330/job/140945346107)
+failed with unchanged loopback rejection, passed fixed quota checks and recorded
+cleanup. No kernel cause is inferred. The existing Linux all-product CI step
+passed, including the updated package module; research regressions were still
+running at that observation. Windows host matrix results are distinct from
+package-verifier execution because its module is not in that selection.
+GraphQL and REST attempts to post Issue #10 both returned `Forbidden`; no comment
+was posted. Documentation validation checked 174 local links, 23 anchors and
+117 local commit references; final Python syntax and whitespace checks passed.
+All six host matrix jobs in
+[new product run 46134066323](https://github.com/mtalhak003/FIRMAVEX/actions/runs/46134066323)
+subsequently displayed success, including Windows Python 3.11/3.12 and Ubuntu;
+macOS remains preview. The separate Linux research job was still pending at
+inspection, after its all-product tests passed. These observed statuses do not
+authenticate vendor archives or establish native Windows package verification.
+The Linux job subsequently completed all research and installed-CLI steps, and
+the overall product workflow displayed **SUCCESS**, **7/7 jobs**, **5m58s**.
+This completed source-CI observation does not approve the runtime or replace
+missing authenticated package and same-host audit inputs.
+Fresh [Windows lifecycle job 140945345880](https://github.com/mtalhak003/FIRMAVEX/actions/runs/46134066333/job/140945345880)
+then confirmed the unchanged QEMU version/hash and GDB hash mismatch before
+installer transitions; the Linux lifecycle job passed. Passing product host
+regressions and failing qualification gates are both retained.
